@@ -35,7 +35,13 @@ prob_est<-as.vector(SinkEI$Probability_Estab)
 CrossRegionSDDmatrix = readRDS(paste0(CrossRegionInvasionDir,ThreatSource,"_",ThreatSink,"_InvasionProb.rds"))
 CrossRegionLDDmatrix = readRDS(paste0(CrossRegionInvasionDir,ThreatSource,"_",ThreatSink,"_InvasionProb_LDDweight.rds"))
 CrossRegionLDDmatrix = CrossRegionLDDmatrix*LDDrate
-CrossRegionDispersal = CrossRegionSDDmatrix+CrossRegionLDDmatrix
+
+###Convert annual LDDrate to probability of achieving >0 disperal events
+CrossRegionLDDprob =  ppois(0,CrossRegionLDDmatrix,lower.tail = F)
+
+###Treat SDD and LDD as separate trials when combining to obtain a single
+###dispersal probability matrix
+CrossRegionDispersal = 1-(1-CrossRegionSDDmatrix)*(1-CrossRegionLDDprob)
 CrossRegionDispersal = sweep(CrossRegionDispersal,1,prob_est,"*")
 
 

@@ -43,7 +43,7 @@ SeedBankLoss = 0.61
 Germination = 0.064
 
 ###Model reduction in seed bank
-Nyears = 50
+Nyears = 80
 Nseeds = vector(length = Nyears)
 N0 = 1500
 for(i in 1:Nyears)

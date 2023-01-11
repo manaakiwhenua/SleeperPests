@@ -192,7 +192,7 @@ cs = 1
 ###Future climate 2090
 #cs = 3
 
-for(cs in 1:3)
+#for(cs in 1:3)
 source("INA_HistoricExample_HBAYWithCoreFunctionLDDMatrix.R")
 
 
@@ -200,7 +200,7 @@ source("INA_HistoricExample_HBAYWithCoreFunctionLDDMatrix.R")
 ###Produce heat map jpegs and gifs
 ##for Hawkes Bay historic example
 ################################
-for(cs in 1:3)
+#for(cs in 1:3)
 source("INA_HistoricExampleHeatMapsHBAY.R")
 
 ##############################################
@@ -232,7 +232,7 @@ source("INA_HistoricExampleHeatMapsHBAY.R")
 ################################
 
 ###Current climate
-#cs = 1
+cs = 1
 ###Future climate 2040
 #cs = 2
 ###Future climate 2090
@@ -241,9 +241,9 @@ source("INA_HistoricExampleHeatMapsHBAY.R")
 ###This version uses a LDD matrix based in NZ cattle movements
 SinkRegion = "GISB"
 SourceRegion = "HBAY"
-for(cs in 1:3)
+#for(cs in 1:3)
 source("INASourceSinkWithCoreFunctionLDDmatrix.R")
-
+source("INASourceSinkHeatMaps.R")
 
 ###Other options for invasion from Hawkes Bay are 
 ###Greater Wellington and Manawatu-Wanganui regions
@@ -251,26 +251,29 @@ source("INASourceSinkWithCoreFunctionLDDmatrix.R")
 
 SinkRegion = "WELL"
 SourceRegion = "HBAY"
-#cs = 1
+cs = 1
 #cs = 2
-cs = 3
+#cs = 3
 source("INASourceSinkWithCoreFunctionLDDMatrix.R")
+source("INASourceSinkHeatMaps.R")
 
 SinkRegion = "MNWG"
 SourceRegion = "HBAY"
-#cs = 1
-cs = 2
+cs = 1
+#cs = 2
 #cs = 3
 source("INASourceSinkWithCoreFunctionLDDMatrix.R")
+source("INASourceSinkHeatMaps.R")
 
 
 ###Examine invasion to Canterbury from Marlborough
 SinkRegion = "CANT"
 SourceRegion = "MARL"
-#cs = 1
-cs = 2
+cs = 1
+#cs = 2
 #cs = 3
 source("INASourceSinkWithCoreFunctionLDDMatrix.R")
+source("INASourceSinkHeatMaps.R")
 
 ###############################
 ###Produce heat map jpegs and gifs

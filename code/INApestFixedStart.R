@@ -54,10 +54,23 @@ InfoResults = InvasionResults
 ###Share long distance dispersal events evenly across source nodes
 ###If no long-distance dispersal matrix is provided
 if(is.na(LDDmatrix) == T)
-	BPAM = BPAM + LDDrate/(nrow(BPAM)-1)
-
+      {
+      ###Convert annual LDDrate to probability of achieving >0 disperal events
+      LDDprob = ppois(0,LDDrate/(nrow(BPAM)-1),lower.tail = F)
+      
+      ###Treat SDD and LDD as separate trials when combining to obtain a single
+      ###dispersal probability matrix
+      BPAM =1-(1-BPAM)*(1-LDDprob)  
+      }
 if(is.na(LDDmatrix) == F)
-	BPAM = BPAM + LDDmatrix
+      {
+      ###Convert annual LDDrate to probability of achieving >0 disperal events
+      LDDprob = ppois(0,LDDmatrix,lower.tail = F)
+
+      ###Treat SDD and LDD as separate trials when combining to obtain a single
+      ###dispersal probability matrix
+      BPAM =1-(1-BPAM)*(1-LDDmatrix)
+      }
 
 ###Weight dispersal by environmental establishment probability
 BPAM = sweep(BPAM,2,EnvEstabProb,`*`)

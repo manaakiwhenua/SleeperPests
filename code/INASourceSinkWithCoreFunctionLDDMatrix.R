@@ -145,12 +145,18 @@ if(EI_Prob_CurveType == "SplitLinear")
 ##############################################
 CrossRegionSDDmatrix = readRDS(paste0(ClimateScenarios[cs],"/Inputs/CrossRegionDistance/",SourceRegion,"_",SinkRegion,"_InvasionProb.rds"))
 CrossRegionLDDmatrix = readRDS(paste0(ClimateScenarios[cs],"/Inputs/CrossRegionDistance/",SourceRegion,"_",SinkRegion,"_InvasionProb_LDDweight.rds"))
-FarmSDDRisk = rowSums(CrossRegionSDDmatrix)
-FarmLDDRisk = rowSums(CrossRegionLDDmatrix)*LongDistProbPerFarm
+CrossRegionLDDmatrix = CrossRegionLDDmatrix*LongDistProbPerFarm
+
+###Convert annual LDDrate to probability of achieving >0 disperal events
+CrossRegionLDDprob =  ppois(0,CrossRegionLDDmatrix,lower.tail = F)
+
+###Treat SDD and LDD as separate trials when combining to obtain a single
+###dispersal probability matrix
+CrossRegionDispersal = 1-(1-CrossRegionSDDmatrix)*(1-CrossRegionLDDprob)
+FarmRisk = rowSums(CrossRegionDispersal)
 
 ###Farm risk weighted by cross-region incursion prob
 ###and climatic suitability
-FarmRisk = FarmSDDRisk+FarmLDDRisk
 FarmRisk = FarmRisk*prob_est
 FarmRiskWeight = FarmRisk/sum(FarmRisk)
 
