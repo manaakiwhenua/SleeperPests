@@ -42,12 +42,16 @@ OutputDir		#Directory for storing results
 ###of individual nodes in each year of each realisation
 InvasionResults = array(dim = c(nrow(BPAM),Nyears,Nperm))
 
+###Declare array tracking detection status 
+###of individual nodes in each year of each realisation
+DetectedResults = InvasionResults
+
 ###Declare array for tracking management adoption status 
 ###of individual nodes in each year of each realisation
 ###This is a measure of potential disruption to farm businesses
 ###or ongoing management burden (surveillance and removal)
 ###for publicly-owned lands
-InfoResults = InvasionResults
+ManagingResults = InvasionResults
 
 
 
@@ -104,8 +108,7 @@ NodeSpreadReduction = rnorm(SpreadReduction,SpreadReductionSD,n = nrow(BPAM))
 ###Select nodes that have detected infestation 
 InitInfo = vector(length = nrow(BPAM))
 RandInitInfoProb = runif(n=nrow(BPAM),0,1)
-for(node in 1:nrow(BPAM))
-  InitInfo[node] = ifelse(RandInitInfoProb[node]>InitInfoProb[node],0,1) 
+InitInfo = ifelse(RandInitInfoProb>InitInfoProb,0,1) 
 Invaded = InitialInvasion 
 HaveInfo = InitInfo
 ###Loop through years
@@ -119,8 +122,7 @@ for(year in 1:Nyears)
   Managing = vector(length = nrow(BPAM))
  ###This assumes that individual farmers or managers may not adopt management every single year
  ###Allows for some inconsistency in implementation for whatever reason
- for(i in 1:nrow(BPAM))
-	Managing[i] = ifelse(RandManageProb[i]>NodeManageProb[i],0,1)	
+ Managing = ifelse(RandManageProb>NodeManageProb,0,1)	
   ###Management is only applied subsequent to detection
   Managing = Managing*HaveInfo
   ###Use this vector to moderate spread probabilities in biophysical adjacency matrix
@@ -182,17 +184,18 @@ for(year in 1:Nyears)
   Invaded = ifelse(Estab[[1]]==FALSE,0,1)
 
   ###Record nodes adopting management
-  InfoResults[,year,perm] = Managing
+  ManagingResults[,year,perm] = Managing
   ###Record infested nodes
   InvasionResults[,year,perm] = Invaded
   ###Select new nodes where infestation detected
   NewInfoProb = Invaded*DetectionProb
   RandNewInfoProb = runif(n=nrow(BPAM),0,1)
   NewHaveInfo = vector(length= length(HaveInfo))
-  for(node in 1:nrow(BPAM))
-  	NewHaveInfo[node] =  ifelse(RandNewInfoProb[node]>NewInfoProb[node],0,1) 
+  NewHaveInfo =  ifelse(RandNewInfoProb>NewInfoProb,0,1) 
  ###Add newly detected infestation to info vector
  HaveInfo[HaveInfo==0] = NewHaveInfo[HaveInfo==0]  
+ ###Record detection status
+ DetectedResults[,year,perm] = HaveInfo
  }
 }
 ###########################################################
@@ -204,8 +207,9 @@ for(year in 1:Nyears)
 
 FileNameStem = paste0(OutputDir,"DetProb_",DetectionProb,"_ErradProb_",round(AnnualErradicationProb,digits =2),
 		"_SpreadReduction_",SpreadReduction,"_")
-saveRDS(InfoResults, paste0(FileNameStem,"InfoLargeOut.rds"))
+saveRDS(ManagingResults, paste0(FileNameStem,"InfoLargeOut.rds"))
 saveRDS(InvasionResults, paste0(FileNameStem,"InvasionLargeOut.rds"))
+saveRDS(DetectedResults, paste0(FileNameStem,"DetectedLargeOut.rds"))
 
 ##########################################################
 ###Store annual farm-level invasion probs for heat maps
@@ -282,40 +286,80 @@ if(DetectionProb == 0)
 dev.off()
 
 
-InfoSummary = as.data.frame(matrix(ncol = 3, nrow = 0))
-colnames(InfoSummary) = c("Realisation",   "Year",  "NodesInfested")
+ManagingSummary = as.data.frame(matrix(ncol = 3, nrow = 0))
+colnames(ManagingSummary) = c("Realisation",   "Year",  "NodesManaging")
 
 for(perm in 1:Nperm)
 {
-InfoData = InfoResults[,,perm]
-dim(InfoData)
-NodesInfested = colSums(InfoData)
+ManagingData = ManagingResults[,,perm]
+dim(ManagingData)
+NodesManaging = colSums(ManagingData)
 Realisation = perm 
 Year = 1:Nyears
-Results = data.frame(Realisation,Year,NodesInfested)
-InfoSummary = rbind(InfoSummary,Results)
+Results = data.frame(Realisation,Year,NodesManaging)
+ManagingSummary = rbind(ManagingSummary,Results)
 }
 
 
-Filename = paste0(FileNameStem,"InfoRaw.png")
+Filename = paste0(FileNameStem,"ManagingRaw.png")
 png(Filename)
-plot(InfoSummary$Year,InfoSummary$NodesInfested,ylim = c(0,max(InfoSummary$NodesInfested)),pch = NA
+plot(ManagingSummary$Year,ManagingSummary$NodesManaging,ylim = c(0,max(ManagingSummary$NodesManaging)),pch = NA
 , xlab = "Time since incursion detected (years)",
 ylab = "Nodes under management", main = Title)
 
 for(perm in 1:Nperm)
 {
-Sub = InfoSummary[InfoSummary$Realisation == perm,]
-lines(Sub$Year,Sub$NodesInfested,col  = perm)
+Sub = ManagingSummary[ManagingSummary$Realisation == perm,]
+lines(Sub$Year,Sub$NodesManaging,col  = perm)
 }
 dev.off()
-Quantiles = as.data.frame(aggregate(InfoSummary$NodesInfested, by = list(InfoSummary$Year),quantile,prob = c(0.025,0.5,0.975)))
+Quantiles = as.data.frame(aggregate(ManagingSummary$NodesManaging, by = list(ManagingSummary$Year),quantile,prob = c(0.025,0.5,0.975)))
 Yvals = as.data.frame(Quantiles[,2])
 
-Filename = paste0(FileNameStem,"InfoSummary.png")
+Filename = paste0(FileNameStem,"ManagingSummary.png")
 png(Filename)
 plot(Quantiles[,1],Yvals[,1], pch = NA, ylim = c(0,max(Yvals)), xlab = "Time since incursion detected (years)",
 ylab = "Nodes under management", main = Title)
+lines(Quantiles[,1],Yvals[,2],lwd = 3)
+lines(Quantiles[,1],Yvals[,1],lwd = 3,col = 2)
+lines(Quantiles[,1],Yvals[,3],lwd = 3,col = 2)
+dev.off()
+
+
+DetectedSummary = as.data.frame(matrix(ncol = 3, nrow = 0))
+colnames(DetectedSummary) = c("Realisation",   "Year",  "NodesDetected")
+
+for(perm in 1:Nperm)
+{
+DetectedData = DetectedResults[,,perm]
+dim(DetectedData)
+NodesDetected = colSums(DetectedData)
+Realisation = perm 
+Year = 1:Nyears
+Results = data.frame(Realisation,Year,NodesDetected)
+DetectedSummary = rbind(DetectedSummary,Results)
+}
+
+
+Filename = paste0(FileNameStem,"DetectedRaw.png")
+png(Filename)
+plot(DetectedSummary$Year,DetectedSummary$NodesDetected,ylim = c(0,max(DetectedSummary$NodesDetected)),pch = NA
+, xlab = "Time since incursion detected (years)",
+ylab = "Nodes pest detected", main = Title)
+
+for(perm in 1:Nperm)
+{
+Sub = DetectedSummary[DetectedSummary$Realisation == perm,]
+lines(Sub$Year,Sub$NodesDetected,col  = perm)
+}
+dev.off()
+Quantiles = as.data.frame(aggregate(DetectedSummary$NodesDetected, by = list(DetectedSummary$Year),quantile,prob = c(0.025,0.5,0.975)))
+Yvals = as.data.frame(Quantiles[,2])
+
+Filename = paste0(FileNameStem,"DetectedSummary.png")
+png(Filename)
+plot(Quantiles[,1],Yvals[,1], pch = NA, ylim = c(0,max(Yvals)), xlab = "Time since incursion detected (years)",
+ylab = "Nodes pest detected", main = Title)
 lines(Quantiles[,1],Yvals[,2],lwd = 3)
 lines(Quantiles[,1],Yvals[,1],lwd = 3,col = 2)
 lines(Quantiles[,1],Yvals[,3],lwd = 3,col = 2)
