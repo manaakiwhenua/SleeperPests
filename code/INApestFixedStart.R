@@ -14,7 +14,7 @@
 ###This will usually apply when some current or historic distribution data
 ###are available for the pest species in question within the area of interest
 ###Key outputs are:
-###3-dimensional arrays of invasion and management status for each node in each year of each permuation
+###3-dimensional arrays of invasion, detection and management status for each node in each year of each permuation
 ###2-dimensional arrays of invasion probability (i.e. proportion of permutations pest present) for each node in each year
 ###Line graphs summarising number of nodes infested and under management against time 
 ###########################################################################
@@ -38,6 +38,11 @@ geocoords,              #XY points for INAscene
 OutputDir		#Directory for storing results	
 )
 {
+#####################################
+###Should include option to map initial occurrences
+###May also be worth mapping prob estab in this function
+#####################################
+
 ###Declare array tracking infestation status 
 ###of individual nodes in each year of each realisation
 InvasionResults = array(dim = c(nrow(BPAM),Nyears,Nperm))
