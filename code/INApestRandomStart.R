@@ -14,7 +14,7 @@
 ###This may be based on proximity to areas of suitable habitat (e.g. farms) in neighbouring regions where the pest is present
 ###Or proximity to likey border incursion points like ports and airports
 ###Key outputs are:
-###4-dimensional arrays of invasion and management status for each node in each year of each permuation of each initial invasion configuration
+###4-dimensional arrays of invasion, detection and management status for each node in each year of each permuation of each initial invasion configuration
 ###2-dimensional arrays of invasion probability (i.e. proportion of permutations pest present) for each node in each year
 ###Line graphs summarising number of nodes infested and under management against time  
 ###########################################################################
@@ -40,6 +40,11 @@ geocoords,              #XY points for INAscene
 OutputDir		#Directory for storing results	
 )
 {
+#####################################
+###Should include option to map invasion risk vector
+###May also be worth mapping prob estab in this function
+#####################################
+
 ###Declare array for tracking management adoption status 
 ###of individual nodes in each year of each realisation
 ###This is a measure of potential disruption to farm businesses
