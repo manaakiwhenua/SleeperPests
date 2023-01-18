@@ -4,17 +4,18 @@
 ###Key inputs are: 
 ###1) matrix of dispersal probibilities between each pair of sites (i.e. nodes of the network). Matrix can be non-symmetrical (i.e. can have source and sink nodes) 
 ###2) Envionmentally-determined establishment probability for each node. Set all values to 1 for no environmental limitation on establishment.
-###3) Management parameters
+###3) Annual per-farm long distance dispersal rate or matrix of annual LDD rates for each pair of farms 
+###4) Management parameters
 ### a) Annual detection probability
 ### b) Annual management adoption probability subsequent to detection
 ### c) Annual erradication probability
 ### d) Spread reduction when management adopted
-###4) A binary vector of intially infested nodes
+###5) A binary vector of intially infested nodes
 ###In this version initial invasion points are fixed
 ###This will usually apply when some current or historic distribution data
 ###are available for the pest species in question within the area of interest
 ###Key outputs are:
-###3-dimensional arrays of invasion, detection and management status for each node in each year of each permuation
+###3-dimensional arrays of invasion and management status for each node in each year of each permuation
 ###2-dimensional arrays of invasion probability (i.e. proportion of permutations pest present) for each node in each year
 ###Line graphs summarising number of nodes infested and under management against time 
 ###########################################################################
@@ -23,26 +24,22 @@
 INApestFixedStart = function(
 Nperm,                  #Number of permutations per paramteter combination
 Nyears,                 #Simulation duration
-DetectionProb,          #Annual detection probability per node (e.g. farm) (must be between 0 and 1)
-ManageProb,             #Annual Probability of node adopting management upon detection
-AnnualErradicationProb, #Annual probability of erradication (must be between 0 and 1) when management adopted
+DetectionProb,          #Annual detection probability or vector of probabilties per node (e.g. farm) (must be between 0 and 1)
+ManageProb,             #Annual Probability or vector of probabilities vector length nrow(BPAM)of node adopting management upon detection
+AnnualErradicationProb, #Annual probability of erradication (must be between 0 and 1) when management adopted. Can be single value or vector length nrow(BPAM)
 SpreadReduction,        #Reduction in dispersal probability when management adopted. Must be between 0 (no spread reduction) and 1 (complete prevention of spread)
 LDDrate,                #Mean annual per-node distant-independent dispersal rate. Value reflects rate for fully invaded network and zero
                         #environmental limitation on establishment
 InitialInvasion,        #Nodes infested at start of simulations
 EnvEstabProb,           #Environmentally determined establishment probability
 BPAM,                   #Biophysical adjaceny matrix - disperal probability between each pair of nodes
+SEAM = NA,			#Option to provide socioeconomic adjacency matrix for information spread
 LDDmatrix = NA,         #Option to provide long distance dispersal matrix instead of distance-independent dispesal rate
-			#e.g. could be weighted by law of human visitation or data on stock movements
+			      #e.g. could be weighted by law of human visitation or data on stock movements
 geocoords,              #XY points for INAscene
-OutputDir		#Directory for storing results	
+OutputDir		      #Directory for storing results	
 )
 {
-#####################################
-###Should include option to map initial occurrences
-###May also be worth mapping prob estab in this function
-#####################################
-
 ###Declare array tracking infestation status 
 ###of individual nodes in each year of each realisation
 InvasionResults = array(dim = c(nrow(BPAM),Nyears,Nperm))
@@ -88,10 +85,12 @@ BPAM = sweep(BPAM,2,EnvEstabProb,`*`)
 ###Make sure biophysical adjaceny matrix diagonals = 1
 diag(BPAM) = 1
 
-###SEAM is needed to run INA but zero info transfer between nodes is assumed
+###SEAM is needed to run INA but zero info transfer between nodes is assumed unless SEAM provided
+if(is.na(SEAM) == T)
+{
 SEAM = BPAM
 SEAM[,] = 0
-
+}
 
 ###Probability of info at start of simulation depends on
 ###Presence of pest and detection probability
@@ -103,12 +102,16 @@ InitInfoProb = InitialInvasion*DetectionProb
 for(perm in 1:Nperm)
 {
 ###Randomly assign probability of mangement adoption upon detection of infestation
-ManageProbSD = 0.01
+ManageProbSD = mean(ManageProb)/10
 NodeManageProb = rnorm(ManageProb,ManageProbSD,n = nrow(BPAM))
-
+NodeManageProb[NodeManageProb<0] = 0
+NodeManageProb[NodeManageProb>1] = 1
 ###Randomly assign spread reduction factor when management adopted
-SpreadReductionSD = 0.00001
+SpreadReductionSD = (1-mean(SpreadReduction))/10
 NodeSpreadReduction = rnorm(SpreadReduction,SpreadReductionSD,n = nrow(BPAM))
+NodeSpreadReduction[NodeSpreadReduction<0] = 0
+NodeSpreadReduction[NodeSpreadReduction>1] = 1
+
 
 ###Select nodes that have detected infestation 
 InitInfo = vector(length = nrow(BPAM))
@@ -157,7 +160,7 @@ for(year in 1:Nyears)
     initbio.p = NA,
     initbio.dist = NA,
     readseam = T,
-    seam = SEAM*0,###Don't info allow info spread between agents
+    seam = SEAM,
     seamdist = NA,
     seamrandp = NA,
     seampla = NA,
@@ -184,6 +187,8 @@ for(year in 1:Nyears)
     sampeffort = NA
   )
   LargeOut = CNGvLarge$multdetails
+  ###Update info vector for any info spread (if SEAM supplied)
+  HaveInfo = as.vector(LargeOut[[1]]$multout[[1]]$vect1cL[[2]])
   Estab = as.array(LargeOut[[1]][[1]][[1]]$estabvecL)
   ###Update infestation vector
   Invaded = ifelse(Estab[[1]]==FALSE,0,1)
@@ -200,7 +205,7 @@ for(year in 1:Nyears)
  ###Add newly detected infestation to info vector
  HaveInfo[HaveInfo==0] = NewHaveInfo[HaveInfo==0]  
  ###Record detection status
- DetectedResults[,year,perm] = HaveInfo
+ DetectedResults[,year,perm] = HaveInfo*Invaded
  }
 }
 ###########################################################

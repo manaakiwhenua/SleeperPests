@@ -222,6 +222,26 @@ source("INA_HistoricExampleImpacts.R")
 ##############################################
 ##############################################
 
+##############################################
+###Historic invasion reproduction
+###BlindRiver (Marlborough region) as example
+###Include "realistic" control parameters
+###Permit info spread to nodes within threshold distance of 
+###known infestations
+###Assign communication rate by authorities and owners of infested nodes
+###as information transfer probability within threshold distance
+###This implementation also moderates erradication probablity by the probability 
+###that all infested patches with in a node will be detected
+##############################################
+
+for(cs in 1:3)
+source("INA_HistoricExample_BlindRiverLDDMatrixInfoSpread.R")
+
+
+
+
+
+
 #############################################################################
 #############################################################################
 ###End of section
