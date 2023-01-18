@@ -1,19 +1,21 @@
 ##################################################
-###Print invasion heat maps from spread simulated spread from
-###infested farms in Blind River
-###Initial invasion approximates infestation documented here:
-###https://www.tandfonline.com/doi/abs/10.1080/0028825X.1989.10414122
+###Print invasion heat maps
+###for cross-region invasions
 ##################################################
 
 library(INA)
 library(tidyverse)
 library(dplyr)
+library(actuar)
 memory.limit(size=600000) 
 
 ###########################################################################
 ###########################################################################
-###Read in invasion heat map function
-###########################################################################
+###Read in function from source file
+###This simulates invasion from multiple randomised start points
+###Start point probabilities can be weighted by a risk vector
+###For instance, spatial or ownership links of farms in a "sink" region
+###to farms in a "source region"
 ###########################################################################
 
 source("INA_Function_Plot_InfestationHeatMaps.R")
@@ -55,20 +57,22 @@ AnnualErradicationProb = 1-(1-0.95)^(1/ErradicationYear)
 #############################################################
 #############################################################
 
-
-ResultsDir= paste0(main.dir,"/HistoricExamplesCoreFunctionLDDMatrix/",ClimateScenarios[cs],"/")
-dir.create(ResultsDir,recursive = T)
+ResultsDir= paste0(main.dir,"/CrossRegionInvasionCoreFunctionLDDmatrix/",ClimateScenarios[cs],"/")
+#dir.create(ResultsDir,recursive = T)
 Regions = c("AUCK", "EBOP", "CANT", "OTAG", "GISB", "WAIK", "HBAY","MNWG", "WELL", "MARL", "STHL", "NRTH", "TNKI",
 "TASM", "NELS")
-RegionResultsDir= paste0(ResultsDir,Regions[region],"/")
+RegionResultsDir= paste0(ResultsDir,SinkRegion,"_From_",SourceRegion,"/")
+
 ###Read in farm polygons
-RegionFarms = sf::st_read(paste0(ClimateScenarios[cs],"/Inputs/",Regions[region],"SheepBeefAtRisk",ClimateScenarios[cs], ".wgs84.shp"))
+RegionFarms = sf::st_read(paste0(ClimateScenarios[cs],"/Inputs/",SinkRegion,"SheepBeefAtRisk",ClimateScenarios[cs], ".wgs84.shp"))
 
 ####################################################
 ###Input paramaters for INA
 ####################################################
+###Set number of initial configurations
+Nconfig = 10
 ###Set number of realisations
-Nperm = 100
+Nperm = 10
 ###Set simulation duration
 Nyears = 80
 
@@ -85,10 +89,15 @@ ManEfficacy = AnnualErradicationProb
 ###Set probability of detection
 ###50% farmers confident of CNG ID 
 ###Default assumes those with ID knowledge have 50% chance of detection annually
-###Declare vector to explore other probs
+###i.e. detection prob = 0.25
+###Declare vector to explore other detection probabilities
 DetectionProbs = c(0,0.05,0.1,0.15,0.2,0.25,0.3) 
 
+
+
 ###Loop through different detection probabilities
+###Can loop through other levels of management variables too
+###Function incorporates management variables in filenames of outputs
 for(detprob in 1:length(DetectionProbs))
 {
   DetectionProb = DetectionProbs[detprob]
@@ -98,16 +107,18 @@ for(detprob in 1:length(DetectionProbs))
                                  , fun.basename.DES( d = DetectionProb, e = AnnualErradicationProb, s = SpreadReduction, short = F, norm = T ))
 
   InvasionFileName <- paste0(InvasionFileNameStem,"_InvasionProb.rds")
- 
+  file.exists(InvasionFileName)
+  
   InvasionProbResults = readRDS(InvasionFileName)
-                              
+ 
+                             
   ImageFileNameStem <- fun.basename.DES( d = DetectionProb, e = AnnualErradicationProb, s = SpreadReduction, short = T,norm = F )
   
-  ImageDir = paste0(RegionResultsDir,"\\", "InvasionHeatMaps_V03")
-  
+  ImageDir = paste0(RegionResultsDir,"\\", "ImpactFigures")
+  dir.create(ImageDir)
   #..Call----
   InfestationHeatMaps(
-      Nyears = Nyears,
+      Nyears = ncol(InvasionProbResults),
       InvasionProbResults = InvasionProbResults,
       ImageDir = ImageDir,
       FarmPolygons = RegionFarms,
@@ -121,7 +132,4 @@ for(detprob in 1:length(DetectionProbs))
       , outlines = F
     )
 }
-
-
-
 

@@ -16,7 +16,7 @@ memory.limit(size=600000)
 ###########################################################################
 ###########################################################################
 
-source("INA_Function_Plot_InfestationHeatMaps.R")
+source("INA_Function_Plot_Impacts.R")
 
 
 ######################################################
@@ -70,7 +70,6 @@ RegionFarms = sf::st_read(paste0(ClimateScenarios[cs],"/Inputs/",Regions[region]
 ###Set number of realisations
 Nperm = 100
 ###Set simulation duration
-Nyears = 80
 
 ###Probability of management adoption when infestation detected
 ManageProb = 0.9
@@ -103,25 +102,17 @@ for(detprob in 1:length(DetectionProbs))
                               
   ImageFileNameStem <- fun.basename.DES( d = DetectionProb, e = AnnualErradicationProb, s = SpreadReduction, short = T,norm = F )
   
-  ImageDir = paste0(RegionResultsDir,"\\", "InvasionHeatMaps_V03")
-  
+  ImageDir = paste0(RegionResultsDir,"\\", "ImpactFigures")
+  dir.create(ImageDir)
+  Nyears = ncol(InvasionProbResults)
   #..Call----
-  InfestationHeatMaps(
+  InfestationImpactSummary(
       Nyears = Nyears,
       InvasionProbResults = InvasionProbResults,
       ImageDir = ImageDir,
       FarmPolygons = RegionFarms,
       TitleStem = TitleStem,
       FileNameStem = ImageFileNameStem
-      , Coastline = fun.map.coastline()
-      , Hillshade = fun.map.hillshade()
-      , breaks = fun.map.breaks()
-      , col = fun.map.colors.tealtored(breaks = fun.map.breaks(), dir = ImageDir)
-      , spf = 0.75
-      , outlines = F
     )
 }
-
-
-
 

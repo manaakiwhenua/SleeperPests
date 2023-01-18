@@ -169,9 +169,17 @@ source("INA_HistoricExample_BlindRiverWithCoreFunctionLDDmatrix.R")
 ###Produce heat map jpegs and gifs
 ##for Blind River historic example
 ################################
-
+region = 10
 for(cs in 1:3)
 source("INA_HistoricExampleHeatMaps.R")
+
+###############################
+###Produce line graphs of impacts on
+##farm area and livestock number
+################################
+region = 10
+for(cs in 1:3)
+source("INA_HistoricExampleImpacts.R")
 
 ##############################################
 ##############################################
@@ -202,6 +210,14 @@ source("INA_HistoricExample_HBAYWithCoreFunctionLDDMatrix.R")
 ################################
 #for(cs in 1:3)
 source("INA_HistoricExampleHeatMapsHBAY.R")
+
+###############################
+###Produce line graphs of impacts on
+##farm area and livestock number
+################################
+region = 7
+for(cs in 1:3)
+source("INA_HistoricExampleImpacts.R")
 
 ##############################################
 ##############################################
@@ -244,6 +260,9 @@ SourceRegion = "HBAY"
 #for(cs in 1:3)
 source("INASourceSinkWithCoreFunctionLDDmatrix.R")
 source("INASourceSinkHeatMaps.R")
+
+for(cs in 1:3)
+source("INASourceSinkImpacts.R")
 
 ###Other options for invasion from Hawkes Bay are 
 ###Greater Wellington and Manawatu-Wanganui regions
