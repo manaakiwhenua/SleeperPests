@@ -17,7 +17,8 @@
 ###Key outputs are:
 ###3-dimensional arrays of invasion and management status for each node in each year of each permuation
 ###2-dimensional arrays of invasion probability (i.e. proportion of permutations pest present) for each node in each year
-###Line graphs summarising number of nodes infested and under management against time 
+###Line graphs summarising number of nodes infested, where infestations
+###are detected, the proportion of infestations detected and nodes under management against  time 
 ###########################################################################
 ###########################################################################
 
@@ -136,10 +137,6 @@ for(year in 1:Nyears)
   ###Use this vector to moderate spread probabilities in biophysical adjacency matrix
   ManagementEffect =  Managing*NodeSpreadReduction
   Detected = Invaded*HaveInfo
-  #NewSEAM = SEAM*Detected
-  #diag(NewSEAM) = 1
-  #NewBPAM = BPAM*(1-ManagementEffect)
-  #diag(NewBPAM) = 1
   CNGvLarge <-
   INAscene(
     nreals = 1,
@@ -153,7 +150,7 @@ for(year in 1:Nyears)
     yrange = NA,
     randgeo = F,
     readinitinfo = T,
-    initinfo = Managing,##Use actual adoption instead of initinfo and assume probadopt = 1
+    initinfo = HaveInfo,##Input nodes with info
     initinfo.norp = NA,
     initinfo.n = NA,
     initinfo.p = NA,
@@ -165,21 +162,21 @@ for(year in 1:Nyears)
     initbio.p = NA,
     initbio.dist = NA,
     readseam = T,
-    seam = SEAM*Detected,
+    seam = SEAM*Detected, ##Only allowinformation spread from dtected extant infestations
     seamdist = NA,
     seamrandp = NA,
     seampla = NA,
     seamplb = NA,
     readbpam = T,
-    bpam =  BPAM*(1-ManagementEffect), ##biophysical adjacency matrix moderated by spread reduction
+    bpam =  BPAM*(1-ManagementEffect), ##biophysical adjacency matrix moderated by spread reduction in managing nodes
     bpamdist = F,
     bpamrandp = NA,
     bpampla = NA,
     bpamplb = NA,
-    readprobadoptvec = F,
-    probadoptvec = NA, 
-    probadoptmean = 1,
-    probadoptsd = 0.00000001,
+    readprobadoptvec = T,
+    probadoptvec = Managing, ##Use actual adoption calculated externally instead of adoption probability
+    probadoptmean = NA,
+    probadoptsd = NA,
     readprobestabvec = F,
     probestabvec = NA,
     probestabmean = 1,
@@ -191,6 +188,7 @@ for(year in 1:Nyears)
     maneffthresh = NA,
     sampeffort = NA
   )
+
   LargeOut = CNGvLarge$multdetails
   ###Update info vector for any info spread (if SEAM supplied)
   InfoOut = as.vector(LargeOut[[1]]$multout[[1]]$vect1cL[[2]])
@@ -373,6 +371,49 @@ Quantiles = as.data.frame(aggregate(DetectedSummary$NodesDetected, by = list(Det
 Yvals = as.data.frame(Quantiles[,2])
 
 Filename = paste0(FileNameStem,"DetectedSummary.png")
+png(Filename)
+plot(Quantiles[,1],Yvals[,1], pch = NA, ylim = c(0,max(Yvals)), xlab = "Time since incursion detected (years)",
+ylab = "Nodes pest detected", main = Title)
+lines(Quantiles[,1],Yvals[,2],lwd = 3)
+lines(Quantiles[,1],Yvals[,1],lwd = 3,col = 2)
+lines(Quantiles[,1],Yvals[,3],lwd = 3,col = 2)
+dev.off()
+
+
+DetectedProportionSummary = as.data.frame(matrix(ncol = 3, nrow = 0))
+colnames(DetectedProportionSummary) = c("Realisation",   "Year",  "DetectedProportion")
+
+for(perm in 1:Nperm)
+{
+InvasionData = InvasionResults[,,perm]
+DetectedData = DetectedResults[,,perm]
+NodesDetected = colSums(DetectedData)
+NodesInvaded = colSums(InvasionData)
+DetectedProportion = NodesDetected/NodesInvaded
+DetectedProportion[is.na(DetectedProportion)==T] = 1
+Realisation = perm 
+Year = 1:Nyears
+Results = data.frame(Realisation,Year,DetectedProportion)
+DetectedProportionSummary = rbind(DetectedProportionSummary,Results)
+}
+
+
+Filename = paste0(FileNameStem,"DetectedProportionRaw.png")
+png(Filename)
+plot(DetectedProportionSummary$Year,DetectedProportionSummary$DetectedProportion,ylim = c(0,max(DetectedProportionSummary$DetectedProportion)),pch = NA
+, xlab = "Time since incursion detected (years)",
+ylab = "Proportion of infested nodes detected", main = Title)
+
+for(perm in 1:Nperm)
+{
+Sub = DetectedProportionSummary[DetectedProportionSummary$Realisation == perm,]
+lines(Sub$Year,Sub$DetectedProportion,col  = perm)
+}
+dev.off()
+Quantiles = as.data.frame(aggregate(DetectedProportionSummary$DetectedProportion, by = list(DetectedProportionSummary$Year),quantile,prob = c(0.025,0.5,0.975)))
+Yvals = as.data.frame(Quantiles[,2])
+
+Filename = paste0(FileNameStem,"DetectedProportionSummary.png")
 png(Filename)
 plot(Quantiles[,1],Yvals[,1], pch = NA, ylim = c(0,max(Yvals)), xlab = "Time since incursion detected (years)",
 ylab = "Nodes pest detected", main = Title)

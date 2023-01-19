@@ -14,7 +14,7 @@
 ###This may be based on proximity to areas of suitable habitat (e.g. farms) in neighbouring regions where the pest is present
 ###Or proximity to likey border incursion points like ports and airports
 ###Key outputs are:
-###4-dimensional arrays of invasion, detection and management status for each node in each year of each permuation of each initial invasion configuration
+###4-dimensional arrays of invasion and management status for each node in each year of each permuation of each initial invasion configuration
 ###2-dimensional arrays of invasion probability (i.e. proportion of permutations pest present) for each node in each year
 ###Line graphs summarising number of nodes infested and under management against time  
 ###########################################################################
@@ -34,17 +34,13 @@ InitBioP,		#Proportion of nodes infested at start of simulations
 InvasionRisk,           #Vector of probabilities for weighting random assignment of initial invasion occurrences
 EnvEstabProb,           #Environmentally-determined establishment probability
 BPAM,                   #Biophysical adjaceny matrix - disperal probability between each pair of nodes
-LDDmatrix,              #Option to provide long distance dispersal matrix instead of distance-independent dispesal rate
+SEAM = NA, 		#Option to provide socioeconomic adjacency matrix for information spread
+LDDmatrix=NA,           #Option to provide long distance dispersal matrix instead of distance-independent dispesal rate
 			#e.g. could be weighted by law of human visitation or data on stock movements
 geocoords,              #XY points for INAscene
 OutputDir		#Directory for storing results	
 )
 {
-#####################################
-###Should include option to map invasion risk vector
-###May also be worth mapping prob estab in this function
-#####################################
-
 ###Declare array for tracking management adoption status 
 ###of individual nodes in each year of each realisation
 ###This is a measure of potential disruption to farm businesses
@@ -88,9 +84,13 @@ BPAM = sweep(BPAM,2,EnvEstabProb,`*`)
 ###Make sure biophysical adjaceny matrix diagonals = 1
 diag(BPAM) = 1
 
-###SEAM is needed to run INA but zero info transfer between nodes is assumed
+###SEAM is needed to run INA but zero info transfer between nodes is assumed unless SEAM provided
+if(is.na(SEAM) == T)
+{
 SEAM = BPAM
 SEAM[,] = 0
+}
+
 
 for(real in 1:Nreals)
  {
@@ -138,16 +138,14 @@ for(year in 1:Nyears)
   cat("\r","Config ",real, " Realisation ", perm, " Year ", year, "...")
   RandManageProb = runif(0,1,n=nrow(BPAM))
   Managing = vector(length = nrow(BPAM))
- 
  ###This assumes that individual farmers or managers may not adopt management every single year
- ###Allows for some inconsistency in adoption for whatever reason
+ ###Allows for some inconsistency in implementation for whatever reason
  Managing = ifelse(RandManageProb>NodeManageProb,0,1)	
-  
   ###Management is only applied subsequent to detection
   Managing = Managing*HaveInfo
-  
-  ###Use this vector to moderate spread probabilities in biophysical adhacency matrix
+  ###Use this vector to moderate spread probabilities in biophysical adjacency matrix
   ManagementEffect =  Managing*NodeSpreadReduction
+  Detected = Invaded*HaveInfo
   CNGvLarge <-
   INAscene(
     nreals = 1,
@@ -161,7 +159,7 @@ for(year in 1:Nyears)
     yrange = NA,
     randgeo = F,
     readinitinfo = T,
-    initinfo = Managing,##Use actual adoption instead of initinfo and assume probadopt = 1
+    initinfo = HaveInfo,##Input nodes with info
     initinfo.norp = NA,
     initinfo.n = NA,
     initinfo.p = NA,
@@ -173,37 +171,41 @@ for(year in 1:Nyears)
     initbio.p = NA,
     initbio.dist = NA,
     readseam = T,
-    seam = SEAM*0,###Don't info allow info spread between agents
+    seam = SEAM*Detected, ##Only allow information spread from detected extant infestations
     seamdist = NA,
     seamrandp = NA,
     seampla = NA,
     seamplb = NA,
     readbpam = T,
-    bpam = BPAM*(1-ManagementEffect), ##biophysical adjacency matrix moderated by spread reduction
+    bpam =  BPAM*(1-ManagementEffect), ##biophysical adjacency matrix moderated by spread reduction in managing nodes
     bpamdist = F,
     bpamrandp = NA,
     bpampla = NA,
     bpamplb = NA,
-    readprobadoptvec = F,
-    probadoptvec = NA, 
-    probadoptmean = 1,
-    probadoptsd = 0.00000001,
+    readprobadoptvec = T,
+    probadoptvec = Managing, ##Use actual adoption calculated externally instead of adoption probability
+    probadoptmean = NA,
+    probadoptsd = NA,
     readprobestabvec = F,
     probestabvec = NA,
     probestabmean = 1,
-    probestabsd = 0.000001,
+    probestabsd = 0.00000001,
     maneffdir = 'decrease_estab',
     maneffmean = AnnualErradicationProb, ##Set mean management efficacy - effectively annual erradication prob
-    maneffsd = 0.0000001,
+    maneffsd = 0.00000001,
     usethreshman = F,
     maneffthresh = NA,
     sampeffort = NA
   )
+
   LargeOut = CNGvLarge$multdetails
   Estab = as.array(LargeOut[[1]][[1]][[1]]$estabvecL)
   ###Update infestation vector
   Invaded = ifelse(Estab[[1]]==FALSE,0,1)
   
+  InfoOut = as.vector(LargeOut[[1]]$multout[[1]]$vect1cL[[2]])
+  HaveInfo[HaveInfo == 0] = InfoOut[HaveInfo == 0]
+
   ###Record nodes adopting management
   ManagingResults[,year,perm,real] = Managing
   ###Record infested nodes
@@ -215,12 +217,11 @@ for(year in 1:Nyears)
   NewHaveInfo = vector(length= length(HaveInfo))
   NewHaveInfo =  ifelse(RandNewInfoProb>NewInfoProb,0,1) 
 
- ###Add newly detected infestation of info vector
+ ###Add newly detected infestation to info vector
  HaveInfo[HaveInfo==0] = NewHaveInfo[HaveInfo==0]  
 
  ###Record nodes where infestation detected
- ###Positive detection status permanent, even if infestation eradicated
- DetectedResults[,year,perm,real] = HaveInfo
+ DetectedResults[,year,perm,real] = HaveInfo*Invaded
  }
 }
 }
@@ -341,7 +342,7 @@ lines(Quantiles[,1],Yvals[,3],lwd = 3,col = 2)
 dev.off()
 
 DetectedSummary = as.data.frame(matrix(ncol = 4, nrow = 0))
-colnames(InvasionSummary) = c("Config",  "Realisation",   "Year",  "NodesDetected")
+colnames(DetectedSummary) = c("Config",  "Realisation",   "Year",  "NodesDetected")
 for(real in 1:Nreals)
 for(perm in 1:Nperm)
 {
@@ -378,6 +379,52 @@ lines(Quantiles[,1],Yvals[,2],lwd = 3)
 lines(Quantiles[,1],Yvals[,1],lwd = 3,col = 2)
 lines(Quantiles[,1],Yvals[,3],lwd = 3,col = 2)
 dev.off()
+
+
+DetectedProportionSummary = as.data.frame(matrix(ncol = 4, nrow = 0))
+colnames(DetectedProportionSummary) = c("Config",  "Realisation",   "Year",  "DetectedProportion")
+for(real in 1:Nreals)
+for(perm in 1:Nperm)
+{
+DetectedData = DetectedResults[,,perm,real]
+InvasionData = InvasionResults[,,perm,real]
+NodesDetected = colSums(DetectedData)
+NodesInvaded = colSums(InvasionData)
+DetectedProportion = NodesDetected/NodesInvaded
+DetectedProportion[is.na(DetectedProportion)==T] = 1
+Config = rep(real,times = Nyears)
+Realisation = perm 
+Year = 1:Nyears
+Results = data.frame(Config,Realisation,Year,DetectedProportion)
+DetectedProportionSummary = rbind(DetectedProportionSummary,Results)
+}
+
+
+Filename = paste0(FileNameStem,"DetectedProportionRaw.png")
+png(Filename)
+plot(DetectedProportionSummary$Year,DetectedProportionSummary$DetectedProportion,ylim = c(0,max(DetectedProportionSummary$DetectedProportion)),pch = NA
+, xlab = "Time since incursion detected (years)",
+ylab = "Proportion of infested nodes detected",main = Title)
+for(real in 1:Nreals)
+for(perm in 1:Nperm)
+{
+Sub = DetectedProportionSummary[DetectedProportionSummary$Config == real,]
+Sub = Sub[Sub$Realisation == perm,]
+lines(Sub$Year,Sub$DetectedProportion,col  = real)
+}
+dev.off()
+
+Filename = paste0(FileNameStem,"DetectedProportionSummary.png")
+png(Filename)
+Quantiles = as.data.frame(aggregate(DetectedProportionSummary$DetectedProportion, by = list(DetectedProportionSummary$Year),quantile,prob = c(0.025,0.5,0.975)))
+Yvals = as.data.frame(Quantiles[,2])
+plot(Quantiles[,1],Yvals[,1], pch = NA, ylim = c(0,max(Yvals)), xlab = "Time since incursion detected (years)",
+ylab = "Proportion of infested nodes detected",main = Title)
+lines(Quantiles[,1],Yvals[,2],lwd = 3)
+lines(Quantiles[,1],Yvals[,1],lwd = 3,col = 2)
+lines(Quantiles[,1],Yvals[,3],lwd = 3,col = 2)
+dev.off()
+
 }
 
 

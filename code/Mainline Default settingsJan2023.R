@@ -237,10 +237,8 @@ source("INA_HistoricExampleImpacts.R")
 for(cs in 1:3)
 source("INA_HistoricExample_BlindRiverLDDMatrixInfoSpread.R")
 
-
-
-
-
+for(cs in 1:3)
+source("INA_HistoricExample_HBAYLDDMatrixInfoSpread.R")
 
 #############################################################################
 #############################################################################
@@ -337,6 +335,60 @@ SinkRegion = "CANT"
 SourceRegion = "MARL"
 for(cs in 1:3)
 source("INASourceSinkHeatMaps.R")
+
+
+
+###############################
+###Cross-region invasions
+###Implementing model developed for Blind River
+###with a standardised core function
+###Farm-level incursion risk scaled by proximity to farms in source region 
+###And climatic suitability
+###Use Gisborne as "sink" region to trial code - relatively quick to run
+###Permit info spread to nodes within threshold distance of 
+###known infestations
+###Assign communication rate by authorities and owners of infested nodes
+###as information transfer probability within threshold distance
+###This implementation also moderates erradication probablity by the probability 
+###that all infested patches with in a node will be detected
+##############################################
+
+SinkRegion = "GISB"
+SourceRegion = "HBAY"
+for(cs in 1:3)
+source("INASourceSinkLDDMatrixInfoSpread.R")
+
+SinkRegion = "WELL"
+SourceRegion = "HBAY"
+
+for(cs in 1:3)
+source("INASourceSinkLDDMatrixInfoSpread.R")
+
+
+
+SinkRegion = "MNWG"
+SourceRegion = "HBAY"
+
+###Current climate
+cs = 1
+###Future climate 2040
+#cs = 2
+###Future climate 2090
+#cs = 3
+source("INASourceSinkLDDMatrixInfoSpread.R")
+
+
+SinkRegion = "CANT"
+SourceRegion = "MARL"
+
+###Current climate
+cs = 1
+###Future climate 2040
+#cs = 2
+###Future climate 2090
+#cs = 3
+source("INASourceSinkLDDMatrixInfoSpread.R")
+
 
 
 #############################################################################
