@@ -126,7 +126,7 @@ FarmNames = row.names(adj)
 
 InfoMaxDist = 150 #Info trnasfer threshold distance in metres
                   #Can be set to maximum annual (non-human aided) dispersal distance of pest
-CommunicationRate = 0.5 #Proportion of nodes within threshold distance contacted
+CommunicationRate = 0.25 #Proportion of nodes within threshold distance contacted each year
 SEAM = dist_mat
 SEAM = ifelse(dist_mat < InfoMaxDist,CommunicationRate,0)
 diag(SEAM) = 1

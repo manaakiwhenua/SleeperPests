@@ -135,6 +135,7 @@ for(year in 1:Nyears)
   Managing = Managing*HaveInfo
   ###Use this vector to moderate spread probabilities in biophysical adjacency matrix
   ManagementEffect =  Managing*NodeSpreadReduction
+  Detected = Invaded*HaveInfo
   CNGvLarge <-
   INAscene(
     nreals = 1,
@@ -160,7 +161,7 @@ for(year in 1:Nyears)
     initbio.p = NA,
     initbio.dist = NA,
     readseam = T,
-    seam = SEAM,
+    seam = SEAM*Detected,
     seamdist = NA,
     seamrandp = NA,
     seampla = NA,
