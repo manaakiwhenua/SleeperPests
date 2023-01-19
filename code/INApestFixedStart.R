@@ -136,6 +136,10 @@ for(year in 1:Nyears)
   ###Use this vector to moderate spread probabilities in biophysical adjacency matrix
   ManagementEffect =  Managing*NodeSpreadReduction
   Detected = Invaded*HaveInfo
+  #NewSEAM = SEAM*Detected
+  #diag(NewSEAM) = 1
+  #NewBPAM = BPAM*(1-ManagementEffect)
+  #diag(NewBPAM) = 1
   CNGvLarge <-
   INAscene(
     nreals = 1,
@@ -167,7 +171,7 @@ for(year in 1:Nyears)
     seampla = NA,
     seamplb = NA,
     readbpam = T,
-    bpam = BPAM*(1-ManagementEffect), ##biophysical adjacency matrix moderated by spread reduction
+    bpam =  BPAM*(1-ManagementEffect), ##biophysical adjacency matrix moderated by spread reduction
     bpamdist = F,
     bpamrandp = NA,
     bpampla = NA,
@@ -179,17 +183,18 @@ for(year in 1:Nyears)
     readprobestabvec = F,
     probestabvec = NA,
     probestabmean = 1,
-    probestabsd = 0.000001,
+    probestabsd = 0.00000001,
     maneffdir = 'decrease_estab',
     maneffmean = AnnualErradicationProb, ##Set mean management efficacy - effectively annual erradication prob
-    maneffsd = 0.0000001,
+    maneffsd = 0.00000001,
     usethreshman = F,
     maneffthresh = NA,
     sampeffort = NA
   )
   LargeOut = CNGvLarge$multdetails
   ###Update info vector for any info spread (if SEAM supplied)
-  HaveInfo = as.vector(LargeOut[[1]]$multout[[1]]$vect1cL[[2]])
+  InfoOut = as.vector(LargeOut[[1]]$multout[[1]]$vect1cL[[2]])
+  HaveInfo[HaveInfo == 0] = InfoOut[HaveInfo == 0]
   Estab = as.array(LargeOut[[1]][[1]][[1]]$estabvecL)
   ###Update infestation vector
   Invaded = ifelse(Estab[[1]]==FALSE,0,1)
