@@ -158,19 +158,6 @@ source("CrossRegion_LDDWeights.R")
 ###Prints summary line graphs and heat maps of changing invasion probability through time
 ##############################################
 
-################################################
-################################################
-###Call rapid testing source files here
-################################################
-################################################
-
-cs = 1
-source("INA__BlindRiver_TestingFeb2023.R")
-
-################################################
-################################################
-
-
 DetectionProbs = c(0,0.025,0.05,0.075,0.1,0.15,0.2,0.25,0.3,0.4,0.5,0.75) 
 AnnualEradicationProb = 0.04815904
 
