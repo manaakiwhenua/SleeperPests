@@ -3,6 +3,10 @@
 ###And should not be called as a source file
 ##################################################################################
 
+##################################################################################
+###When SLMACC final report completed will link analyses/source files to relevant sections
+##################################################################################
+
 #############################################################################
 #############################################################################
 ###Section 1
@@ -144,6 +148,7 @@ source("CrossRegion_LDDWeights.R")
 ###Historic invasion reproduction
 ###BlindRiver (Marlborough region) as example
 ###Include "realistic" control parameters
+###Implements previous version of INApest() core function (without some parameter definition options of final version)
 ###Vary annual detection probability
 ###Control applied as dispersal probability reduction
 ###And annual local eradication probability 
@@ -182,8 +187,45 @@ ResultsDir= paste0(main.dir,"/HistoricExamplesLDDMatrixInfoSpread_v2/",ClimateSc
 source("INA_HistoricExampleCrossRegionRisk.R")
 }
 
+
+#############################################################################
+#############################################################################
+###End of section
+#############################################################################
+#############################################################################
+
+#############################################################################
+#############################################################################
+###Section 4
+###Explore sensitivity of outcomes to variation in multiple control parameters
+###Use Blind River historic invasion as an example
+#############################################################################
+#############################################################################
+
+###############################
+###Historic invasion
+###varying multiple management parameters
+################################
+
+
+#for(cs in 1:3)
+cs = 1
+source("INA_BlindRiverLDDMatrixInfoSpreadMultManage.R")
+
+###Summarize results
+for(cs in 1:3)
+	source("INA_BlindRiverLDDMatrixInfoSpreadMultManagePostHocProcessing.R")
+
+#############################################################################
+#############################################################################
+###End of section
+#############################################################################
+#############################################################################
+
 ########################################################
-###Apply model to existing infestation in Hawkes Bay
+########################################################
+###Section 5: Apply model model validated in Blind River (Marlborough) to existing infestation in Hawkes Bay
+########################################################
 ########################################################
 
 for(cs in 1:3)
@@ -200,15 +242,11 @@ source("INA_HistoricExampleHeatMaps.R")
 
 ###Calculate invasion risk from source region to other regions
 Region  = "HBAY"
-#DetectionProbs = as.vector(0)
 for(cs in 1:3)
 {
 ResultsDir= paste0(main.dir,"/HistoricExamplesLDDMatrixInfoSpread_v2/",ClimateScenarios[cs],"/")
 source("INA_HistoricExampleCrossRegionRisk.R")
 }
-
-
-
 
 ###Produce invasion risk maps from HBAY region to MNWG region
 Region  = "HBAY"
@@ -227,9 +265,10 @@ source("INA_HistoricExampleCrossRegionThreatHeatMaps.R")
 #############################################################################
 
 
+
 #############################################################################
 #############################################################################
-###Section 4
+###Section 6
 ###This section implements simulations for cross-region invasions
 ###i.e. from regions where CNG already occurs to neighbouring regions
 ###So far examples are implemented for invasions from Marlborough and Hawkes Bay
@@ -239,8 +278,8 @@ source("INA_HistoricExampleCrossRegionThreatHeatMaps.R")
 ###############################
 ###Cross-region invasions
 ###Implementing model developed for Blind River
-###with INApest() core function
-###Farm-level incursion risk scaled by proximity to farms in source region 
+###with previous version of INApest() core function (without some parameter definition options of final version)
+###Farm-level incursion risk scaled by proximity to at-risk farms in source region 
 ###And climatic suitability
 ###Use Gisborne as "sink" region to trial code - relatively quick to run
 ###Permit info spread to nodes within threshold distance of 
@@ -314,14 +353,17 @@ source("INASourceSinkHeatMaps.R")
 
 ##############################################
 ###Try using external invasion threat to initiate invasion 
-###and as ongoing source of invasion
+###and as dynamic ongoing source of invasion
 ##############################################
 
 
 DetectionProbs = c(0,0.025,0.05,0.075,0.1,0.15,0.2,0.25,0.3,0.4,0.5,0.75) 
 AnnualEradicationProb = 0.04815904
 
-###Uses external invasion threat derived from zero management scenario in source region (HBAY)
+############################################################################################
+###Uses dynamic external invasion threat derived from zero management scenario in source region (HBAY)
+############################################################################################
+
 SinkRegion = "GISB"
 SourceRegion = "HBAY"
 for(cs in 1:3)
@@ -377,8 +419,10 @@ source("INASourceSinkHeatMaps.R")
 }
 
 
-
+############################################################################################
 ###Uses external invasion derived from detection prob = 0.2 management scenario in source region (HBAY)
+############################################################################################
+
 SinkRegion = "GISB"
 SourceRegion = "HBAY"
 for(cs in 1:3)
@@ -414,6 +458,11 @@ source("INASourceSinkHeatMaps.R")
 ###and with ongoing invasion from HBAY
 ##############################################
 
+
+############################################################################################
+###Uses external invasion derived from detection prob = 0.2 management scenario in source region (HBAY)
+############################################################################################
+
 SinkRegion = "MNWG"
 SourceRegion = "HBAY"
 #for(cs in 1:3)
@@ -440,32 +489,6 @@ source("INASourceSinkHeatMaps.R")
 
 
 
-#############################################################################
-#############################################################################
-###Section 5
-###Explore sensitivity of outcomes to variation in multiple control parameters
-###Use Blind River hostoric invasion as an example
-#############################################################################
-#############################################################################
 
-###############################
-###Historic invasions
-###varying multiple management parameters
-################################
-
-
-#for(cs in 1:3)
-cs = 1
-source("INA_BlindRiverLDDMatrixInfoSpreadMultManage.R")
-
-###Summarize results
-for(cs in 1:3)
-	source("INA_BlindRiverLDDMatrixInfoSpreadMultManagePostHocProcessing.R")
-
-#############################################################################
-#############################################################################
-###End of section
-#############################################################################
-#############################################################################
 
 
