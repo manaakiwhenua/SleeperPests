@@ -55,7 +55,7 @@ EI_Prob_CurveType = "Logit"
 ###Identifies climatically suitable farms for each region
 ###Converts ecoclimatic index values to establishment probability
 ###Calculates distance between farms within each region
-###Prints maps ecoclimatic index values and establishment probability
+###Prints maps of ecoclimatic index values and establishment probability
 ###Outputs for different climate scenarios stored in separate folders
 #############################################
 for(cs in 1:3)
@@ -72,9 +72,9 @@ source("AgribaseClimexDistMatrix.R")
 ###so that farms with parcels in multiple regions may have close neighbours in different regions
 ##################################################
 ###Current climate
-#cs = 1
+cs = 1
 ###Future climate 2040
-cs = 2
+#cs = 2
 ###Future climate 2090
 #cs = 3
 source("CrossRegion_FarmDistance.R")
@@ -87,9 +87,9 @@ source("CrossRegion_FarmDistance.R")
 ###Very time consuming so best to run separate climate scenarios in parallel
 ##############################################
 ###Current climate
-#cs = 1
+cs = 1
 ###Future climate 2040
-cs = 2
+#cs = 2
 ###Future climate 2090
 #cs = 3
 source("CrossRegion_FarmDistanceInvasionProb.R")
@@ -102,9 +102,9 @@ source("CrossRegion_FarmDistanceInvasionProb.R")
 ##################################################
 
 ###Current climate
-#cs = 1
+cs = 1
 ###Future climate 2040
-cs = 2
+#cs = 2
 ###Future climate 2090
 #cs = 3
 source("CrossRegion_FarmDistanceInvasionProbLDD.R")
@@ -113,7 +113,7 @@ source("CrossRegion_FarmDistanceInvasionProbLDD.R")
 ###Weight long distance dispersal probabilities so that
 ###probabilities add to 1 for each source farm nationally
 ###Essentially shares dispersal events across potential sink farms
-###Using long distance dispersal probabilities
+###Using long distance dispersal probabilities as weights
 ##################################################
 
 ###Current climate
@@ -136,7 +136,7 @@ source("CrossRegion_LDDWeights.R")
 ###This section implements simulations for historic examples
 ###i.e. where data on known infestations are available
 ###So far examples are implemented for Marlborough and Hawkes Bay
-###Canterbury is the other region were infestation are known. 
+###Canterbury is the other region were infestations are known. 
 #############################################################################
 #############################################################################
 
@@ -154,7 +154,7 @@ source("CrossRegion_LDDWeights.R")
 ###as information transfer probability within threshold distance
 ###This implementation also moderates erradication probablity by the probability 
 ###that all infested patches with in a node will be detected
-###Stores large outputs for post-hoc analyses
+###Stores outputs for post-hoc analyses
 ###Prints summary line graphs and heat maps of changing invasion probability through time
 ##############################################
 
@@ -252,7 +252,7 @@ source("INA_HistoricExampleCrossRegionThreatHeatMaps.R")
 ###############################
 ###Cross-region invasions
 ###Implementing model developed for Blind River
-###with a standardised core function
+###with INApest() core function
 ###Farm-level incursion risk scaled by proximity to farms in source region 
 ###And climatic suitability
 ###Use Gisborne as "sink" region to trial code - relatively quick to run
@@ -261,7 +261,7 @@ source("INA_HistoricExampleCrossRegionThreatHeatMaps.R")
 ###Assign communication rate by authorities and owners of infested nodes
 ###as information transfer probability within threshold distance
 ###This implementation also moderates eradication probablity by the probability 
-###that all infested patches with in a node will be detected
+###that all infested patches within a node will be detected
 ##############################################
 
 DetectionProbs = c(0,0.025,0.05,0.075,0.1,0.15,0.2,0.25,0.3,0.4,0.5,0.75) 
@@ -368,7 +368,7 @@ source("INASourceSinkHeatMaps.R")
 
 ##############################################
 ###Do MWNG with no info spread
-###and as ongoing source of invasion
+###and with ongoing invasion from HBAY
 ##############################################
 
 SinkRegion = "MNWG"
@@ -424,7 +424,7 @@ source("INASourceSinkHeatMaps.R")
 
 ##############################################
 ###Do MWNG with no info spread
-###and with ongoing source of invasion from HBAY
+###and with ongoing invasion from HBAY
 ##############################################
 
 SinkRegion = "MNWG"
