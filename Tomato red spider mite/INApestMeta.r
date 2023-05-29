@@ -26,6 +26,8 @@ nodespreadreduction = NodeSpreadReduction,managing = Managing)
 {
 Propagules <- rpois(nrow(sddprob), propaguleproduction * nodeR0 * n)# propagules are produced
       ###self-mediated spread
+      Pin = 0
+      Qin = 0
       Pout <- Propagules*(1-lddrate)
       if(sum(Pout)>0 ) 
        Pin <- t(rmultinom(1, size=sum(Pout*rowSums(sddprob)), prob=Pout %*% sddprob))  # propagules are dispersed
@@ -303,6 +305,8 @@ HaveInfo = InitInfo
   ###Identify nodes with known extant infestations 
   Detected = Invaded*HaveInfo
   N0 = rbinom(nrow(SDDprob),N,(1-MortalityProb*Managing))
+  if(sum(N0)<=0 )
+    N = N0 
   Pin <-0
   Qin <- 0  
     # natural dispersal 

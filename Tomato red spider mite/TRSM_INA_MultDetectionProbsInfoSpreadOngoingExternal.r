@@ -1,3 +1,9 @@
+################################################################################################
+###Tests the effect of ongoing incursions at the border on management success under current and future
+###climates for varying levels of detection probability
+################################################################################################
+
+
 #--------------------------------------------------------------------------------------------------------------------
 # Tomato red spider mite metapopulation model
 # by John Kean
@@ -268,15 +274,47 @@ Nyears = 100
 AnnualIncursionRate = 0.1
 H_vectors <- pmin(1, human_prop * d$humans)
 DetectionProbs = c(0.05,0.1,0.15,0.2,0.3,0.5,0.75,0.9)
+if(DoClimateChange == TRUE)
+	DetectionProbs = c(0.05,0.2,0.5,0.75,0.9,0.95,0.99)
 for(detprob in 1:length(DetectionProbs))
 {
-ModelName = paste0("CurrentClim_DetProb_",DetectionProbs[detprob])
+ModelName = paste0("StandardCurrentClim_DetProb_",DetectionProbs[detprob])
 if(DoClimateChange == TRUE)
-ModelName = paste0("FutureClim_DetProb_",DetectionProbs[detprob])
+ModelName = paste0("StandardFutureClim_DetProb_",DetectionProbs[detprob])
 INApestMeta(
 ModelName = ModelName,
 Nperm = Nperm,                  #Number of permutations per parameter combination
-Nyears = Nyears,                 #Simulation duration
+Ntimesteps = Nyears,                 #Simulation duration
+DetectionProb = DetectionProbs[detprob],  #Annual detection probability or vector of probabilties per node (e.g. farm) (must be between 0 and 1)
+ManageProb = 0.99,             #Annual Probability or vector of probabilities vector length nrow(BPAM)of node adopting management upon detection
+MortalityProb = 0.99,           #Annual mortality probability under management
+SpreadReduction = 0.9,        #Reduction in dispersal probability when management adopted. Must be between 0 (no spread reduction) and 1 (complete prevention of spread). Can be single value or vector length nrow(BPAM)
+InitialPopulation = d$N0,        #Population size at start if simulations
+InitBioP = NA,		#Proportion of nodes infested at start of simulations
+InvasionRisk = NA,  #Vector of probabilities for weighting random assignment of initial invasion occurrences
+R0 = d$R0,                    #Intrinsic rate of increase
+K = K,		       #Population carrying capacity
+PropaguleProduction = alpha, #Propagules produced per individual
+PropaguleEstablishment = estab, #Propagules establishment rate
+IncursionStartPop=10,      #option to set population size for new incursions
+SDDprob = nd,                   #Natural disperal probability between each pair of nodes
+SEAM = SEAM,			#Option to provide socioeconomic adjacency matrix for information spread
+LDDprob = hd,         #Option to provide long distance (human-mediated) dispersal matrix instead of distance-independent dispesal rate
+			      #e.g. could be weighted by law of human visitation or data on stock movements
+LDDrate = H_vectors,         #Proportion of available propagules entering LDD
+OngoingExternal = FALSE,   ##Option to include ongoing invasion from external sources
+OutputDir = ResultsDir,		      #Directory for storing results
+DoPlots = TRUE	     #Option to omit printing of line graphs.Default is to print.
+)
+
+
+ModelName = paste0("OngoingCurrentClim_DetProb_",DetectionProbs[detprob])
+if(DoClimateChange == TRUE)
+ModelName = paste0("OngoingFutureClim_DetProb_",DetectionProbs[detprob])
+INApestMeta(
+ModelName = ModelName,
+Nperm = Nperm,                  #Number of permutations per parameter combination
+Ntimesteps = Nyears,                 #Simulation duration
 DetectionProb = DetectionProbs[detprob],  #Annual detection probability or vector of probabilties per node (e.g. farm) (must be between 0 and 1)
 ManageProb = 0.99,             #Annual Probability or vector of probabilities vector length nrow(BPAM)of node adopting management upon detection
 MortalityProb = 0.99,           #Annual mortality probability under management
@@ -298,4 +336,5 @@ OngoingExternal = T,   ##Option to include ongoing invasion from external source
 OutputDir = ResultsDir,		      #Directory for storing results
 DoPlots = TRUE	     #Option to omit printing of line graphs.Default is to print.
 )
+
 }

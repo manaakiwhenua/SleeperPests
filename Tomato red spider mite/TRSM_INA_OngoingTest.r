@@ -1,8 +1,14 @@
+#####################################################################################
+###Code testing inclusion of pre-emptive management in nodes adjacent to detected infestations
+###And ongoing risk of incursions at the border
+#####################################################################################
+
+
 #--------------------------------------------------------------------------------------------------------------------
 # Tomato red spider mite metapopulation model
 # by John Kean
 
-# version 20220602
+# version 2023-05-5
 
  
 #--------------------------------------------------------------------------------------------------------------------
@@ -263,8 +269,8 @@ rm(Dist)
 ############################################################
 source("INApestMeta.r")
 
-Nperm = 5
-Ntimesteps = 100
+Nperm = 3
+Ntimesteps = 50
 AnnualIncursionRate = 0.1
 H_vectors <- pmin(1, human_prop * d$humans)
 DetectionProbs = c(0,0.5)
