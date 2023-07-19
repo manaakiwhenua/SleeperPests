@@ -11,7 +11,7 @@ if (dir.exists(val.path))
 }
 
 ###Set root directory where testing data and scripts stored
-main.dir = r"[R:\Projects\SL2116_MPI_SleeperPests\Analysis\Chilean needle grass\TestingApril2023\]"
+main.dir = r"[C:\Users\MasonN\OneDrive - MWLR\Documents\GitHub\SleeperPests\Chilean needle grass\Test Code and Data]"
 dir.create(main.dir,showWarnings = F)
 setwd(main.dir)
 memory.limit(size = 600000)
