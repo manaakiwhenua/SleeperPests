@@ -225,7 +225,8 @@ SDDprob = adj,                   #Biophysical adjaceny matrix - distance-based d
 SEAM = SEAM,                  ##Socioeconomic adjaceny matrix - info transfer probability between farms
 LDDprob = LDDprob,         #Long distance dispersal probability matrix 
 geocoords = geocoords,              #XY points for INAscene
-OutputDir = OutputDir	#Directory for storing results to disk	
+OutputDir = OutputDir,	#Directory for storing results to disk	
+LibPath = val.path
 )
 End <- Sys.time()
 ParallelTime <- End-Start

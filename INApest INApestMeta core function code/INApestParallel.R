@@ -69,7 +69,8 @@ LDDprob = 0,         #Option to provide long-distance (human-mediated) dispersal
 geocoords,              #XY points for INAscene
 OngoingExternal = F,   ##Option to include ongoing invasion from external sources
 OutputDir = NA,		      #Directory for storing results
-DoPlots = TRUE	     #Option to omit printing of line graphs. Default is to print.
+DoPlots = TRUE,	     #Option to omit printing of line graphs. Default is to print.
+LibPath
 )
 {
 ###POTENTIAL ADDITIONS
@@ -151,17 +152,7 @@ PermOut <- foreach(1:Nperm, .combine = 'acomb',.packages=c("abind")) %dopar%
 {
 ###Need to define library path and load INA package for each step in the loop
 ###Not recognised by packages argument in foreach
-  val.path <- paste0( "N:/Projects/BaseData/RPackages/R-4.1.3")
-  if (dir.exists(val.path))
-  {
-    .libPaths(val.path)
-    .libPaths()
-  } else
-  {
-    cat(val.path, "\r\n")
-    stop( "Cannot find the lib path specified")
-  }
-  
+.libPaths(LibPath)
 library(INA)  
 InvasionResultsLoop <- array(dim = c(nrow(SDDprob),Ntimesteps))
 ManagingResultsLoop <- InvasionResultsLoop

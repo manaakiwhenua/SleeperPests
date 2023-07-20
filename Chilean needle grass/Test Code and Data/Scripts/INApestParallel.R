@@ -19,6 +19,14 @@
 ###are detected, the proportion of infestations detected and nodes under management against time 
 ###########################################################################
 ###########################################################################
+
+#######################################################################
+###This implements parallel processing in foreach for the permutation loop.
+###Not ready for release as need to make sure INA is present
+###and manually define R libary path as R doesn't like one-drive associated paths
+#######################################################################
+
+###This forces R to use a particular R library path
 val.path <- paste0( "N:/Projects/BaseData/RPackages/R-4.1.3")
 if (dir.exists(val.path))
 {
@@ -30,6 +38,7 @@ if (dir.exists(val.path))
   stop( "Cannot find the lib path specified")
 }
 
+###Load the required packages 
 library(abind)
 library(INA)
 library(foreach)
@@ -60,7 +69,8 @@ LDDprob = 0,         #Option to provide long-distance (human-mediated) dispersal
 geocoords,              #XY points for INAscene
 OngoingExternal = F,   ##Option to include ongoing invasion from external sources
 OutputDir = NA,		      #Directory for storing results
-DoPlots = TRUE	     #Option to omit printing of line graphs. Default is to print.
+DoPlots = TRUE,	     #Option to omit printing of line graphs. Default is to print.
+LibPath
 )
 {
 ###POTENTIAL ADDITIONS
@@ -142,17 +152,7 @@ PermOut <- foreach(1:Nperm, .combine = 'acomb',.packages=c("abind")) %dopar%
 {
 ###Need to define library path and load INA package for each step in the loop
 ###Not recognised by packages argument in foreach
-  val.path <- paste0( "N:/Projects/BaseData/RPackages/R-4.1.3")
-  if (dir.exists(val.path))
-  {
-    .libPaths(val.path)
-    .libPaths()
-  } else
-  {
-    cat(val.path, "\r\n")
-    stop( "Cannot find the lib path specified")
-  }
-  
+.libPaths(LibPath)
 library(INA)  
 InvasionResultsLoop <- array(dim = c(nrow(SDDprob),Ntimesteps))
 ManagingResultsLoop <- InvasionResultsLoop
