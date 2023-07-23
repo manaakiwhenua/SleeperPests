@@ -26,22 +26,9 @@
 ###and manually define R libary path as R doesn't like one-drive associated paths
 #######################################################################
 
-###This forces R to use a particular R library path
-val.path <- paste0( "N:/Projects/BaseData/RPackages/R-4.1.3")
-if (dir.exists(val.path))
-{
-  .libPaths(val.path)
-  .libPaths()
-} else
-{
-  cat(val.path, "\r\n")
-  stop( "Cannot find the lib path specified")
-}
-
 ###Load the required packages 
 library(abind)
 library(INA)
-library(foreach)
 library(doParallel)
 
 
@@ -147,13 +134,13 @@ registerDoParallel(cluster)
 ###Loop through each realisation
 ###Nodes with information (which have detected infestation) at start of simulations
 ###vary across realisations 
+
+###Define a function for combining results of each permutation
 acomb <- function(...) abind(..., along=4)
-PermOut <- foreach(1:Nperm, .combine = 'acomb',.packages=c("abind")) %dopar% 
+
+###Need to include required packages in the .packages arguement of the foreach call
+PermOut <- foreach(1:Nperm, .combine = 'acomb',.packages=c("abind","INA")) %dopar% 
 {
-###Need to define library path and load INA package for each step in the loop
-###Not recognised by packages argument in foreach
-.libPaths(LibPath)
-library(INA)  
 InvasionResultsLoop <- array(dim = c(nrow(SDDprob),Ntimesteps))
 ManagingResultsLoop <- InvasionResultsLoop
 DetectedResultsLoop <- InvasionResultsLoop

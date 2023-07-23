@@ -1,3 +1,14 @@
+#install.packages("abind",lib = .libPaths())
+###Set root directory where testing data and scripts stored
+main.dir = r"[R:\Projects\SL2116_MPI_SleeperPests\Analysis\Chilean needle grass\TestingApril2023\]"
+dir.create(main.dir,showWarnings = F)
+setwd(main.dir)
+ClimexVars = c("EI","EI_Niwa_204","EI_Niwa209")
+ClimateScenarios = c("Current","Future_2040","Future_2090")
+EI_Prob_CurveType = "Logit"
+#EI_Prob_CurveType = "SplitLinear"
+cs = 1
+
 ##################################################
 ###Simulate spread from infested farms in Blind River
 ###Initial invasion approximates infestation documented here:
@@ -11,7 +22,7 @@ library(INA)
 library(tidyverse)
 library(dplyr)
 library(boot)
-memory.limit(size=600000) 
+library(abind)
 
 ###########################################################################
 ###########################################################################
@@ -193,7 +204,7 @@ DetectionProbs = c(0,0.05,0.2)
 InitBio = rep(0,times = nrow(adj))
 InitBio[FarmNames %in% HistoricInfestation$farm_id] = 1 
 
-
+source("Scripts/INApestParallel.R")
 
 set.seed(42)
 ##################################################
@@ -225,8 +236,7 @@ SDDprob = adj,                   #Biophysical adjaceny matrix - distance-based d
 SEAM = SEAM,                  ##Socioeconomic adjaceny matrix - info transfer probability between farms
 LDDprob = LDDprob,         #Long distance dispersal probability matrix 
 geocoords = geocoords,              #XY points for INAscene
-OutputDir = OutputDir,	#Directory for storing results to disk	
-LibPath = val.path
+OutputDir = OutputDir	#Directory for storing results to disk	
 )
 End <- Sys.time()
 ParallelTime <- End-Start
@@ -258,7 +268,8 @@ INApestParallel(
   SEAM = SEAM,                  ##Socioeconomic adjaceny matrix - info transfer probability between farms
   LDDprob = LDDprob,         #Long distance dispersal probability matrix 
   geocoords = geocoords,              #XY points for INAscene
-  OutputDir = OutputDir	#Directory for storing results to disk	
+  OutputDir = OutputDir,	#Directory for storing results to disk	
+  LibPath = val.path
 )
 End <- Sys.time()
 ParallelTimeWithManagement <- End-Start
