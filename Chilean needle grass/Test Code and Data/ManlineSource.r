@@ -8,7 +8,7 @@ ClimateScenarios = c("Current","Future_2040","Future_2090")
 EI_Prob_CurveType = "Logit"
 #EI_Prob_CurveType = "SplitLinear"
 install.packages("actuar")
-
+install.packages("magick")
 ###Run test source code
 for(cs in 1:3)
 source("Scripts/INA__BlindRiver_TestingApril2023.R")
@@ -16,6 +16,13 @@ source("Scripts/INA__BlindRiver_TestingApril2023.R")
 ###Run test source code
 for(cs in 1:3)
 source("Scripts/INA__BlindRiver_TestingApril2023v2.R")
+
+###Run test source code implementing parallel processing
+###This uses rapid custom function to generate heat maps/gifs 
+###for visualisation of results
+###Maps not intended for publication
+for(cs in 1:3)
+  source("Scripts/INA__BlindRiver_TestingApril2023Parallel.R")
 
 ###Run test source code illustrating effect of long distance dispersal (LDD)
 for(cs in 1:3)

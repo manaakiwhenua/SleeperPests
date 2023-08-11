@@ -218,7 +218,6 @@ SEAM1 <-graph_from_adjacency_matrix(mtx) #convert the matrix to an iGraph object
 n <- nrow(SEAM)#number of nodes in the network, i.e. how many land-owners (nodes) you want to include
 SumComm <- sum(SEAM)-nrow(SEAM)
 MeanComm = SumComm/(nrow(SEAM)^2-nrow(SEAM))
-MeanComm*nrow(SEAM)
   #OR
   m <- #the number of links in the network
   # in the "type", choose type = c("gnp" or "gnm") based on the choice between p and m  
@@ -234,6 +233,8 @@ MeanComm*nrow(SEAM)
   )
 SEAM2mat <- as.matrix(SEAM2)
 sum(SEAM2mat)
+
+
 #OPTION 3: small-world model for a social network
 dim <- #the dimension of the starting lattice, use 1
   size <- #number of land-owners in the network  

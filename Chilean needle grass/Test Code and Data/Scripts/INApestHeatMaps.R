@@ -1,4 +1,5 @@
 
+library(magick)
 INAheatmapShapeFile = function(ShapeObject, InvasionProbs, ImageDir)
 {
 dir.create(ImageDir)
@@ -10,14 +11,14 @@ gg =  ggplot()+
 geom_sf(data=ShapeObject, aes(fill=InvasionProb))+
 scale_fill_gradientn(limits = c(0,1),colours=c("lightblue2","green4" ,"yellow2", "red"), values=c(0, 0.01,0.05,0.1,0.3,0.5,0.7,0.9,1))+
 geom_tile(height=6, width=5) + 
-labs(, title=Title, fill="Invasion \nprobability")+
+labs(title=Title, fill="Invasion \nprobability")+
 theme(plot.title=element_text(hjust=0.5)) +   # centres the title
 guides(fill=guide_colourbar(barwidth=1, barheight=15))
 ImageFile = paste0(ImageDir, ModelName,"_year_", formatC( x = year, width = 3, flag = "0"),".jpg")
 ggsave(ImageFile,dpi = 90)
 }
 
-imgs = paste0(ImageDir, ModelName,"_year_", formatC( x = 1:Nyears, width = 3, flag = "0"),".jpg")
+imgs = paste0(ImageDir, ModelName,"_year_", formatC( x = 1:ncol(InvasionProbs), width = 3, flag = "0"),".jpg")
 img_list <- lapply(imgs, image_read)
 
 ## join the images together
@@ -41,7 +42,7 @@ XY$Z = InvasionProbs[,year]
 Title = paste0(ModelName,"\nYear = ", year)
 gg = ggplot(XY,aes(X,Y, color = Z))+
 geom_point(size = 3) +
-scale_colour_gradientn(limits = c(0,1),,colours=c("lightblue2","green4" ,"yellow2", "red"), values=c(0, 0.01,0.05,0.1,0.3,0.5,0.7,0.9,1))+
+scale_colour_gradientn(limits = c(0,1),colours=c("lightblue2","green4" ,"yellow2", "red"), values=c(0, 0.01,0.05,0.1,0.3,0.5,0.7,0.9,1))+
 coord_fixed(ratio = 1)+
 labs(title = Title,color="Invasion \nprobability")+
 theme(plot.title=element_text(hjust=0.5)) + 
@@ -53,7 +54,7 @@ theme(plot.title=element_text(hjust=0.5)) +
 ImageFile = paste0(ImageDir, ModelName,"_year_", formatC( x = year, width = 3, flag = "0"),".jpg")
 ggsave(ImageFile,dpi = 90)
 }
-imgs = paste0(ImageDir, ModelName,"_year_", formatC( x = 1:Nyears, width = 3, flag = "0"),".jpg")
+imgs = paste0(ImageDir, ModelName,"_year_", formatC( x = 1:ncol(InvasionProbs), width = 3, flag = "0"),".jpg")
 img_list <- lapply(imgs, image_read)
 
 ## join the images together

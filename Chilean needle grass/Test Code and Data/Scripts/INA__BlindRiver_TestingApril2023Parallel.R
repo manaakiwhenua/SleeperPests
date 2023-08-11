@@ -1,13 +1,3 @@
-#install.packages("abind",lib = .libPaths())
-###Set root directory where testing data and scripts stored
-main.dir = r"[R:\Projects\SL2116_MPI_SleeperPests\Analysis\Chilean needle grass\TestingApril2023\]"
-dir.create(main.dir,showWarnings = F)
-setwd(main.dir)
-ClimexVars = c("EI","EI_Niwa_204","EI_Niwa209")
-ClimateScenarios = c("Current","Future_2040","Future_2090")
-EI_Prob_CurveType = "Logit"
-#EI_Prob_CurveType = "SplitLinear"
-cs = 1
 
 ##################################################
 ###Simulate spread from infested farms in Blind River
@@ -32,6 +22,7 @@ library(abind)
 
 source("Scripts/INApestParallel.R")
 source("Scripts/INApest.R")
+source("Scripts/INApestHeatMaps.R")
 
 ######################################################
 ######################################################
@@ -89,6 +80,8 @@ Regions = c("AUCK", "EBOP", "CANT", "OTAG", "GISB", "WAIK", "HBAY","MNWG", "WELL
 region = 10
 RegionResultsDir= paste0(ResultsDir,Regions[region],"/")
 dir.create(RegionResultsDir,showWarnings = F)
+FarmShapeFile <- paste0(main.dir,"/",ClimateScenarios[cs],"/","MARLSheepBeefAtRisk",ClimateScenarios[cs],".wgs84.shp")
+FarmShape <-sf::st_read(FarmShapeFile)
 
 ########################################################
 ###Read in simple XY points for INA and
@@ -204,7 +197,7 @@ DetectionProbs = c(0,0.05,0.2)
 InitBio = rep(0,times = nrow(adj))
 InitBio[FarmNames %in% HistoricInfestation$farm_id] = 1 
 
-source("Scripts/INApestParallel.R")
+
 
 set.seed(42)
 ##################################################
@@ -241,6 +234,11 @@ OutputDir = OutputDir	#Directory for storing results to disk
 End <- Sys.time()
 ParallelTime <- End-Start
 
+InvasionProbFile <- paste0(OutputDir,ModelName,"InvasionProb.RDS")
+InvasionProb <- readRDS(InvasionProbFile)
+ImageDir <- paste0(OutputDir,"INAheatmaps/")
+INAheatmapShapeFile(FarmShape, InvasionProb, ImageDir)
+
 set.seed(42)
 ###Check that management is implemented correctly
 DetectionProb = 0.05
@@ -274,6 +272,12 @@ INApestParallel(
 End <- Sys.time()
 ParallelTimeWithManagement <- End-Start
 
+InvasionProbFile <- paste0(OutputDir,ModelName,"InvasionProb.RDS")
+InvasionProb <- readRDS(InvasionProbFile)
+ImageDir <- paste0(OutputDir,"INAheatmaps/")
+INAheatmapShapeFile(FarmShape, InvasionProb, ImageDir)
+
+
 set.seed(42)
 DetectionProb = 0
 ###Standard settings
@@ -304,4 +308,9 @@ INApest(
 )
 End <- Sys.time()
 StandardTime <- End-Start
+
+InvasionProbFile <- paste0(OutputDir,ModelName,"InvasionProb.RDS")
+InvasionProb <- readRDS(InvasionProbFile)
+ImageDir <- paste0(OutputDir,"INAheatmaps/")
+INAheatmapShapeFile(FarmShape, InvasionProb, ImageDir)
 
