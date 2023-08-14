@@ -1,7 +1,7 @@
 rm(list = ls())
 # set working directory 
-setwd("R:\\Projects/SL2116_MPI_SleeperPests/Analysis/TRSM/Release Code and Data")
-
+setwd(r"[C:\Users\MasonN\OneDrive - MWLR\Documents\GitHub\SleeperPests\Tomato red spider mite]")
+install.packages("gnorm")
 
 ###Test May 2023 version with code for propagule production, dispersal and population growth 
 ###timesteps passed as separate function
