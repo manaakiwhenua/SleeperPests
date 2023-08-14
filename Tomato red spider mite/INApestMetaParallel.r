@@ -157,6 +157,29 @@ acomb <- function(...) abind(..., along=4)
 ###Need to include required packages in the .packages arguement of the foreach call
 PermOut <- foreach(1:Nperm, .combine = 'acomb',.packages=c("abind")) %dopar% 
   {
+  
+    LocalDynamicsLoop = function(sddprob = SDDprob, propaguleproduction = PropaguleProduction,nodeR0 = NodeR0,n=N,
+                              lddprob = LDDprob, lddrate = LDDrate,k_is_0 = K_is_0, nodeK = NodeK,propaguleestablishment = PropaguleEstablishment,
+                              nodespreadreduction = NodeSpreadReduction,managing = Managing)
+    {
+      Propagules <- rpois(nrow(sddprob), propaguleproduction * nodeR0 * n)# propagules are produced
+      ###self-mediated spread
+      Pout <- Propagules*(1-lddrate)
+      if(sum(Pout)>0 ) 
+        Pin <- t(rmultinom(1, size=sum(Pout*rowSums(sddprob)), prob=Pout %*% sddprob))  # propagules are dispersed
+      
+      ###human-mediated spread
+      if (is.matrix(lddprob)==T) 
+      {
+        Qout  = Propagules*lddrate *(1-nodespreadreduction*managing)       
+        if(sum(Qout)>0)  
+          Qin <- t(rmultinom(1, size=sum(Qout*rowSums(lddprob)), prob=Qout %*% lddprob))    # propagules are dispersed
+      }
+      
+      # propagule success depends on availability of uninfested host plants
+      Nout <- ifelse(k_is_0, 0, n + rbinom(nrow(sddprob), nodeK-n, 1 - exp(-propaguleestablishment*(Pin+Qin))))
+      return(Nout)
+    }  
   InvasionResultsLoop <- array(dim = c(nrow(SDDprob),Ntimesteps))
   PopulationResultsLoop <- InvasionResultsLoop
   ManagingResultsLoop <- InvasionResultsLoop
@@ -333,7 +356,7 @@ HaveInfo = InitInfo
   if(sum(N0)>0 ) 
   {
       
-  N <- LocalDynamics(sddprob = SDDprob, propaguleproduction = PropaguleProduction,nodeR0 = NodeR0,n=N0,
+  N <- LocalDynamicsLoop(sddprob = SDDprob, propaguleproduction = PropaguleProduction,nodeR0 = NodeR0,n=N0,
 lddprob = LDDprob, lddrate = LDDrate,k_is_0 = K_is_0, nodeK = NodeK,propaguleestablishment = PropaguleEstablishment,
 nodespreadreduction = NodeSpreadReduction,managing = Managing)
   } 
@@ -392,7 +415,7 @@ stopCluster(cluster)
 ###End of Simulation
 ###########################################################
 
-###Extract results for invasion, managing and dectection status into separate 3d arrays
+###Extract results for invasion, managing and detection status into separate 3d arrays
 InvasionResults <- PermOut[,,1,]
 PopulationResults <- PermOut[,,2,]
 ManagingResults <- PermOut[,,3,]
