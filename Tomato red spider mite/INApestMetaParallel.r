@@ -3,7 +3,7 @@
 ###Declares a function overlaying management on a metapopulation spread model 
 ###Key inputs are: 
 ###1) matrix of natural dispersal probibilities between each pair of sites (i.e. nodes of the network). Matrix can be non-symmetrical (i.e. can have source and sink nodes) 
-###2) Envionmentally-determined intrinsic rate of population increase (R0)
+###2) Envionmentally-determined per-capita propagule production
 ###3) Envionmentally-determined carrying capacity (K)
 ###4) Management parameters
 ### a) Annual detection probability
@@ -29,35 +29,10 @@ library(abind)
 library(doParallel)
 
 
-local.dynamics = function(sddprob = SDDprob, propaguleproduction = PropaguleProduction,nodeR0 = NodeR0,n=N,
-lddprob = LDDprob, lddrate = LDDrate,k_is_0 = K_is_0, nodeK = NodeK,propaguleestablishment = PropaguleEstablishment,
-nodespreadreduction = NodeSpreadReduction,managing = Managing)
-{
-Propagules <- rpois(nrow(sddprob), propaguleproduction * nodeR0 * n)# propagules are produced
-      ###self-mediated spread
-      Pout <- Propagules*(1-lddrate)
-      if(sum(Pout)>0 ) 
-       Pin <- t(rmultinom(1, size=sum(Pout*rowSums(sddprob)), prob=Pout %*% sddprob))  # propagules are dispersed
-      
-      ###human-mediated spread
-      if (is.matrix(lddprob)==T) 
-       {
-       Qout  = Propagules*lddrate *(1-nodespreadreduction*managing)       
-       if(sum(Qout)>0)  
-        Qin <- t(rmultinom(1, size=sum(Qout*rowSums(lddprob)), prob=Qout %*% lddprob))    # propagules are dispersed
-       }
-     
-    # propagule success depends on availability of uninfested host plants
-    Nout <- ifelse(k_is_0, 0, n + rbinom(nrow(sddprob), nodeK-n, 1 - exp(-propaguleestablishment*(Pin+Qin))))
-return(Nout)
-}
-
-
 INApestMetaParallel = function(
 ModelName, #Name for storing results to file 
 Nperm,                  #Number of permutations per parameter combination
 Ntimesteps,                 #Simulation duration timesteps can be any length of time
-LocalDynamics = local.dynamics, #Local population growth,dispersal and management function
 DetectionProb,          #Annual detection probability or vector of probabilties per node (e.g. farm) (must be between 0 and 1)
 DetectionSD = NULL, #Option to provide standard deviation for management probability can be single number or vector (nodes)
 ManageProb,             #Annual Probability or vector of probabilities vector length nrow(SDDprob)of node adopting management upon detection
@@ -69,7 +44,6 @@ SpreadReductionSD = NULL, #Option to provide standard deviation for management p
 InitialPopulation = NA,        #Vector or matrix (nodes x timesteps) of population sizes at start of simulations
 InitBioP = NA,		#Proportion of nodes infested at start of simulations
 InvasionRisk = NA,           #Vector of probabilities of invasion from external sources
-R0,                    #Intrinsic rate of increase  - vector (nodes)
 K,		       #Population carrying capacity - vector (nodes)
 PropaguleProduction, #Propagules produced per individual
 PropaguleEstablishment, #Propagules establishment probability
@@ -97,29 +71,8 @@ inv_K <- 1 / sum(K)
 NodeK = K
 }
 
-if(is.matrix(R0) == FALSE)
- NodeR0 = R0
-
-###Declare array tracking population size
-###of individual nodes in each timestep of each realisation
-PopulationResults = array(dim = c(nrow(SDDprob),Ntimesteps,Nperm))
-
-###Declare array tracking invasion status
-###of individual nodes in each timestep of each realisation
-InvasionResults = array(dim = c(nrow(SDDprob),Ntimesteps,Nperm))
-
-
-###Declare array tracking detection status 
-###of individual nodes in each timestep of each realisation
-DetectedResults = InvasionResults
-
-###Declare array for tracking management adoption status 
-###of individual nodes in each timestep of each realisation
-###This is a measure of potential disruption to farm businesses
-###or ongoing management burden (surveillance and removal)
-###for publicly-owned lands
-ManagingResults = InvasionResults
-
+if(is.matrix(PropaguleProduction) == FALSE)
+ NodePropaguleProduction = PropaguleProduction
 
 ###Declare matrix for information spread simulations
 if(is.matrix(SEAM) == T)
@@ -273,8 +226,8 @@ HaveInfo = InitInfo
     }  
 
   ###If rate of increase provided as matrix assign values for relevant timestep
-  if(is.matrix(R0) == TRUE)
-    NodeR0 = R0[,timestep] 
+  if(is.matrix(PropaguleProduction) == TRUE)
+    NodePropaguleProduction = PropaguleProduction[,timestep] 
       
   ###Randomly assign annual detection probability, based on mean and sd
   ###If DetectionProb given as matrix (nodes x timesteps)
@@ -332,10 +285,24 @@ HaveInfo = InitInfo
     # natural dispersal 
   if(sum(N0)>0 ) 
   {
-      
-  N <- LocalDynamics(sddprob = SDDprob, propaguleproduction = PropaguleProduction,nodeR0 = NodeR0,n=N0,
-lddprob = LDDprob, lddrate = LDDrate,k_is_0 = K_is_0, nodeK = NodeK,propaguleestablishment = PropaguleEstablishment,
-nodespreadreduction = NodeSpreadReduction,managing = Managing)
+    
+  Propagules <- rpois(nrow(SDDprob), NodePropaguleProduction * N)# propagules are produced
+  ###self-mediated spread
+  Pout <- Propagules*(1-LDDrate)
+  if(sum(Pout)>0 ) 
+    Pin <- t(rmultinom(1, size=sum(Pout*rowSums(SDDprob)), prob=Pout %*% SDDprob))  # propagules are dispersed
+  
+  ###human-mediated spread
+  if (is.matrix(LDDprob)==T) 
+    {
+    Qout  = Propagules*LDDrate *(1-NodeSpreadReduction*Managing)       
+    if(sum(Qout)>0)  
+      Qin <- t(rmultinom(1, size=sum(Qout*rowSums(LDDprob)), prob=Qout %*% LDDprob))    # propagules are dispersed
+    }
+  
+  # propagule success depends on availability of uninfested host plants
+  N <- ifelse(K_is_0, 0, N + rbinom(nrow(SDDprob), NodeK-N, 1 - exp(-PropaguleEstablishment*(Pin+Qin))))
+
   } 
  ###Update info vector for any info spread (if SEAM supplied)
  ###Note once nodes obtain info they always have info (only zero values updated)
@@ -385,7 +352,7 @@ nodespreadreduction = NodeSpreadReduction,managing = Managing)
  ###Record detection status
  DetectedResultsLoop[,timestep] = HaveInfo*Invaded 
  }
- abind(InvasionResults,PopulationResults,ManagingResultsLoop,DetectedResultsLoop,along = 3)
+ abind(InvasionResultsLoop,PopulationResultsLoop,ManagingResultsLoop,DetectedResultsLoop,along = 3)
 }
 stopCluster(cluster)
 ###########################################################
@@ -397,7 +364,6 @@ InvasionResults <- PermOut[,,1,]
 PopulationResults <- PermOut[,,2,]
 ManagingResults <- PermOut[,,3,]
 DetectedResults <- PermOut[,,4,]
-dim(InvasionResults)
 
 ###########################################################
 ###Save results for post-hoc analyses
