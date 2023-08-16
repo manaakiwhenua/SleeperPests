@@ -9,6 +9,7 @@ EI_Prob_CurveType = "Logit"
 #EI_Prob_CurveType = "SplitLinear"
 install.packages("actuar")
 install.packages("magick")
+install.packages("sf")
 ###Run test source code
 for(cs in 1:3)
 source("Scripts/INA__BlindRiver_TestingApril2023.R")
@@ -23,6 +24,11 @@ source("Scripts/INA__BlindRiver_TestingApril2023v2.R")
 ###Maps not intended for publication
 for(cs in 1:3)
   source("Scripts/INA__BlindRiver_TestingApril2023Parallel.R")
+
+###Run test source code implementing simulations
+###without calling INAscene
+for(cs in 1:3)
+  source("Scripts/INA__BlindRiver_TestingApril2023ParallelNoINAscene.R")
 
 ###Run test source code illustrating effect of long distance dispersal (LDD)
 for(cs in 1:3)

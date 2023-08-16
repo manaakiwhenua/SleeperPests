@@ -3,7 +3,7 @@
 ###Declares a function overlaying management on a metapopulation spread model 
 ###Key inputs are: 
 ###1) matrix of natural dispersal probibilities between each pair of sites (i.e. nodes of the network). Matrix can be non-symmetrical (i.e. can have source and sink nodes) 
-###2) Envionmentally-determined intrinsic rate of population increase (R0)
+###2) Envionmentally-determined per-capita propagule production
 ###3) Envionmentally-determined carrying capacity (K)
 ###4) Management parameters
 ### a) Annual detection probability
@@ -20,12 +20,14 @@
 ###########################################################################
 ###########################################################################
 
-local.dynamics = function(sddprob = SDDprob, propaguleproduction = PropaguleProduction,nodeR0 = NodeR0,n=N,
-lddprob = LDDprob, lddrate = LDDrate,k_is_0 = K_is_0, nodeK = NodeK,propaguleestablishment = PropaguleEstablishment,
+local.dynamics = function(sddprob = SDDprob, nodepropaguleproduction = NodePropaguleProduction,nodeenvestabprob = NodeEnvEstabProb,n=N,
+lddprob = LDDprob, lddrate = LDDrate,k_is_0 = K_is_0, nodeK = NodeK,nodepropaguleestablishment = NodePropaguleEstablishment,
 nodespreadreduction = NodeSpreadReduction,managing = Managing)
 {
-Propagules <- rpois(nrow(sddprob), propaguleproduction * nodeR0 * n)# propagules are produced
+Propagules <- rpois(nrow(sddprob), nodepropaguleproduction * n)# propagules are produced
       ###self-mediated spread
+      Pin = 0
+      Qin = 0
       Pout <- Propagules*(1-lddrate)
       if(sum(Pout)>0 ) 
        Pin <- t(rmultinom(1, size=sum(Pout*rowSums(sddprob)), prob=Pout %*% sddprob))  # propagules are dispersed
@@ -39,7 +41,7 @@ Propagules <- rpois(nrow(sddprob), propaguleproduction * nodeR0 * n)# propagules
        }
      
     # propagule success depends on availability of uninfested host plants
-    Nout <- ifelse(k_is_0, 0, n + rbinom(nrow(sddprob), nodeK-n, 1 - exp(-propaguleestablishment*(Pin+Qin))))
+    Nout <- ifelse(k_is_0, 0, n + rbinom(nrow(sddprob), nodeK-n, 1 - exp(-nodepropaguleestablishment*nodeenvestabprob*(Pin+Qin))))
 return(Nout)
 }
 
@@ -60,7 +62,11 @@ SpreadReductionSD = NULL, #Option to provide standard deviation for management p
 InitialPopulation = NA,        #Vector or matrix (nodes x timesteps) of population sizes at start of simulations
 InitBioP = NA,		#Proportion of nodes infested at start of simulations
 InvasionRisk = NA,           #Vector of probabilities of invasion from external sources
-R0,                    #Intrinsic rate of increase  - vector (nodes)
+InitialInfo = NA,        #Vector or of nodes with information at start of simulations
+InitInfoP = NA,		#Proportion of nodes with information at start of simulations
+ExternalInfoProb = NA,           #Vector of probabilities of communication from external sources
+EnvEstabProb = 1,           #Environmentally determined establishment probability. Can be single value, vector (nodes) or matrix (nodes x timesteps)
+Survival = 1,           # local population survival probability. Set to 1 for no environmental limitation on survival. Can be single number, vector (nodes) or matrix (nodes x timesteps)
 K,		       #Population carrying capacity - vector (nodes)
 PropaguleProduction, #Propagules produced per individual
 PropaguleEstablishment, #Propagules establishment probability
@@ -70,7 +76,8 @@ SEAM = 0,			#Option to provide socioeconomic adjacency matrix for information sp
 LDDprob = NA,         #Option to provide long distance (human-mediated) dispersal matrix instead of distance-independent dispesal rate
 			      #e.g. could be weighted by law of human visitation or data on stock movements
 LDDrate = 0,         #Proportion of available propagules entering LDD
-OngoingExternal = F,   ##Option to include ongoing invasion from external sources
+OngoingExternalInvasion = F,   ##Option to include ongoing invasion from external sources
+OngoingExternalInfo = F,   ##Option to include ongoing communication from external sources
 OutputDir = NA,		      #Directory for storing results
 DoPlots = TRUE	     #Option to omit printing of line graphs.Default is to print.
 )
@@ -88,8 +95,17 @@ inv_K <- 1 / sum(K)
 NodeK = K
 }
 
-if(is.matrix(R0) == FALSE)
- NodeR0 = R0
+if(is.matrix(PropaguleProduction) == FALSE)
+  NodePropaguleProduction = PropaguleProduction
+
+if(is.matrix(PropaguleEstablishment) == FALSE)
+  NodePropaguleEstablishment = PropaguleEstablishment
+
+if(is.matrix(EnvEstabProb) == F)
+  NodeEnvEstabProb <- EnvEstabProb
+
+if(is.matrix(Survival) == F)
+  NodeSurvival <- Survival
 
 ###Declare array tracking population size
 ###of individual nodes in each timestep of each realisation
@@ -171,6 +187,43 @@ if(is.na(IncursionStartPop) == F)
 if(length(InitialPopulation) == nrow(SDDprob))
 	InitBio = InitialPopulation
 
+###Select nodes with information at start of simulation  according either to "InitialInfo" binary vector OR
+###"ExternalInfoProb" probabilities and/or initial proportion of nodes with information ("InitInfoP") OR
+###just "InitInfoP" if neither "InitialInfo" or "ExternalInfoProb" supplied by user.
+###If no initial info variables provided, no nodes have info at start of simulations
+InitInfo = rep(0,times = nrow(SDDprob))
+if(is.na(sum(InitialInfo))== F || is.na(InitInfoP) == F || is.na(ExternalInfoProb) == F )
+{
+  if(length(InitialInfo) != nrow(SDDprob))
+  {
+    if(length(ExternalInfoProb) == nrow(SDDprob))
+    {
+      if(is.na(InitInfoP) == F)
+        Info = sample(1:nrow(SDDprob),size = ceiling(nrow(SDDprob)*InitInfoP),prob = ExternalInfoProb)
+      if(is.na(InitInfoP) == T)
+      {
+        Info = rbinom(1:nrow(SDDprob),size = 1,prob = ExternalInfoProb) 
+        Info = which(Info == 1)
+      } 
+    }
+    if(length(ExternalInfoProb) != nrow(SDDprob))
+    {
+      if(is.matrix(ExternalInfoProb) == F)
+        Info = sample(1:nrow(SDDprob),size = ceiling(nrow(SDDprob)*InitInfoP))
+      if(is.matrix(ExternalInfoProb) == T)
+      {
+        Info = rbinom(1:nrow(SDDprob),size = 1,prob = ExternalInfoProb[,1])
+        Info = which(Info == 1)
+      }
+    }
+    InitInfo[Info] = 1
+    
+  }
+  if(length(InitialInfo) == nrow(SDDprob))
+    InitInfo = InitialInfo  
+}
+
+
 ###Randomly assign annual detection probability, based on mean and sd
 ###If DetectionProb given as single value or vector (nodes)
 if(is.matrix(DetectionProb)==FALSE &&(length(DetectionProb) == 1 ||length(DetectionProb) == nrow(SDDprob) ))
@@ -226,7 +279,12 @@ Invaded = ifelse(InitBio>0,1,0)
 ###Probability of info at start of simulation depends on
 ###Presence of pest and detection probability
 ###Select nodes that have detected infestation 
-InitInfo = rbinom(1:nrow(SDDprob),size = 1,prob = Invaded*NodeDetectionProb)
+InitDetection = rbinom(1:nrow(SDDprob),size = 1,prob = Invaded*NodeDetectionProb)
+###Add detections to nodes which already have info (e.g. pre-emptive control and hygiene measures)
+InitInfo[InitInfo == 0] = InitDetection[InitInfo == 0]
+
+###Populate information status vector ahead of timestep loop
+HaveInfo = InitInfo
 
 ###Populate information status vector ahead of timestep loop
 HaveInfo = InitInfo
@@ -236,21 +294,36 @@ HaveInfo = InitInfo
   
     
   # run simulation
-  for (timestep in 1:Ntimesteps) { 
- ###Print progress
-  cat("\r", "Realisation ", perm, "Timestep ", timestep, "...")
+  for (timestep in 1:Ntimesteps) 
+    { 
+    ###Print progress
+    cat("\r", "Realisation ", perm, "Timestep ", timestep, "...")
  
-  ###If carrying capacity provided as matrix assign values for relevant timestep
-  if(is.matrix(K) == TRUE)
-    {
-    K_is_0 <- K[,timestep]<=0
-    inv_K <- 1 / sum(K[,timestep])
-    NodeK = K[,timestep] 
-    }  
+    ###Allow for variation in establishment through time
+    ###e.g.  climate change predictions
+    ###Note: could be done outside loop, but would take heaps of memory to store 
+    if(is.matrix(EnvEstabProb) == T)
+      NodeEnvEstabProb <- EnvEstabProb[,timestep]
+    
+    if(is.matrix(Survival) == T)
+      NodeSurvival <- Survival[,timestep]
+    
+    
+    ###If carrying capacity provided as matrix assign values for relevant timestep
+    if(is.matrix(K) == TRUE)
+      {
+      K_is_0 <- K[,timestep]<=0
+      inv_K <- 1 / sum(K[,timestep])
+      NodeK = K[,timestep] 
+      }  
+    
+    ###If propagule production provided as matrix assign values for relevant timestep
+    if(is.matrix(PropaguleProduction) == TRUE)
+      NodePropaguleProduction = PropaguleProduction[,timestep] 
+    
+    if(is.matrix(PropaguleEstablishment) == TRUE)
+      NodePropaguleEstablishment = PropaguleEstablishment[,timestep]
 
-  ###If rate of increase provided as matrix assign values for relevant timestep
-  if(is.matrix(R0) == TRUE)
-    NodeR0 = R0[,timestep] 
       
   ###Randomly assign annual detection probability, based on mean and sd
   ###If DetectionProb given as matrix (nodes x timesteps)
@@ -302,16 +375,18 @@ HaveInfo = InitInfo
   
   ###Identify nodes with known extant infestations 
   Detected = Invaded*HaveInfo
-  N0 = rbinom(nrow(SDDprob),N,(1-MortalityProb*Managing))
+  N0 = rbinom(nrow(SDDprob),N,NodeSurvival*(1-MortalityProb*Managing))
+  if(sum(N0)<=0 )
+    N = N0 
   Pin <-0
   Qin <- 0  
     # natural dispersal 
   if(sum(N0)>0 ) 
   {
       
-  N <- LocalDynamics(sddprob = SDDprob, propaguleproduction = PropaguleProduction,nodeR0 = NodeR0,n=N0,
-lddprob = LDDprob, lddrate = LDDrate,k_is_0 = K_is_0, nodeK = NodeK,propaguleestablishment = PropaguleEstablishment,
-nodespreadreduction = NodeSpreadReduction,managing = Managing)
+  N <- LocalDynamics(sddprob = SDDprob, nodepropaguleproduction = NodePropaguleProduction,nodeenvestabprob = NodeEnvEstabProb,n=N,
+                     lddprob = LDDprob, lddrate = LDDrate,k_is_0 = K_is_0, nodeK = NodeK,nodepropaguleestablishment = NodePropaguleEstablishment,
+                     nodespreadreduction = NodeSpreadReduction,managing = Managing)
   } 
  ###Update info vector for any info spread (if SEAM supplied)
  ###Note once nodes obtain info they always have info (only zero values updated)
@@ -324,7 +399,7 @@ nodespreadreduction = NodeSpreadReduction,managing = Managing)
  
  
  ###Add invasion resulting from colonisation from external sources
- if(OngoingExternal == T)
+ if(OngoingExternalInvasion == T)
   {
   if(is.matrix(InvasionRisk) == F)
    ExternalInvasion = rbinom(1:nrow(SDDprob),size = 1,prob = InvasionRisk)
@@ -338,7 +413,15 @@ nodespreadreduction = NodeSpreadReduction,managing = Managing)
   N[N > NodeK] = NodeK[N > NodeK] 
   }
  
- 
+  ###Add nodes with information resulting from external sources
+  if(OngoingExternalInfo == T)
+    {
+    if(is.matrix(ExternalInfoProb) == F)
+      ExternalInfo = rbinom(1:nrow(SDDprob),size = 1,prob = ExternalInfoProb)
+    if(is.matrix(ExternalInfoProb) == T)
+      ExternalInfo = rbinom(1:nrow(SDDprob),size = 1,prob = ExternalInfoProb[,timestep])
+    HaveInfo[HaveInfo == 0] = ExternalInfo[HaveInfo==0]
+    }
  ###Update infestation vector
  Invaded = ifelse(N>0,1,0)
  

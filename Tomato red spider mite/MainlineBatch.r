@@ -25,4 +25,17 @@ DoHumanSpread = T
 source("TRSM_INA_MultDetectionProbsInfoSpreadOngoingExternal.r")
 source("TRSM_INA_MultDetectionProbsInfoSpreadOngoingExternalHeatMaps.r")
 
+###Test August 2023 version with code for parallel processing
+###and external information sources
+DoClimateChange=F
+DoHumanSpread = T
+source("TRSM_INA_ExternalInfoParallel.r")
+
+###Test August 2023 version with code for parallel processing
+###and reduced environmenta establishment prob and local survival
+###between timesteps
+DoClimateChange=F
+DoHumanSpread = T
+source("TRSM_INA_EnvEstabSurvivalParallel.r")
+
 

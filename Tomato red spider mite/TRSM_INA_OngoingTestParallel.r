@@ -69,6 +69,8 @@ human_acti <- 2.4   # human activity exponent
 human_dist <- 2.5   # distance exponent - should be approx 2
 
 # propagule establishment parameter
+# this assumes that dispersing propagules can search an area 
+# of 50m x 50m when seeking a host plant
 estab <- 0.0001
 
 
@@ -79,8 +81,8 @@ estab <- 0.0001
 d <- read.csv(input_file)
 
 ###Use part of dataset for faster testing
-d<-d[1:1000,]
-d$N0[1] = 10
+#d<-d[1:1000,]
+#d$N0[1] = 10
 
 if(DoClimateChange == TRUE)
 {
@@ -297,6 +299,8 @@ SpreadReduction = 0.9,        #Reduction in dispersal probability when managemen
 InitialPopulation = d$N0,        #Population size at start if simulations
 InitBioP = NA,		#Proportion of nodes infested at start of simulations
 InvasionRisk = PropTotalHumans*AnnualIncursionRate,  #Vector of probabilities of external invasion risk
+EnvEstabProb = 1,           #Environmentally determined establishment probability. Can be single value, vector (nodes) or matrix (nodes x timesteps)
+Survival = 1,           # local population survival probability. Set to 1 for no environmental limitation on survival. Can be single number, vector (nodes) or matrix (nodes x timesteps)
 K = K,		       #Population carrying capacity
 PropaguleProduction = alpha*d$R0, #Propagules produced per individual
 PropaguleEstablishment = estab, #Propagules establishment rate
@@ -330,8 +334,8 @@ INApestMeta(
   InitialPopulation = d$N0,        #Population size at start if simulations
   InitBioP = NA,		#Proportion of nodes infested at start of simulations
   InvasionRisk = PropTotalHumans*AnnualIncursionRate,  #Vector of probabilities of external invasion risk
-  K = K,		       #Population carrying capacity
   R0 = d$R0,
+  K = K,		       #Population carrying capacity
   PropaguleProduction = alpha, #Propagules produced per individual
   PropaguleEstablishment = estab, #Propagules establishment rate
   IncursionStartPop=10,      #option to set population size for new incursions
