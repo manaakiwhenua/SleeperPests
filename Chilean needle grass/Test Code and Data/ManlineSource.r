@@ -2,14 +2,17 @@
 main.dir = r"[C:\Users\MasonN\OneDrive - MWLR\Documents\GitHub\SleeperPests\Chilean needle grass\Test Code and Data]"
 dir.create(main.dir,showWarnings = F)
 setwd(main.dir)
-memory.limit(size = 600000)
 ClimexVars = c("EI","EI_Niwa_204","EI_Niwa209")
 ClimateScenarios = c("Current","Future_2040","Future_2090")
 EI_Prob_CurveType = "Logit"
 #EI_Prob_CurveType = "SplitLinear"
-install.packages("actuar")
-install.packages("magick")
-install.packages("sf")
+
+###Install required packages
+#install.packages("actuar")
+#install.packages("magick")
+#install.packages("sf")
+
+
 ###Run test source code
 for(cs in 1:3)
 source("Scripts/INA__BlindRiver_TestingApril2023.R")

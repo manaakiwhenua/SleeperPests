@@ -21,9 +21,8 @@
 ###########################################################################
 
 #######################################################################
-###This implements parallel processing in foreach for the permutation loop.
-###Not ready for release as need to make sure INA is present
-###and manually define R libary path as R doesn't like one-drive associated paths
+###This version implements parallel processing in foreach for the permutation loop.
+###Also manually implements steps formerly performed by INAscene
 #######################################################################
 
 ###Load the required packages 
@@ -46,13 +45,17 @@ SpreadReductionSD = NULL,        #Option to provide standard deviation for sprea
 InitialInvasion = NA,        #Nodes infested at start of simulations
 InitBioP = NA,		#Proportion of nodes infested at start of simulations
 InvasionRisk = NA,           #Vector (nodes) or matrix (nodes x timesteps) of invasion risk from external sources
+InitialInfo = NA,        #Vector or of nodes with information at start of simulations
+InitInfoP = NA,		#Proportion of nodes with information at start of simulations
+ExternalInfoProb = NA,           #Vector of probabilities of communication from external sources
 EnvEstabProb = 1,           #Environmentally determined establishment probability. Can be single value, vector (nodes) or matrix (nodes x timesteps)
 Survival = 1,           # local population survival probability. Set to 1 for no environmental limitation on survival. Can be single number, vector (nodes) or matrix (nodes x timesteps)
 SDDprob,                   #Short-distance (self-mediated) disperal probability between each pair of nodes
 SEAM = 0,			#Option to provide socioeconomic adjacency matrix for information spread
 LDDprob = 0,         #Option to provide long-distance (human-mediated) dispersal probability matrix
 			      #e.g. could be weighted by law of human visitation or data on stock movements
-OngoingExternal = F,   ##Option to include ongoing invasion from external sources
+OngoingExternalInvasion = F,   ##Option to include ongoing invasion from external sources
+OngoingExternalInfo = F,   ##Option to include ongoing communication from external sources
 OutputDir = NA,		      #Directory for storing results
 DoPlots = TRUE	     #Option to omit printing of line graphs. Default is to print.
 )
@@ -184,6 +187,41 @@ InitBio[Infested] = 1
 if(length(InitialInvasion) == nrow(SDDprob))
 	InitBio = InitialInvasion
 
+###Select nodes with information at start of simulation  according either to "InitialInfo" binary vector OR
+###"ExternalInfoProb" probabilities and/or initial proportion of nodes with information ("InitInfoP") OR
+###just "InitInfoP" if neither "InitialInfo" or "ExternalInfoProb" supplied by user.
+###If no initial info variables provided, no nodes have info at start of simulations
+InitInfo = rep(0,times = nrow(SDDprob))
+if(is.na(sum(InitialInfo))== F || is.na(InitInfoP) == F || is.na(sum(ExternalInfoProb)) == F )
+  {
+  if(length(InitialInfo) != nrow(SDDprob))
+    {
+    if(length(ExternalInfoProb) == nrow(SDDprob))
+      {
+      if(is.na(InitInfoP) == F)
+        Info = sample(1:nrow(SDDprob),size = ceiling(nrow(SDDprob)*InitInfoP),prob = ExternalInfoProb)
+      if(is.na(InitInfoP) == T)
+        {
+        Info = rbinom(1:nrow(SDDprob),size = 1,prob = ExternalInfoProb) 
+        Info = which(Info == 1)
+        } 
+      }
+    if(length(ExternalInfoProb) != nrow(SDDprob))
+      {
+      if(is.matrix(ExternalInfoProb) == F)
+        Info = sample(1:nrow(SDDprob),size = ceiling(nrow(SDDprob)*InitInfoP))
+      if(is.matrix(ExternalInfoProb) == T)
+        {
+        Info = rbinom(1:nrow(SDDprob),size = 1,prob = ExternalInfoProb[,1])
+        Info = which(Info == 1)
+        }
+      }
+    InitInfo[Info] = 1
+    }
+  if(length(InitialInfo) == nrow(SDDprob))
+    InitInfo = InitialInfo  
+  }
+
 ###Randomly assign  detection probability, based on mean and sd
 ###If DetectionProb given as single value or vector (nodes)
 if(is.matrix(DetectionProb)==FALSE &&(length(DetectionProb) == 1 ||length(DetectionProb) == nrow(SDDprob) ))
@@ -234,7 +272,9 @@ if(is.matrix(EradicationProb)==FALSE &&(length(EradicationProb) == 1 ||length(Er
 ###Probability of info at start of simulation depends on
 ###Presence of pest and detection probability
 ###Select nodes that have detected infestation 
-InitInfo = rbinom(1:nrow(SDDprob),size = 1,prob = InitBio*NodeDetectionProb)
+InitDetection = rbinom(1:nrow(SDDprob),size = 1,prob = InitBio*NodeDetectionProb)
+###Add detections to nodes which already have info (e.g. pre-emptive control and hygiene measures)
+InitInfo[InitInfo == 0] = InitDetection[InitInfo == 0]
 
 ###Populate Invasion and info status vectors ahead of timestep loop
 Invaded = InitBio 
@@ -295,7 +335,7 @@ for(timestep in 1:Ntimesteps)
   ###If EradicationProb given as matrix (nodes x timesteps)
   if(is.matrix(EradicationProb)==TRUE && nrow(EradicationProb) == nrow(SDDprob) && ncol(EradicationProb) == Ntimesteps)
       {
-	NodeEradicationProb = rnorm(EradicationProb[,timestep],EradicationSD,n = nrow(SDDprob))
+	    NodeEradicationProb = rnorm(EradicationProb[,timestep],EradicationSD,n = nrow(SDDprob))
       NodeEradicationProb[NodeEradicationProb<0] = 0
       NodeEradicationProb[NodeEradicationProb>1] = 1
       }
@@ -329,7 +369,7 @@ for(timestep in 1:Ntimesteps)
    }
  
   ###Add invasion resulting from colonisation from external sources
- if(OngoingExternal == T)
+ if(OngoingExternalInvasion == T)
   {
   if(is.matrix(InvasionRisk) == F)
     ExternalInvasion = rbinom(1:nrow(SDDprob),size = 1,prob = InvasionRisk)
@@ -338,6 +378,16 @@ for(timestep in 1:Ntimesteps)
     ExternalInvasion = rbinom(1:nrow(SDDprob),size = 1,prob = InvasionRisk[,timestep])
   Invaded[Invaded == 0] = ExternalInvasion[Invaded==0]
   }
+ 
+ ###Add nodes with information resulting from external sources
+ if(OngoingExternalInfo == T)
+   {
+   if(is.matrix(ExternalInfoProb) == F)
+     ExternalInfo = rbinom(1:nrow(SDDprob),size = 1,prob = ExternalInfoProb)
+   if(is.matrix(ExternalInfoProb) == T)
+     ExternalInfo = rbinom(1:nrow(SDDprob),size = 1,prob = ExternalInfoProb[,timestep])
+   HaveInfo[HaveInfo == 0] = ExternalInfo[HaveInfo==0]
+   }
  ###Record nodes adopting management
  ManagingResultsLoop[,timestep] = Managing
   

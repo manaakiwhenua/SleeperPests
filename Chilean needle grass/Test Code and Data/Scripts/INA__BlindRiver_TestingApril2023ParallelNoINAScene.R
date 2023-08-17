@@ -22,6 +22,7 @@ library(abind)
 source("Scripts/INApestParallelNoINAscene.R")
 source("Scripts/INApestParallel.R")
 source("Scripts/INApest.R")
+source("Scripts/INApestNoINAscene.R")
 source("Scripts/INApestHeatMaps.R")
 
 ######################################################

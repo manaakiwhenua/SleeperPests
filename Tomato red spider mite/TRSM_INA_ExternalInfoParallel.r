@@ -573,7 +573,7 @@ ParallelTime <- End-Start
 
 ################################
 ###Initial info as vector of probabilities
-###with ongoing external communbication
+###with ongoing external communication
 ################################
 ModelName = paste0("StandardCurrentClim_DetProb_ParallelOngoingExternalInfo",DetectionProbs[detprob])
 if(DoClimateChange == TRUE)
@@ -614,7 +614,7 @@ ParallelTime <- End-Start
 
 ################################
 ###Initial info as matrix of probabilities
-###with ongoing external communbication
+###with ongoing external communication
 ################################
 ExternalInfoProbMatrix = matrix(ncol = Ntimesteps, nrow  = nrow(d))
 for(i in 1:20)
