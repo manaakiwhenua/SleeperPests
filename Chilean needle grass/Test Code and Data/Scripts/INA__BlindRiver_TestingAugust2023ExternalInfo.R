@@ -115,7 +115,7 @@ HistoricInfestation = read.csv("BlindRiverInfestedFarms.txt",header = T, as.is =
 ###Input paramaters for INA
 ####################################################
 ###Set number of realisations
-Nperm = 10
+Nperm = 50
 ###Set simulation duration
 Ntimesteps = 80
 

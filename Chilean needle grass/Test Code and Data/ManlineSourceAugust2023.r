@@ -3,7 +3,7 @@
 ###Define default parameters
 ###########################################################################
 ###########################################################################
-
+rm(list = ls())
 ###Set root directory where testing data and scripts stored
 main.dir = r"[C:\Users\MasonN\OneDrive - MWLR\Documents\GitHub\SleeperPests\Chilean needle grass\Test Code and Data]"
 dir.create(main.dir,showWarnings = F)
@@ -79,14 +79,22 @@ source("Scripts/INApestHeatMaps.R")
 #############################################################
 #############################################################
 
-
-
 ###Run test source code testing for comparable results
 ###between INApest function versions
 for(cs in 1:3)
 source("Scripts/INA__BlindRiver_TestingAugust2023ParallelNoINAScene.R")
 
-
+###Run test source code testing external info functionality
+###for each version of INApest function
+cs = 1
+Function = "INApest"
+source("Scripts/INA__BlindRiver_TestingAugust2023ExternalInfo.R")
+Function = "INApestParallel"
+source("Scripts/INA__BlindRiver_TestingAugust2023ExternalInfo.R")
+Function = "INApestNoINAscene"
+source("Scripts/INA__BlindRiver_TestingAugust2023ExternalInfo.R")
+Function = "INApestParallelNoINAscene"
+source("Scripts/INA__BlindRiver_TestingAugust2023ExternalInfo.R")
 
 
 
