@@ -29,23 +29,24 @@ library(abind)
 library(doParallel)
 
 
-INApestMetaParallel = function(
+INApestMetaParallelMultipleLandUse = function(
 ModelName, #Name for storing results to file 
 Nperm,                  #Number of permutations per parameter combination
 Ntimesteps,                 #Simulation duration timesteps can be any length of time
-DetectionProb,          #Annual detection probability or vector of probabilties per node (e.g. farm) (must be between 0 and 1)
+Nlanduses,
+DetectionProb,          #Vector of probabilities per land use, matrix (nodes x land uses) or 3d array (land uses x nodes x timesteps). Must be between 0 and 1.
 DetectionSD = NULL, #Option to provide standard deviation for management probability can be single number or vector (nodes)
-ManageProb,             #Annual Probability or vector of probabilities vector length nrow(SDDprob)of node adopting management upon detection
+ManageProb,             ##Vector of probabilities per land use, matrix (nodes x land uses) or 3d array (land uses x nodes x timesteps). Must be between 0 and 1.
 ManageSD = NULL, #Option to provide standard deviation for management probability can be single number or vector (nodes)
-MortalityProb,           #Annual mortality probability under management
+MortalityProb,           ##Vector of probabilities per land use, matrix (nodes x land uses) or 3d array (land uses x nodes x timesteps). Must be between 0 and 1.
 MortalitySD = NULL, #Option to provide standard deviation for management probability can be single number or vector (nodes)
-SpreadReduction,        #Reduction in dispersal probability when management adopted. Must be between 0 (no spread reduction) and 1 (complete prevention of spread). Can be single value or vector length nrow(SDDprob)
+SpreadReduction,        ##Vector of probabilities per land use, matrix (nodes x land uses) or 3d array (land uses x nodes x timesteps). Must be between 0 and 1.
 SpreadReductionSD = NULL, #Option to provide standard deviation for management probability can be single number or vector (nodes)
-InitialPopulation = NA,        #Vector of population sizes at start of simulations
+InitialPopulation = NA,        #Matrix (nodes x land uses) of population sizes at start of simulations
 InitBioP = NA,		#Proportion of nodes infested at start of simulations
 InvasionRisk = NA,           #Vector or matrix (nodes x timesteps) of probabilities of invasion from external sources
-InitialInfo = 0,        #Vector or of nodes with information at start of simulations
-InitInfoP = NA,		#Proportion of nodes with information at start of simulations
+InitialInfo = NA,        #Vector or of nodes with information at start of simulations
+InitInfoP = 0,		#Proportion of nodes with information at start of simulations
 ExternalInfoProb = NA,           #Vector of probabilities of communication from external sources
 EnvEstabProb = 1,           #Environmentally determined establishment probability. Can be single value, vector (nodes) or matrix (nodes x timesteps)
 Survival = 1,           # local population survival probability. Set to 1 for no environmental limitation on survival. Can be single number, vector (nodes) or matrix (nodes x timesteps)
@@ -71,11 +72,13 @@ DoPlots = TRUE	     #Option to omit printing of line graphs.Default is to print.
 
 
 # pre-evaluate some variables for efficiency
-if(is.matrix(K) == FALSE)
+if(length(dim(K)) <3)
 {
-K_is_0 <- K<=0
-inv_K <- 1 / sum(K)
+K_is_0 <- rowSums(K)<=0
+inv_K <- 1 / sum(colSums(K))
 NodeK = K
+Pk  = K/rowSums(K)
+Pk[is.na(Pk)] = 0
 }
 
 if(is.matrix(PropaguleProduction) == FALSE)
@@ -100,13 +103,13 @@ if(is.matrix(SEAM) == T)
 
 ###Assign standard deviation value to management in no value provided
 if(is.null(ManageSD) == T)
-	ManageSD = mean(ManageProb)/10
+	ManageSD = ManageProb/10
 if(is.null(SpreadReductionSD) == T)
-	SpreadReductionSD = (1-mean(SpreadReduction))/10
+	SpreadReductionSD = (1-SpreadReduction)/10
 if(is.null(DetectionSD) == T)
-	DetectionSD = mean(DetectionProb)/10
+	DetectionSD = DetectionProb/10
 if(is.null(MortalitySD) == T)
-	MortalitySD = mean(MortalityProb)/10
+	MortalitySD = MortalityProb/10
 
 
 ###########################################################
@@ -122,20 +125,22 @@ registerDoParallel(cluster)
 ###vary across realisations 
 
 ###Define a function for combining results of each permutation
-acomb <- function(...) abind(..., along=4)
+acomb <- function(...) abind(..., along=5)
 
 ###Need to include required packages in the .packages arguement of the foreach call
 PermOut <- foreach(1:Nperm, .combine = 'acomb',.packages=c("abind")) %dopar% 
   {
-  InvasionResultsLoop <- array(dim = c(nrow(SDDprob),Ntimesteps))
+  InvasionResultsLoop <- array(dim = c(nrow(SDDprob),Nlanduses,Ntimesteps))
   PopulationResultsLoop <- InvasionResultsLoop
-  ManagingResultsLoop <- InvasionResultsLoop
-  DetectedResultsLoop <- InvasionResultsLoop
+  ManagingResultsLoop <- array(dim = c(nrow(SDDprob),Nlanduses,Ntimesteps))
+  DetectedResultsLoop <- array(dim = c(nrow(SDDprob),Nlanduses,Ntimesteps))
 ###Assign initial infestations according either to "InitialInvasion" binary vector OR
 ###"InvasionRisk" probabilities and/or initial proportion of nodes infested ("InitBioP") OR
 ###just "InitBioP" if neither "InitialInvasion" or "InvasionRisk" supplied by user
-InitBio = rep(0,times = nrow(SDDprob))
-if(length(InitialPopulation) != nrow(SDDprob))
+InitBio = matrix(ncol = Nlanduses, nrow = nrow(SDDprob))
+InitBio[,] = 0
+InintInfested = rep(0,times = nrow(SDDprob))
+if(nrow(InitialPopulation) != nrow(SDDprob))
 {
  if(length(InvasionRisk) == nrow(SDDprob))
         {
@@ -158,12 +163,16 @@ if(length(InitialPopulation) != nrow(SDDprob))
 	  }
 	}
 if(is.na(IncursionStartPop) == T) 
-	InitBio[Infested] = 1
+  InintInfested[Infested] = 1
 if(is.na(IncursionStartPop) == F) 
-	InitBio[Infested] = IncursionStartPop
+  InintInfested[Infested] = IncursionStartPop
+###Find alternative to for loop
+InitialPopulation <-rmultinom(1,sum(InitInfested),prob = InitInfested%*%Pk)
+dim(InitialPopulation) = dim(Pk)
+InitBio = InitialPopulation
 }
 
-if(length(InitialPopulation) == nrow(SDDprob))
+if(nrow(InitialPopulation) == nrow(SDDprob))
   InitBio = InitialPopulation
 
 ###Select nodes with information at start of simulation  according either to "InitialInfo" binary vector OR
@@ -204,16 +213,21 @@ if(length(InitialInfo) == nrow(SDDprob))
 
 ###Randomly assign annual detection probability, based on mean and sd
 ###If DetectionProb given as single value or vector (nodes)
-if(is.matrix(DetectionProb)==FALSE &&(length(DetectionProb) == 1 ||length(DetectionProb) == nrow(SDDprob) ))
+if((is.matrix(DetectionProb)==FALSE &&(length(DetectionProb) == Nlanduses) ||(is.matrix(DetectionProb)==TRUE && nrow(DetectionProb) == nrow(SDDprob) )))
       {
-      NodeDetectionProb = rnorm(DetectionProb,DetectionSD,n = nrow(SDDprob))
+      NodeDetectionProb = matrix(ncol = Nlanduses,nrow = nrow(SDDprob))
+      for(lu in 1:Nlanduses)
+        NodeDetectionProb[,lu] = rnorm(DetectionProb[lu],DetectionSD[lu],n = nrow(SDDprob))
       NodeDetectionProb[NodeDetectionProb<0] = 0
       NodeDetectionProb[NodeDetectionProb>1] = 1
       }
 
 ###If DetectionProb given as matrix (nodes x timesteps) use values for first timestep to get initial detections
-if(is.matrix(DetectionProb)==TRUE && nrow(DetectionProb) == nrow(SDDprob) && ncol(DetectionProb) == Ntimesteps)
+if(is.array(DetectionProb)==TRUE && dim(DetectionProb[3]) == nrow(SDDprob) && ncol(DetectionProb) == Ntimesteps)
       {
+      NodeDetectionProb = matrix(ncol = Nlanduses,nrow = nrow(SDDprob))
+      for(lu in 1:Nlanduses)
+        NodeDetectionProb[,lu] = rnorm(DetectionProb[lu],DetectionSD[lu],n = nrow(SDDprob))
       NodeDetectionProb = rnorm(DetectionProb[,timestep],DetectionSD,n = nrow(SDDprob))
       NodeDetectionProb[NodeDetectionProb<0] = 0
       NodeDetectionProb[NodeDetectionProb>1] = 1
@@ -222,38 +236,47 @@ if(is.matrix(DetectionProb)==TRUE && nrow(DetectionProb) == nrow(SDDprob) && nco
 
 ###Randomly assign probability of mangement adoption upon detection of infestation
 ###If ManageProb given as single value or vector (nodes)
-if(is.matrix(ManageProb)==FALSE &&(length(ManageProb) == 1 ||length(ManageProb) == nrow(SDDprob) ))
-      {
-      NodeManageProb = rnorm(ManageProb,ManageSD,n = nrow(SDDprob))
-      NodeManageProb[NodeManageProb<0] = 0
-      NodeManageProb[NodeManageProb>1] = 1
-      }
+if((is.matrix(ManageProb)==FALSE &&(length(ManageProb) == Nlanduses) ||(is.matrix(ManageProb)==TRUE && nrow(ManageProb) == nrow(SDDprob) )))
+  {
+  NodeManageProb = matrix(ncol = Nlanduses,nrow = nrow(SDDprob))
+  for(lu in 1:Nlanduses)
+    NodeManageProb[,lu] = rnorm(ManageProb[lu],ManageSD[lu],n = nrow(SDDprob))
+  NodeManageProb[NodeManageProb<0] = 0
+  NodeManageProb[NodeManageProb>1] = 1
+  }
 
 ###Randomly assign spread reduction factor when management adopted
 ###If SpreadReduction given as single value or vector (nodes)
-if(is.matrix(SpreadReduction)==FALSE &&(length(SpreadReduction) == 1 ||length(SpreadReduction) == nrow(SDDprob) ))
-      {
-      NodeSpreadReduction = rnorm(SpreadReduction,ManageSD,n = nrow(SDDprob))
-      NodeSpreadReduction[NodeSpreadReduction<0] = 0
-      NodeSpreadReduction[NodeSpreadReduction>1] = 1
-      }
+if((is.matrix(SpreadReduction)==FALSE &&(length(SpreadReduction) == Nlanduses) ||(is.matrix(SpreadReduction)==TRUE && nrow(SpreadReduction) == nrow(SDDprob) )))
+  {
+  NodeSpreadReduction = matrix(ncol = Nlanduses,nrow = nrow(SDDprob))
+  for(lu in 1:Nlanduses)
+    NodeSpreadReduction[,lu] = rnorm(SpreadReduction[lu],ManageSD[lu],n = nrow(SDDprob))
+  NodeSpreadReduction[NodeSpreadReduction<0] = 0
+  NodeSpreadReduction[NodeSpreadReduction>1] = 1
+  }
 
 ###Randomly assign mortality probability when management applied
 ###If MortalityProb given as single value or vector (nodes)
-if(is.matrix(MortalityProb)==FALSE &&(length(MortalityProb) == 1 ||length(MortalityProb) == nrow(SDDprob) ))
-      {
-      NodeMortalityProb = rnorm(MortalityProb,MortalitySD,n = nrow(SDDprob))
-      NodeMortalityProb[NodeMortalityProb<0] = 0
-      NodeMortalityProb[NodeMortalityProb>1] = 1
-      }
+if((is.matrix(MortalityProb)==FALSE &&(length(MortalityProb) == Nlanduses) ||(is.matrix(MortalityProb)==TRUE && nrow(MortalityProb) == nrow(SDDprob) )))
+  {
+  NodeMortalityProb = matrix(ncol = Nlanduses,nrow = nrow(SDDprob))
+  for(lu in 1:Nlanduses)
+    NodeMortalityProb[,lu] = rnorm(MortalityProb[lu],MortalitySD[lu],n = nrow(SDDprob))
+  NodeMortalityProb[NodeMortalityProb<0] = 0
+  NodeMortalityProb[NodeMortalityProb>1] = 1
+  }
 
 ###Populate invasion status vector ahead of timestep loop
 Invaded = ifelse(InitBio>0,1,0) 
 
+
 ###Probability of info at start of simulation depends on
 ###Presence of pest and detection probability
 ###Select nodes that have detected infestation 
-InitDetection = rbinom(1:nrow(SDDprob),size = 1,prob = Invaded*NodeDetectionProb)
+
+LUdetectionProb = 1-(1-NodeDetectionProb)^(InitBio)
+InitDetection = rbinom(1:nrow(SDDprob),size = 1,prob = 1-apply(1-LUdetectionProb,1,prod))
 InitInfo[InitInfo == 0] = InitDetection[InitInfo == 0]
 ###Populate information status vector ahead of timestep loop
 HaveInfo = InitInfo
@@ -261,7 +284,12 @@ HaveInfo = InitInfo
   # initialise the population
   N <- InitBio
   
-    
+
+###Declare matrices outside loop
+Managing = matrix(ncol = Nlanduses,nrow = nrow(SDDprob))
+N0 = matrix(ncol = Nlanduses,nrow = nrow(SDDprob))
+Propagules = matrix(ncol = Nlanduses,nrow = nrow(SDDprob))
+Recruits = matrix(ncol = Nlanduses,nrow = nrow(SDDprob))  
   # run simulation
 for (timestep in 1:Ntimesteps) 
   { 
@@ -277,7 +305,7 @@ for (timestep in 1:Ntimesteps)
     
     
   ###If carrying capacity provided as matrix assign values for relevant timestep
-  if(is.matrix(K) == TRUE)
+  if(length(dim(K)) == 3)
     {
     K_is_0 <- K[,timestep]<=0
     inv_K <- 1 / sum(K[,timestep])
@@ -332,38 +360,38 @@ for (timestep in 1:Ntimesteps)
   ###Management is only applied to nodes which have information
   ###i.e. where pest has been detected or following communication of information
   ###from neighbouring infested farms 
-  Managing = rbinom(1:nrow(SDDprob),size = 1,prob = NodeManageProb*HaveInfo)
-  
+  Managing[] = rbinom(Nlanduses*nrow(SDDprob),size = 1,prob = NodeManageProb*HaveInfo)
   ###Identify nodes with known extant infestations 
   Detected = Invaded*HaveInfo
   
+  
+  
   ###Adjust starting population for natural and managed mortality
-  N0 = rbinom(nrow(SDDprob),N,NodeSurvival*(1-NodeMortalityProb*Managing))
+  N0[] = rbinom(Nlanduses*nrow(SDDprob),size = c(N),prob = NodeSurvival*(1-NodeMortalityProb*Managing))
   Pin <-0
   Qin <- 0  
     # natural dispersal 
   if(sum(N0)>0 ) 
   {
-    
-  Propagules <- rpois(nrow(SDDprob), NodePropaguleProduction * N0)# propagules are produced
-  
+  Propagules <- rpois(nrow(SDDprob), NodePropaguleProduction * rowSums(N0))# propagules are produced
   ###natural dispersal
   ###adjust propagule spread for environmentally determined establishment probability
   ###in receiving nodes
   Pout <- Propagules*(1-LDDrate)
   if(sum(Pout)>0 ) 
     Pin <- t(rmultinom(1, size=sum(Pout*rowSums(SDDprob)), prob=Pout %*% SDDprob))  # propagules are dispersed
-  
   ###human-mediated spread
   ###adjust propagule spread for environmentally determined establishment probability
   ###in receiving nodes
   if (is.matrix(LDDprob)==T) 
     {
-    Qout  = Propagules*LDDrate *(1-NodeSpreadReduction*Managing)       
+    ###Do this to share LDD propagules between landuses (for application of spread reduction)
+    PN0 = N0/rowSums(N0)
+    PN0[is.na(PN0)==TRUE] = 0
+    Qout  = rowSums(Propagules*LDDrate*PN0 *(1-NodeSpreadReduction*Managing))       
     if(sum(Qout)>0)  
       Qin <- t(rmultinom(1, size=sum(Qout*rowSums(LDDprob)), prob=Qout %*% LDDprob))    # propagules are dispersed
     }
-  
   
   #Propagule establishment probability can be viewed as a spatial process indicating the likelihood
   #that a dispersing propagule will encounter and individual site or host.
@@ -372,14 +400,26 @@ for (timestep in 1:Ntimesteps)
   #Where K is the number of available patches within the node
   #This also incorporates density dependence since propagule success depends on availability of uninfested host plants 
   #or unoccupied patches
-  N <- ifelse(K_is_0, 0, N0 + rbinom(nrow(SDDprob), NodeK-N0, 1 - exp(-NodePropaguleEstablishment*NodeEnvEstabProb*(Pin+Qin))))
-
+  Recruits <- rbinom(nrow(SDDprob), rowSums(NodeK)-rowSums(N0), 1 - exp(-NodePropaguleEstablishment*NodeEnvEstabProb*(Pin+Qin)))
+  sum(Recruits)
+  table(Recruits)
+  summary(Recruits)
+  Recruits[is.na(Recruits)==T]
+  ###Share recruits to land uses in proportion to unoccupied hosts or sites
+  Pk_n = (NodeK-N0)/(rowSums(NodeK)-rowSums(N0))
+  rowSums(Pk_n)
+  head(NodeK-N0)
+  Pk_n[is.na(Pk_n)==TRUE] = 0
+  LUrecruits <- Pk_n*Recruits
+  LUrecruits <- rmultinom(1,sum(Recruits),prob = Recruits*Pk_n)
+  dim(LUrecruits) <- dim(N0)
+  N <- ifelse(N0 + LUrecruits>NodeK,NodeK,N0 + LUrecruits)
   } 
  ###Update info vector for any info spread (if SEAM supplied)
  ###Note once nodes obtain info they always have info (only zero values updated)
  if(is.matrix(SEAM) == T)
   {
-  RandSEAM[] <- rbinom(n=nrow(SDDprob)^2, size=1, prob = SEAM*Detected)
+  RandSEAM[] <- rbinom(n=nrow(SDDprob)^2, size=1, prob = SEAM*apply(Detected,1,max))
   InfoTransferred = ifelse(colSums(RandSEAM)>0,1,0)
   HaveInfo[HaveInfo == 0] = InfoTransferred[HaveInfo == 0]
   }
@@ -393,10 +433,14 @@ for (timestep in 1:Ntimesteps)
   if(is.matrix(InvasionRisk) == T)
    ExternalInvasion = rbinom(1:nrow(SDDprob),size = 1,prob = InvasionRisk[,timestep])
   Invaded[Invaded == 0] = ExternalInvasion[Invaded==0]
+  
+  ###If no start pop size all land uses invaded
   if(is.na(IncursionStartPop) == T) 
 	N = N+ExternalInvasion
+  
+  ###If start pop size given, share individuals in proportion to available hosts/sites for each land use
   if(is.na(IncursionStartPop) == F) 
-	N = N+ExternalInvasion*IncursionStartPop
+	N = N+round(ExternalInvasion*IncursionStartPop*Pk)
   N[N > NodeK] = NodeK[N > NodeK] 
   }
  
@@ -411,27 +455,29 @@ for (timestep in 1:Ntimesteps)
      }
  ###Update infestation vector
  Invaded = ifelse(N>0,1,0)
- 
+ head(Invaded)
  ###Record nodes adopting management
- ManagingResultsLoop[,timestep] = Managing
+ ManagingResultsLoop[,,timestep] = Managing
   
  ###Record infested nodes
- InvasionResultsLoop[,timestep] = Invaded
+ InvasionResultsLoop[,,timestep] = Invaded
 
  ###Record populations
- PopulationResultsLoop[,timestep] = N
+ PopulationResultsLoop[,,timestep] = N
 
  ###Select new nodes where infestation detected
- NewHaveInfo =  rbinom(1:nrow(SDDprob),size = 1,prob = Invaded*NodeDetectionProb)
+ LUdetectionProb = 1-(1-NodeDetectionProb)^(N)
+ NewHaveInfo = rbinom(1:nrow(SDDprob),size = 1,prob = 1-apply(1-LUdetectionProb,1,prod))
+ 
  
  ###Add newly detected infestations to info vector
  ###Note once nodes obtain info they always have info (only zero values updated)
  HaveInfo[HaveInfo==0] = NewHaveInfo[HaveInfo==0]  
  
  ###Record detection status
- DetectedResultsLoop[,timestep] = HaveInfo*Invaded 
+ DetectedResultsLoop[,,timestep] = HaveInfo*Invaded 
  }
- abind(InvasionResultsLoop,PopulationResultsLoop,ManagingResultsLoop,DetectedResultsLoop,along = 3)
+ abind(InvasionResultsLoop,PopulationResultsLoop,ManagingResultsLoop,DetectedResultsLoop,along = 4)
 }
 stopCluster(cluster)
 ###########################################################
@@ -439,10 +485,10 @@ stopCluster(cluster)
 ###########################################################
 
 ###Extract results for invasion, managing and dectection status into separate 3d arrays
-InvasionResults <- PermOut[,,1,]
-PopulationResults <- PermOut[,,2,]
-ManagingResults <- PermOut[,,3,]
-DetectedResults <- PermOut[,,4,]
+InvasionResults <- PermOut[,,,1,]
+PopulationResults <- PermOut[,,,2,]
+ManagingResults <- PermOut[,,,3,]
+DetectedResults <- PermOut[,,,4,]
 
 ###########################################################
 ###Save results for post-hoc analyses
@@ -468,8 +514,10 @@ saveRDS(DetectedResults, paste0(FileNameStem,"DetectedLargeOut.rds"))
 InvasionProb = matrix(ncol = Ntimesteps, nrow = nrow(SDDprob))
 for(timestep in 1:Ntimesteps)
 {
-TimestepData = InvasionResults[,timestep,]
-InvasionProb[,timestep] = rowSums(TimestepData)/Nperm
+TimestepData = InvasionResults[,,timestep,]
+dim(TimestepData)
+NodeInvaded <- apply(TimestepData, c(1,3), max)
+InvasionProb[,timestep] = rowSums(NodeInvaded)/Nperm
 }
 saveRDS(InvasionProb, paste0(FileNameStem,"InvasionProb.rds"))
 if(DoPlots == T)
@@ -478,10 +526,7 @@ if(DoPlots == T)
 ###Produce summary figs when processing completed
 ###########################################################
 
-Title = paste0("Detection prob. ",round(mean(DetectionProb),digits = 3),
-	" Manage prob. ",round(mean(ManageProb),digits = 3),
-       "\nMortality prob. ",round(MortalityProb,digits =3),
-		" Spread Reduction ",round(mean(SpreadReduction),digits=3))
+Title = ModelName
 
 
 ###Change in total population with time
@@ -490,14 +535,14 @@ Title = paste0("Detection prob. ",round(mean(DetectionProb),digits = 3),
 PopulationSummary = as.data.frame(matrix(ncol = 3, nrow = 0))
 colnames(PopulationSummary) = c("Realisation",   "Timestep",  "NodesInfested")
 
-if(is.matrix(K) == TRUE)
-    inv_K <- 1 / colSums(K)
-
+#if(is.matrix(K) == TRUE)
+#    inv_K <- 1 / colSums(K)
+inv_K
 for(perm in 1:Nperm)
 {
-PopulationData = PopulationResults[,,perm]
+PopulationData = PopulationResults[,,,perm]
 dim(PopulationData)
-NodesInfested = colSums(PopulationData)*inv_K
+NodesInfested = apply(PopulationData,3,sum)*inv_K
 Realisation = perm 
 Timestep = 1:Ntimesteps
 Results = data.frame(Realisation,Timestep,NodesInfested)
@@ -538,9 +583,9 @@ colnames(InvasionSummary) = c("Realisation",   "Timestep",  "NodesInfested")
 
 for(perm in 1:Nperm)
 {
-InvasionData = InvasionResults[,,perm]
-dim(InvasionData)
-NodesInfested = colSums(InvasionData)
+InvasionData = InvasionResults[,,,perm]
+NodesInfested = colSums(apply(InvasionData,c(1,3),max))
+
 Realisation = perm 
 Timestep = 1:Ntimesteps
 Results = data.frame(Realisation,Timestep,NodesInfested)
@@ -582,9 +627,9 @@ colnames(ManagingSummary) = c("Realisation",   "Timestep",  "NodesManaging")
 
 for(perm in 1:Nperm)
 {
-ManagingData = ManagingResults[,,perm]
+ManagingData = ManagingResults[,,,perm]
 dim(ManagingData)
-NodesManaging = colSums(ManagingData)
+NodesManaging = apply(ManagingData,3,sum)/Nlanduses
 Realisation = perm 
 Timestep = 1:Ntimesteps
 Results = data.frame(Realisation,Timestep,NodesManaging)
@@ -627,9 +672,9 @@ colnames(DetectedSummary) = c("Realisation",   "Timestep",  "NodesDetected")
 
 for(perm in 1:Nperm)
 {
-DetectedData = DetectedResults[,,perm]
+DetectedData = DetectedResults[,,,perm]
 dim(DetectedData)
-NodesDetected = colSums(DetectedData)
+NodesDetected = colSums(apply(DetectedData,c(1,3),max))
 Realisation = perm 
 Timestep = 1:Ntimesteps
 Results = data.frame(Realisation,Timestep,NodesDetected)
@@ -670,10 +715,10 @@ colnames(DetectedProportionSummary) = c("Realisation",   "Timestep",  "DetectedP
 
 for(perm in 1:Nperm)
 {
-InvasionData = InvasionResults[,,perm]
-DetectedData = DetectedResults[,,perm]
-NodesDetected = colSums(DetectedData)
-NodesInvaded = colSums(InvasionData)
+InvasionData = InvasionResults[,,,perm]
+DetectedData = DetectedResults[,,,perm]
+NodesDetected = colSums(apply(DetectedData,c(1,3),max))
+NodesInvaded = colSums(apply(InvasionData,c(1,3),max))
 DetectedProportion = NodesDetected/NodesInvaded
 DetectedProportion[is.na(DetectedProportion)==T] = 1
 Realisation = perm 

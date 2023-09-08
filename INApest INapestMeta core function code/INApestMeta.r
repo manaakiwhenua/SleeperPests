@@ -264,9 +264,9 @@ if(is.matrix(SpreadReduction)==FALSE &&(length(SpreadReduction) == 1 ||length(Sp
 ###If MortalityProb given as single value or vector (nodes)
 if(is.matrix(MortalityProb)==FALSE &&(length(MortalityProb) == 1 ||length(MortalityProb) == nrow(SDDprob) ))
       {
-      NodeEradicationProb = rnorm(MortalityProb,MortalitySD,n = nrow(SDDprob))
-      NodeEradicationProb[NodeEradicationProb<0] = 0
-      NodeEradicationProb[NodeEradicationProb>1] = 1
+      NodeMortalityProb = rnorm(MortalityProb,MortalitySD,n = nrow(SDDprob))
+      NodeMortalityProb[NodeMortalityProb<0] = 0
+      NodeMortalityProb[NodeMortalityProb>1] = 1
       }
 
 
@@ -373,7 +373,7 @@ HaveInfo = InitInfo
   
   ###Identify nodes with known extant infestations 
   Detected = Invaded*HaveInfo
-  N0 = rbinom(nrow(SDDprob),N,NodeSurvival*(1-MortalityProb*Managing))
+  N0 = rbinom(nrow(SDDprob),N,NodeSurvival*(1-NodeMortalityProb*Managing))
   if(sum(N0)<=0 )
     N = N0 
   Pin <-0
