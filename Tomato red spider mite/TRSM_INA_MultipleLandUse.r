@@ -271,7 +271,6 @@ Planduses = c(0.5,0.5)
 Klanduse = matrix(nrow = length(K),ncol = 2)
 Klanduse[,1] = floor(K*Planduses[1])
 Klanduse[,2] = ceiling(K*Planduses[2])
-K
 N0landuse  = cbind(floor(d$N0*Planduses[1]),ceiling(d$N0*Planduses[2]))
 
 Nperm = 10
@@ -287,7 +286,7 @@ DetectionProbs = c(0,0.15,0.2,0.3,0.5,0.75,0.9)
 #  ModelName = paste0("StandardFutureClim_DetProb_Parallel",DetectionProbs[detprob])
 source("INApestMetaParallelMultipleLandUse.r")
 Ntimesteps = 50
-Nperm = 10
+Nperm = 50
 ModelName = "MultipleLandUseTest"
 OutputDir = paste0(ResultsDir,ModelName,"/")
 dir.create(OutputDir)
@@ -328,6 +327,7 @@ ModelName = "MultipleLandUseTestZeroMan"
 OutputDir = paste0(ResultsDir,ModelName,"/")
 dir.create(OutputDir)
 Start <- Sys.time()
+
 INApestMetaParallelMultipleLandUse(
   ModelName = ModelName,
   Nperm = Nperm,                  #Number of permutations per parameter combination

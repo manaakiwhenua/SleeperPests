@@ -130,6 +130,20 @@ acomb <- function(...) abind(..., along=5)
 ###Need to include required packages in the .packages arguement of the foreach call
 PermOut <- foreach(1:Nperm, .combine = 'acomb',.packages=c("abind")) %dopar% 
   {
+    ###Custom function for allocating exact number of cases to land uses
+    SampleVector <- function(X)
+    {
+      Vect = vector(length=0)
+      for(i  in 2:length(X))
+        Vect <- c(Vect,rep((i-1),times = X[i]))
+      Sample <- sample(Vect,size = X[1],replace = F)
+      Out <- vector(length = length(X)-1)
+      for(j in 1:length(Out))
+        Out[j] <- length(Sample[Sample==j])
+      return(Out)  
+    }
+    
+    
   InvasionResultsLoop <- array(dim = c(nrow(SDDprob),Nlanduses,Ntimesteps))
   PopulationResultsLoop <- InvasionResultsLoop
   ManagingResultsLoop <- array(dim = c(nrow(SDDprob),Nlanduses,Ntimesteps))
@@ -143,14 +157,14 @@ InintInfested = rep(0,times = nrow(SDDprob))
 if(nrow(InitialPopulation) != nrow(SDDprob))
 {
  if(length(InvasionRisk) == nrow(SDDprob))
-        {
+  {
  	if(is.na(InitBioP) == F)
 	  Infested = sample(1:nrow(SDDprob),size = ceiling(nrow(SDDprob)*InitBioP),prob = InvasionRisk)
 	if(is.na(InitBioP) == T)
-          {
-	  Infested = rbinom(1:nrow(SDDprob),size = 1,prob = InvasionRisk)
-          Infested = which(Infested == 1)
-	  } 
+      {
+	    Infested = rbinom(1:nrow(SDDprob),size = 1,prob = InvasionRisk)
+      Infested = which(Infested == 1)
+	    } 
 	}
  if(length(InvasionRisk) != nrow(SDDprob))
         {
@@ -160,15 +174,15 @@ if(nrow(InitialPopulation) != nrow(SDDprob))
           {
           Infested = rbinom(1:nrow(SDDprob),size = 1,prob = InvasionRisk[,1])
           Infested = which(Infested == 1)
-	  }
+	        }
 	}
 if(is.na(IncursionStartPop) == T) 
   InintInfested[Infested] = 1
 if(is.na(IncursionStartPop) == F) 
   InintInfested[Infested] = IncursionStartPop
 ###Find alternative to for loop
-InitialPopulation <-rmultinom(1,sum(InitInfested),prob = InitInfested%*%Pk)
-dim(InitialPopulation) = dim(Pk)
+InVector = cbind(InintInfested,K)
+InitialPopulation <- t(apply(InVector,1,FUN = SampleVector))
 InitBio = InitialPopulation
 }
 
@@ -401,18 +415,10 @@ for (timestep in 1:Ntimesteps)
   #This also incorporates density dependence since propagule success depends on availability of uninfested host plants 
   #or unoccupied patches
   Recruits <- rbinom(nrow(SDDprob), rowSums(NodeK)-rowSums(N0), 1 - exp(-NodePropaguleEstablishment*NodeEnvEstabProb*(Pin+Qin)))
-  sum(Recruits)
-  table(Recruits)
-  summary(Recruits)
-  Recruits[is.na(Recruits)==T]
   ###Share recruits to land uses in proportion to unoccupied hosts or sites
-  Pk_n = (NodeK-N0)/(rowSums(NodeK)-rowSums(N0))
-  rowSums(Pk_n)
-  head(NodeK-N0)
-  Pk_n[is.na(Pk_n)==TRUE] = 0
-  LUrecruits <- Pk_n*Recruits
-  LUrecruits <- rmultinom(1,sum(Recruits),prob = Recruits*Pk_n)
-  dim(LUrecruits) <- dim(N0)
+  InVector = cbind(Recruits,NodeK-N0)
+  LUrecruits <- t(apply(InVector,1,FUN = SampleVector))
+  ###Possible due to rounding error when K is large N0 can occasionally = K+1
   N <- ifelse(N0 + LUrecruits>NodeK,NodeK,N0 + LUrecruits)
   } 
  ###Update info vector for any info spread (if SEAM supplied)
