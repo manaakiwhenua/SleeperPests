@@ -33,18 +33,18 @@ INApestMetaParallel = function(
 ModelName, #Name for storing results to file 
 Nperm,                  #Number of permutations per parameter combination
 Ntimesteps,                 #Simulation duration timesteps can be any length of time
-DetectionProb,          #Annual detection probability or vector of probabilties per node (e.g. farm) (must be between 0 and 1)
-DetectionSD = NULL, #Option to provide standard deviation for management probability can be single number or vector (nodes)
-ManageProb,             #Annual Probability or vector of probabilities vector length nrow(SDDprob)of node adopting management upon detection
-ManageSD = NULL, #Option to provide standard deviation for management probability can be single number or vector (nodes)
-MortalityProb,           #Annual mortality probability under management
-MortalitySD = NULL, #Option to provide standard deviation for management probability can be single number or vector (nodes)
+DetectionProb,          #Per-individual detection probability or vector of probabilties per node (e.g. farm) (must be between 0 and 1)
+DetectionSD = NULL, #Option to provide standard deviation for detection probability can be single number or vector (nodes)
+ManageProb,             #Probability or vector of probabilities vector length nrow(SDDprob)of node adopting management upon detection
+ManageSD = NULL, #Option to provide standard deviation for management probability. Can be single number or vector (nodes)
+MortalityProb,           #Mortality probability under management
+MortalitySD = NULL, #Option to provide standard deviation for mortality probability. Can be single number or vector (nodes)
 SpreadReduction,        #Reduction in dispersal probability when management adopted. Must be between 0 (no spread reduction) and 1 (complete prevention of spread). Can be single value or vector length nrow(SDDprob)
-SpreadReductionSD = NULL, #Option to provide standard deviation for management probability can be single number or vector (nodes)
+SpreadReductionSD = NULL, #Option to provide standard deviation for spread reduction. Can be single number or vector (nodes)
 InitialPopulation = NA,        #Vector of population sizes at start of simulations
 InitBioP = NA,		#Proportion of nodes infested at start of simulations
 InvasionRisk = NA,           #Vector or matrix (nodes x timesteps) of probabilities of invasion from external sources
-InitialInfo = 0,        #Vector or of nodes with information at start of simulations
+InitialInfo = NA,        #Vector or of nodes with information at start of simulations
 InitInfoP = NA,		#Proportion of nodes with information at start of simulations
 ExternalInfoProb = NA,           #Vector of probabilities of communication from external sources
 EnvEstabProb = 1,           #Environmentally determined establishment probability. Can be single value, vector (nodes) or matrix (nodes x timesteps)
@@ -171,7 +171,7 @@ if(length(InitialPopulation) == nrow(SDDprob))
 ###just "InitInfoP" if neither "InitialInfo" or "ExternalInfoProb" supplied by user.
 ###If no initial info variables provided, no nodes have info at start of simulations
 InitInfo = rep(0,times = nrow(SDDprob))
-if(is.na(sum(InitialInfo)) == F || is.na(InitInfoP) == F || is.na(ExternalInfoProb) == F )
+if(length(InitialInfo) == nrow(SDDprob) || (is.na(InitInfoP) == F && InitInfoP>0) || is.na(ExternalInfoProb) == F )
 {
 if(length(InitialInfo) != nrow(SDDprob))
   {
@@ -253,7 +253,7 @@ Invaded = ifelse(InitBio>0,1,0)
 ###Probability of info at start of simulation depends on
 ###Presence of pest and detection probability
 ###Select nodes that have detected infestation 
-InitDetection = rbinom(1:nrow(SDDprob),size = 1,prob = Invaded*NodeDetectionProb)
+InitDetection = rbinom(1:nrow(SDDprob),size = 1,prob = 1-(1-NodeDetectionProb)^InitBio)
 InitInfo[InitInfo == 0] = InitDetection[InitInfo == 0]
 ###Populate information status vector ahead of timestep loop
 HaveInfo = InitInfo
@@ -318,7 +318,7 @@ for (timestep in 1:Ntimesteps)
    	NodeSpreadReduction[NodeSpreadReduction>1] = 1
    	}
   
-  ###Randomly assign annual eradication probability when management applied
+  ###Randomly assign annual mortality probability when management applied
   ###If MortalityProb given as matrix (nodes x timesteps)
   if(is.matrix(MortalityProb)==TRUE && nrow(MortalityProb) == nrow(SDDprob) && ncol(MortalityProb) == Ntimesteps)
       {
@@ -422,7 +422,7 @@ for (timestep in 1:Ntimesteps)
  PopulationResultsLoop[,timestep] = N
 
  ###Select new nodes where infestation detected
- NewHaveInfo =  rbinom(1:nrow(SDDprob),size = 1,prob = Invaded*NodeDetectionProb)
+ NewHaveInfo =  rbinom(1:nrow(SDDprob),size = 1,prob = 1-(1-NodeDetectionProb)^N)
  
  ###Add newly detected infestations to info vector
  ###Note once nodes obtain info they always have info (only zero values updated)
@@ -478,10 +478,7 @@ if(DoPlots == T)
 ###Produce summary figs when processing completed
 ###########################################################
 
-Title = paste0("Detection prob. ",round(mean(DetectionProb),digits = 3),
-	" Manage prob. ",round(mean(ManageProb),digits = 3),
-       "\nMortality prob. ",round(MortalityProb,digits =3),
-		" Spread Reduction ",round(mean(SpreadReduction),digits=3))
+Title = ModelName
 
 
 ###Change in total population with time

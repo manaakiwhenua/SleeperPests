@@ -273,8 +273,6 @@ Klanduse[,1] = floor(K*Planduses[1])
 Klanduse[,2] = ceiling(K*Planduses[2])
 N0landuse  = cbind(floor(d$N0*Planduses[1]),ceiling(d$N0*Planduses[2]))
 
-Nperm = 10
-Nyears = 50
 AnnualIncursionRate = 0.1
 H_vectors <- pmin(1, human_prop * d$humans)
 
@@ -284,18 +282,25 @@ H_vectors <- pmin(1, human_prop * d$humans)
 ############################################################################
 Nlanduses = 2
 Ntimesteps = 100
+Nperm = 100
 DetectionArray <- array(dim = c(nrow(d),Nlanduses,Ntimesteps))
 StartDetection <- c(rep(0,times  = nrow(d)),rep(0.5,times  = nrow(d)))
 DetectionArray[,,1] <- StartDetection
 for(timestep in 2:Ntimesteps)
   DetectionArray[,,timestep] <- DetectionArray[,,timestep-1]+0.01 
 
+############################################################################
+###Load core functions
+############################################################################
+source("INApestMeta.r")
+source("INApestMetaParallel.r")
+source("INApestMetaMultipleLandUse.r")
+source("INApestMetaParallelMultipleLandUse.r")
 ##############################################################
 ###Test non-parallel version
 ##############################################################
 
-source("INApestMetaMultipleLandUse.r")
-Nperm = 5
+
 ModelName = "MultipleLandUseTestManageAsArray"
 OutputDir = paste0(ResultsDir,ModelName,"/")
 dir.create(OutputDir)
@@ -336,8 +341,6 @@ SerialTime <- End-Start
 ###Test parallel version
 ##############################################################
 
-source("INApestMetaParallelMultipleLandUse.r")
-Nperm = 5
 ModelName = "MultipleLandUseTestManageAsArrayParallel"
 OutputDir = paste0(ResultsDir,ModelName,"/")
 dir.create(OutputDir)
@@ -374,7 +377,117 @@ End <- Sys.time()
 ParallelTime <- End-Start
 
 
-ModelName = "MultipleLandUseTestZeroMan"
+#########################################################################################
+###Zero management tests
+#########################################################################################
+#Nyears = 100
+#Nperm = 10
+
+
+ModelName = "ZeroManINApestMeta"
+OutputDir = paste0(ResultsDir,ModelName,"/")
+dir.create(OutputDir)
+INApestMeta(
+  ModelName = ModelName,
+  Nperm = Nperm,                  #Number of permutations per parameter combination
+  Ntimesteps = Ntimesteps,                 #Simulation duration
+  DetectionProb = 0,  #Annual detection probability or vector of probabilties per node (e.g. farm) (must be between 0 and 1)
+  ManageProb = 0.99,             #Annual Probability or vector of probabilities vector length nrow(SDDprob)of node adopting management upon detection
+  MortalityProb = 0.99,           #Annual mortality probability under management
+  SpreadReduction = 0.9,        #Reduction in dispersal probability when management adopted. Must be between 0 (no spread reduction) and 1 (complete prevention of spread). Can be single value or vector length nrow(SDDprob)
+  InitialPopulation = d$N0,        #Population size at start if simulations
+  InitBioP = NA,		#Proportion of nodes infested at start of simulations
+  InvasionRisk = PropTotalHumans*AnnualIncursionRate,  #Vector of probabilities of external invasion risk
+  EnvEstabProb = 1,           #Environmentally determined establishment probability. Can be single value, vector (nodes) or matrix (nodes x timesteps)
+  Survival = 1,           # local population survival probability. Set to 1 for no environmental limitation on survival. Can be single number, vector (nodes) or matrix (nodes x timesteps)
+  K = K,		       #Population carrying capacity
+  PropaguleProduction = alpha*d$R0, #Propagules produced per individual
+  PropaguleEstablishment = estab, #Propagules establishment rate
+  IncursionStartPop=10,      #option to set population size for new incursions
+  SDDprob = nd,                   #Natural disperal probability between each pair of nodes
+  SEAM = 0,			#Option to provide socioeconomic adjacency matrix for information spread
+  LDDprob = hd,         #Option to provide long distance (human-mediated) dispersal matrix instead of distance-independent dispesal rate
+  #e.g. could be weighted by law of human visitation or data on stock movements
+  LDDrate = H_vectors,         #Proportion of available propagules entering LDD
+  OngoingExternalInvasion = F,   ##Option to include ongoing invasion from external sources
+  OutputDir = OutputDir,		      #Directory for storing results
+  DoPlots = TRUE	     #Option to omit printing of line graphs.Default is to print.
+)
+End <- Sys.time()
+ParallelTime <- End-Start
+
+
+
+ModelName = "ZeroManINApestMetaParallel"
+OutputDir = paste0(ResultsDir,ModelName,"/")
+dir.create(OutputDir)
+INApestMetaParallel(
+  ModelName = ModelName,
+  Nperm = Nperm,                  #Number of permutations per parameter combination
+  Ntimesteps = Ntimesteps,                 #Simulation duration
+  DetectionProb = 0,  #Annual detection probability or vector of probabilties per node (e.g. farm) (must be between 0 and 1)
+  ManageProb = 0.99,             #Annual Probability or vector of probabilities vector length nrow(SDDprob)of node adopting management upon detection
+  MortalityProb = 0.99,           #Annual mortality probability under management
+  SpreadReduction = 0.9,        #Reduction in dispersal probability when management adopted. Must be between 0 (no spread reduction) and 1 (complete prevention of spread). Can be single value or vector length nrow(SDDprob)
+  InitialPopulation = d$N0,        #Population size at start if simulations
+  InitBioP = NA,		#Proportion of nodes infested at start of simulations
+  InvasionRisk = PropTotalHumans*AnnualIncursionRate,  #Vector of probabilities of external invasion risk
+  EnvEstabProb = 1,           #Environmentally determined establishment probability. Can be single value, vector (nodes) or matrix (nodes x timesteps)
+  Survival = 1,           # local population survival probability. Set to 1 for no environmental limitation on survival. Can be single number, vector (nodes) or matrix (nodes x timesteps)
+  K = K,		       #Population carrying capacity
+  PropaguleProduction = alpha*d$R0, #Propagules produced per individual
+  PropaguleEstablishment = estab, #Propagules establishment rate
+  IncursionStartPop=10,      #option to set population size for new incursions
+  SDDprob = nd,                   #Natural disperal probability between each pair of nodes
+  SEAM = 0,			#Option to provide socioeconomic adjacency matrix for information spread
+  LDDprob = hd,         #Option to provide long distance (human-mediated) dispersal matrix instead of distance-independent dispesal rate
+  #e.g. could be weighted by law of human visitation or data on stock movements
+  LDDrate = H_vectors,         #Proportion of available propagules entering LDD
+  OngoingExternalInvasion = F,   ##Option to include ongoing invasion from external sources
+  OutputDir = OutputDir,		      #Directory for storing results
+  DoPlots = TRUE	     #Option to omit printing of line graphs.Default is to print.
+)
+End <- Sys.time()
+ParallelTime <- End-Start
+
+ModelName = "ZeroManMultipleLandUseTest"
+OutputDir = paste0(ResultsDir,ModelName,"/")
+dir.create(OutputDir)
+Start <- Sys.time()
+
+INApestMetaMultipleLandUse(
+  ModelName = ModelName,
+  Nperm = Nperm,                  #Number of permutations per parameter combination
+  Ntimesteps = Ntimesteps,                 #Simulation duration
+  Nlanduses = 2,
+  DetectionProb = c(0,0),  #Annual per-individual detection Probability or vector of probabilities vector length nrow(SDDprob)of node adopting management upon detection
+  ManageProb = c(0.5,0.99),             #Annual Probability or vector of probabilities vector length nrow(SDDprob)of node adopting management upon detection
+  MortalityProb = c(0.5,0.99),           #Annual mortality probability under management
+  SpreadReduction = c(0,0.9),        #Reduction in dispersal probability when management adopted. Must be between 0 (no spread reduction) and 1 (complete prevention of spread). Can be single value or vector length nrow(SDDprob)
+  InitialPopulation = N0landuse,        #Population size at start if simulations
+  InitBioP = NA,		#Proportion of nodes infested at start of simulations
+  #InvasionRisk = PropTotalHumans*AnnualIncursionRate,  #Vector of probabilities of external invasion risk
+  #InitialInfo = sample(1:nrow(d),10),
+  EnvEstabProb = 1,           #Environmentally determined establishment probability. Can be single value, vector (nodes) or matrix (nodes x timesteps)
+  Survival = 1,           # local population survival probability. Set to 1 for no environmental limitation on survival. Can be single number, vector (nodes) or matrix (nodes x timesteps)
+  K = Klanduse,		       #Population carrying capacity
+  PropaguleProduction = alpha*d$R0, #Propagules produced per individual
+  PropaguleEstablishment = estab, #Propagules establishment rate
+  IncursionStartPop=10,      #option to set population size for new incursions
+  SDDprob = nd,                   #Natural disperal probability between each pair of nodes
+  SEAM = 0,			#Option to provide socioeconomic adjacency matrix for information spread
+  LDDprob = hd,         #Option to provide long distance (human-mediated) dispersal matrix instead of distance-independent dispesal rate
+  #e.g. could be weighted by law of human visitation or data on stock movements
+  LDDrate = H_vectors,         #Proportion of available propagules entering LDD
+  OngoingExternalInvasion = F,   ##Option to include ongoing invasion from external sources
+  OutputDir = OutputDir,		      #Directory for storing results
+  DoPlots = TRUE	     #Option to omit printing of line graphs.Default is to print.
+)
+End <- Sys.time()
+ParallelTime <- End-Start
+
+
+ModelName = "ZeroManMultipleLandUseTestParallel"
 OutputDir = paste0(ResultsDir,ModelName,"/")
 dir.create(OutputDir)
 Start <- Sys.time()
@@ -410,31 +523,100 @@ INApestMetaParallelMultipleLandUse(
 End <- Sys.time()
 ParallelTime <- End-Start
 
+#########################################################################################
+###Identical management tests
+#########################################################################################
+#Nyears = 100
+#Nperm = 30
 
-################################
-###Detection prob 0.9 no external info
-################################
-ModelName = paste0("StandardCurrentClim_DetProb_Parallel","0.9")
-if(DoClimateChange == TRUE)
-  ModelName = paste0("StandardFutureClim_DetProb_Parallel","0.9")
+
+ModelName = "IdenticalManINApestMeta"
 OutputDir = paste0(ResultsDir,ModelName,"/")
 dir.create(OutputDir)
-Start <- Sys.time()
-INApestMetaParallel(
+INApestMeta(
   ModelName = ModelName,
   Nperm = Nperm,                  #Number of permutations per parameter combination
   Ntimesteps = Ntimesteps,                 #Simulation duration
-  DetectionProb = 0.9,  #Annual detection probability or vector of probabilties per node (e.g. farm) (must be between 0 and 1)
+  DetectionProb = 0.05,  #Annual detection probability or vector of probabilties per node (e.g. farm) (must be between 0 and 1)
   ManageProb = 0.99,             #Annual Probability or vector of probabilities vector length nrow(SDDprob)of node adopting management upon detection
   MortalityProb = 0.99,           #Annual mortality probability under management
   SpreadReduction = 0.9,        #Reduction in dispersal probability when management adopted. Must be between 0 (no spread reduction) and 1 (complete prevention of spread). Can be single value or vector length nrow(SDDprob)
   InitialPopulation = d$N0,        #Population size at start if simulations
   InitBioP = NA,		#Proportion of nodes infested at start of simulations
-  InvasionRisk = PropTotalHumans*AnnualIncursionRate,  #Vector of probabilities of external invasion risk
+  InvasionRisk = NA,  #Vector of probabilities of external invasion risk
+  EnvEstabProb = 1,           #Environmentally determined establishment probability. Can be single value, vector (nodes) or matrix (nodes x timesteps)
+  Survival = 1,           # local population survival probability. Set to 1 for no environmental limitation on survival. Can be single number, vector (nodes) or matrix (nodes x timesteps)
+  K = K,		       #Population carrying capacity
+  PropaguleProduction = alpha*d$R0, #Propagules produced per individual
+  PropaguleEstablishment = estab, #Propagules establishment rate
+  IncursionStartPop=10,      #option to set population size for new incursions
+  SDDprob = nd,                   #Natural disperal probability between each pair of nodes
+  SEAM = 0,			#Option to provide socioeconomic adjacency matrix for information spread
+  LDDprob = hd,         #Option to provide long distance (human-mediated) dispersal matrix instead of distance-independent dispesal rate
+  #e.g. could be weighted by law of human visitation or data on stock movements
+  LDDrate = H_vectors,         #Proportion of available propagules entering LDD
+  OngoingExternalInvasion = F,   ##Option to include ongoing invasion from external sources
+  OutputDir = OutputDir,		      #Directory for storing results
+  DoPlots = TRUE	     #Option to omit printing of line graphs.Default is to print.
+)
+End <- Sys.time()
+ParallelTime <- End-Start
+
+
+
+ModelName = "IdenticalManINApestMetaParallel"
+OutputDir = paste0(ResultsDir,ModelName,"/")
+dir.create(OutputDir)
+INApestMetaParallel(
+  ModelName = ModelName,
+  Nperm = Nperm,                  #Number of permutations per parameter combination
+  Ntimesteps = Ntimesteps,                 #Simulation duration
+  DetectionProb = 0.05,  #Annual detection probability or vector of probabilties per node (e.g. farm) (must be between 0 and 1)
+  ManageProb = 0.99,             #Annual Probability or vector of probabilities vector length nrow(SDDprob)of node adopting management upon detection
+  MortalityProb = 0.99,           #Annual mortality probability under management
+  SpreadReduction = 0.9,        #Reduction in dispersal probability when management adopted. Must be between 0 (no spread reduction) and 1 (complete prevention of spread). Can be single value or vector length nrow(SDDprob)
+  InitialPopulation = d$N0,        #Population size at start if simulations
+  InitBioP = NA,		#Proportion of nodes infested at start of simulations
+  InvasionRisk = NA,  #Vector of probabilities of external invasion risk
+  EnvEstabProb = 1,           #Environmentally determined establishment probability. Can be single value, vector (nodes) or matrix (nodes x timesteps)
+  Survival = 1,           # local population survival probability. Set to 1 for no environmental limitation on survival. Can be single number, vector (nodes) or matrix (nodes x timesteps)
+  K = K,		       #Population carrying capacity
+  PropaguleProduction = alpha*d$R0, #Propagules produced per individual
+  PropaguleEstablishment = estab, #Propagules establishment rate
+  IncursionStartPop=10,      #option to set population size for new incursions
+  SDDprob = nd,                   #Natural disperal probability between each pair of nodes
+  SEAM = 0,			#Option to provide socioeconomic adjacency matrix for information spread
+  LDDprob = hd,         #Option to provide long distance (human-mediated) dispersal matrix instead of distance-independent dispesal rate
+  #e.g. could be weighted by law of human visitation or data on stock movements
+  LDDrate = H_vectors,         #Proportion of available propagules entering LDD
+  OngoingExternalInvasion = F,   ##Option to include ongoing invasion from external sources
+  OutputDir = OutputDir,		      #Directory for storing results
+  DoPlots = TRUE	     #Option to omit printing of line graphs.Default is to print.
+)
+End <- Sys.time()
+ParallelTime <- End-Start
+
+ModelName = "IdenticalManMultipleLandUseTest"
+OutputDir = paste0(ResultsDir,ModelName,"/")
+dir.create(OutputDir)
+Start <- Sys.time()
+
+INApestMetaMultipleLandUse(
+  ModelName = ModelName,
+  Nperm = Nperm,                  #Number of permutations per parameter combination
+  Ntimesteps = Ntimesteps,                 #Simulation duration
+  Nlanduses = 2,
+  DetectionProb = c(0.05,0.05),  #Annual per-individual detection Probability or vector of probabilities vector length nrow(SDDprob)of node adopting management upon detection
+  ManageProb = c(0.99,0.99),             #Annual Probability or vector of probabilities vector length nrow(SDDprob)of node adopting management upon detection
+  MortalityProb = c(0.99,0.99),           #Annual mortality probability under management
+  SpreadReduction = c(0.9,0.9),        #Reduction in dispersal probability when management adopted. Must be between 0 (no spread reduction) and 1 (complete prevention of spread). Can be single value or vector length nrow(SDDprob)
+  InitialPopulation = N0landuse,        #Population size at start if simulations
+  InitBioP = NA,		#Proportion of nodes infested at start of simulations
+  #InvasionRisk = PropTotalHumans*AnnualIncursionRate,  #Vector of probabilities of external invasion risk
   #InitialInfo = sample(1:nrow(d),10),
   EnvEstabProb = 1,           #Environmentally determined establishment probability. Can be single value, vector (nodes) or matrix (nodes x timesteps)
   Survival = 1,           # local population survival probability. Set to 1 for no environmental limitation on survival. Can be single number, vector (nodes) or matrix (nodes x timesteps)
-  K = K,		       #Population carrying capacity
+  K = Klanduse,		       #Population carrying capacity
   PropaguleProduction = alpha*d$R0, #Propagules produced per individual
   PropaguleEstablishment = estab, #Propagules establishment rate
   IncursionStartPop=10,      #option to set population size for new incursions
@@ -450,74 +632,28 @@ INApestMetaParallel(
 End <- Sys.time()
 ParallelTime <- End-Start
 
-################################
-###Initial info as binary vector
-################################
-InitialInfo = rep(0,times = nrow(d))
-Sample <- sample(1:nrow(d),10)
-InitialInfo[Sample] = 1
-ModelName = paste0("StandardCurrentClim_DetProb_ParallelInitialInfo",DetectionProbs[detprob])
-if(DoClimateChange == TRUE)
-ModelName = paste0("StandardFutureClim_DetProb_ParallelInitialInfo",DetectionProbs[detprob])
-OutputDir = paste0(ResultsDir,ModelName,"/")
-dir.create(OutputDir)
-Start <- Sys.time()
-INApestMetaParallel(
-ModelName = ModelName,
-Nperm = Nperm,                  #Number of permutations per parameter combination
-Ntimesteps = Ntimesteps,                 #Simulation duration
-DetectionProb = DetectionProbs[detprob],  #Annual detection probability or vector of probabilties per node (e.g. farm) (must be between 0 and 1)
-ManageProb = 0.99,             #Annual Probability or vector of probabilities vector length nrow(SDDprob)of node adopting management upon detection
-MortalityProb = 0.99,           #Annual mortality probability under management
-SpreadReduction = 0.9,        #Reduction in dispersal probability when management adopted. Must be between 0 (no spread reduction) and 1 (complete prevention of spread). Can be single value or vector length nrow(SDDprob)
-InitialPopulation = d$N0,        #Population size at start if simulations
-InitBioP = NA,		#Proportion of nodes infested at start of simulations
-InvasionRisk = PropTotalHumans*AnnualIncursionRate,  #Vector of probabilities of external invasion risk
-InitialInfo = InitialInfo, #
-EnvEstabProb = 1,           #Environmentally determined establishment probability. Can be single value, vector (nodes) or matrix (nodes x timesteps)
-Survival = 1,           # local population survival probability. Set to 1 for no environmental limitation on survival. Can be single number, vector (nodes) or matrix (nodes x timesteps)
-K = K,		       #Population carrying capacity
-PropaguleProduction = alpha*d$R0, #Propagules produced per individual
-PropaguleEstablishment = estab, #Propagules establishment rate
-IncursionStartPop=10,      #option to set population size for new incursions
-SDDprob = nd,                   #Natural disperal probability between each pair of nodes
-SEAM = 0,			#Option to provide socioeconomic adjacency matrix for information spread
-LDDprob = hd,         #Option to provide long distance (human-mediated) dispersal matrix instead of distance-independent dispesal rate
-			      #e.g. could be weighted by law of human visitation or data on stock movements
-LDDrate = H_vectors,         #Proportion of available propagules entering LDD
-OngoingExternalInvasion = F,   ##Option to include ongoing invasion from external sources
-OngoingExternalInfo = F,   ##Option to include ongoing invasion from external sources
-OutputDir = OutputDir,		      #Directory for storing results
-DoPlots = TRUE	     #Option to omit printing of line graphs.Default is to print.
-)
-End <- Sys.time()
-ParallelTime <- End-Start
 
-################################
-###Initial info as proportion of nodes
-################################
-InitInfoP = 10/nrow(d)
-ModelName = paste0("StandardCurrentClim_DetProb_ParallelInitInfoP",DetectionProbs[detprob])
-if(DoClimateChange == TRUE)
-  ModelName = paste0("StandardFutureClim_DetProb_ParallelInitInfoP",DetectionProbs[detprob])
+ModelName = "IdenticalManMultipleLandUseTestParallel"
 OutputDir = paste0(ResultsDir,ModelName,"/")
 dir.create(OutputDir)
 Start <- Sys.time()
-INApestMetaParallel(
+
+INApestMetaParallelMultipleLandUse(
   ModelName = ModelName,
   Nperm = Nperm,                  #Number of permutations per parameter combination
   Ntimesteps = Ntimesteps,                 #Simulation duration
-  DetectionProb = DetectionProbs[detprob],  #Annual detection probability or vector of probabilties per node (e.g. farm) (must be between 0 and 1)
-  ManageProb = 0.99,             #Annual Probability or vector of probabilities vector length nrow(SDDprob)of node adopting management upon detection
-  MortalityProb = 0.99,           #Annual mortality probability under management
-  SpreadReduction = 0.9,        #Reduction in dispersal probability when management adopted. Must be between 0 (no spread reduction) and 1 (complete prevention of spread). Can be single value or vector length nrow(SDDprob)
-  InitialPopulation = d$N0,        #Population size at start if simulations
+  Nlanduses = 2,
+  DetectionProb = c(0.05,0.05),  #Annual per-individual detection Probability or vector of probabilities vector length nrow(SDDprob)of node adopting management upon detection
+  ManageProb = c(0.99,0.99),             #Annual Probability or vector of probabilities vector length nrow(SDDprob)of node adopting management upon detection
+  MortalityProb = c(0.99,0.99),           #Annual mortality probability under management
+  SpreadReduction = c(0.9,0.9),        #Reduction in dispersal probability when management adopted. Must be between 0 (no spread reduction) and 1 (complete prevention of spread). Can be single value or vector length nrow(SDDprob)
+  InitialPopulation = N0landuse,        #Population size at start if simulations
   InitBioP = NA,		#Proportion of nodes infested at start of simulations
-  InvasionRisk = PropTotalHumans*AnnualIncursionRate,  #Vector of probabilities of external invasion risk
-  InitInfoP = InitInfoP, #
+  #InvasionRisk = PropTotalHumans*AnnualIncursionRate,  #Vector of probabilities of external invasion risk
+  #InitialInfo = sample(1:nrow(d),10),
   EnvEstabProb = 1,           #Environmentally determined establishment probability. Can be single value, vector (nodes) or matrix (nodes x timesteps)
   Survival = 1,           # local population survival probability. Set to 1 for no environmental limitation on survival. Can be single number, vector (nodes) or matrix (nodes x timesteps)
-  K = K,		       #Population carrying capacity
+  K = Klanduse,		       #Population carrying capacity
   PropaguleProduction = alpha*d$R0, #Propagules produced per individual
   PropaguleEstablishment = estab, #Propagules establishment rate
   IncursionStartPop=10,      #option to set population size for new incursions
@@ -527,180 +663,9 @@ INApestMetaParallel(
   #e.g. could be weighted by law of human visitation or data on stock movements
   LDDrate = H_vectors,         #Proportion of available propagules entering LDD
   OngoingExternalInvasion = F,   ##Option to include ongoing invasion from external sources
-  OngoingExternalInfo = F,   ##Option to include ongoing invasion from external sources
   OutputDir = OutputDir,		      #Directory for storing results
   DoPlots = TRUE	     #Option to omit printing of line graphs.Default is to print.
 )
 End <- Sys.time()
 ParallelTime <- End-Start
 
-################################
-###Initial info as vector of probabilities
-################################
-ExternalInfoProb = rep(10/nrow(d),times = nrow(d))
-ModelName = paste0("StandardCurrentClim_DetProb_ParallelExternalInfoProb",DetectionProbs[detprob])
-if(DoClimateChange == TRUE)
-  ModelName = paste0("StandardFutureClim_DetProb_ParallelExternalInfoProb",DetectionProbs[detprob])
-OutputDir = paste0(ResultsDir,ModelName,"/")
-dir.create(OutputDir)
-Start <- Sys.time()
-INApestMetaParallel(
-  ModelName = ModelName,
-  Nperm = Nperm,                  #Number of permutations per parameter combination
-  Ntimesteps = Ntimesteps,                 #Simulation duration
-  DetectionProb = DetectionProbs[detprob],  #Annual detection probability or vector of probabilties per node (e.g. farm) (must be between 0 and 1)
-  ManageProb = 0.99,             #Annual Probability or vector of probabilities vector length nrow(SDDprob)of node adopting management upon detection
-  MortalityProb = 0.99,           #Annual mortality probability under management
-  SpreadReduction = 0.9,        #Reduction in dispersal probability when management adopted. Must be between 0 (no spread reduction) and 1 (complete prevention of spread). Can be single value or vector length nrow(SDDprob)
-  InitialPopulation = d$N0,        #Population size at start if simulations
-  InitBioP = NA,		#Proportion of nodes infested at start of simulations
-  InvasionRisk = PropTotalHumans*AnnualIncursionRate,  #Vector of probabilities of external invasion risk
-  ExternalInfoProb = ExternalInfoProb, #
-  EnvEstabProb = 1,           #Environmentally determined establishment probability. Can be single value, vector (nodes) or matrix (nodes x timesteps)
-  Survival = 1,           # local population survival probability. Set to 1 for no environmental limitation on survival. Can be single number, vector (nodes) or matrix (nodes x timesteps)
-  K = K,		       #Population carrying capacity
-  PropaguleProduction = alpha*d$R0, #Propagules produced per individual
-  PropaguleEstablishment = estab, #Propagules establishment rate
-  IncursionStartPop=10,      #option to set population size for new incursions
-  SDDprob = nd,                   #Natural disperal probability between each pair of nodes
-  SEAM = 0,			#Option to provide socioeconomic adjacency matrix for information spread
-  LDDprob = hd,         #Option to provide long distance (human-mediated) dispersal matrix instead of distance-independent dispesal rate
-  #e.g. could be weighted by law of human visitation or data on stock movements
-  LDDrate = H_vectors,         #Proportion of available propagules entering LDD
-  OngoingExternalInvasion = F,   ##Option to include ongoing invasion from external sources
-  OngoingExternalInfo = F,   ##Option to include ongoing invasion from external sources
-  OutputDir = OutputDir,		      #Directory for storing results
-  DoPlots = TRUE	     #Option to omit printing of line graphs.Default is to print.
-)
-End <- Sys.time()
-ParallelTime <- End-Start
-
-
-################################
-###Initial info as vector of probabilities
-###and proportion of nodes
-################################
-ModelName = paste0("StandardCurrentClim_DetProb_ParallelExternalInfoProbInitInfoP",DetectionProbs[detprob])
-if(DoClimateChange == TRUE)
-  ModelName = paste0("StandardFutureClim_DetProb_ParallelExternalInfoProbInitInfoP",DetectionProbs[detprob])
-OutputDir = paste0(ResultsDir,ModelName,"/")
-dir.create(OutputDir)
-Start <- Sys.time()
-INApestMetaParallel(
-  ModelName = ModelName,
-  Nperm = Nperm,                  #Number of permutations per parameter combination
-  Ntimesteps = Ntimesteps,                 #Simulation duration
-  DetectionProb = DetectionProbs[detprob],  #Annual detection probability or vector of probabilties per node (e.g. farm) (must be between 0 and 1)
-  ManageProb = 0.99,             #Annual Probability or vector of probabilities vector length nrow(SDDprob)of node adopting management upon detection
-  MortalityProb = 0.99,           #Annual mortality probability under management
-  SpreadReduction = 0.9,        #Reduction in dispersal probability when management adopted. Must be between 0 (no spread reduction) and 1 (complete prevention of spread). Can be single value or vector length nrow(SDDprob)
-  InitialPopulation = d$N0,        #Population size at start if simulations
-  InitBioP = NA,		#Proportion of nodes infested at start of simulations
-  InvasionRisk = PropTotalHumans*AnnualIncursionRate,  #Vector of probabilities of external invasion risk
-  InitInfoP = 10/nrow(d), #
-  ExternalInfoProb = ExternalInfoProb, #
-  EnvEstabProb = 1,           #Environmentally determined establishment probability. Can be single value, vector (nodes) or matrix (nodes x timesteps)
-  Survival = 1,           # local population survival probability. Set to 1 for no environmental limitation on survival. Can be single number, vector (nodes) or matrix (nodes x timesteps)
-  K = K,		       #Population carrying capacity
-  PropaguleProduction = alpha*d$R0, #Propagules produced per individual
-  PropaguleEstablishment = estab, #Propagules establishment rate
-  IncursionStartPop=10,      #option to set population size for new incursions
-  SDDprob = nd,                   #Natural disperal probability between each pair of nodes
-  SEAM = 0,			#Option to provide socioeconomic adjacency matrix for information spread
-  LDDprob = hd,         #Option to provide long distance (human-mediated) dispersal matrix instead of distance-independent dispesal rate
-  #e.g. could be weighted by law of human visitation or data on stock movements
-  LDDrate = H_vectors,         #Proportion of available propagules entering LDD
-  OngoingExternalInvasion = F,   ##Option to include ongoing invasion from external sources
-  OngoingExternalInfo = F,   ##Option to include ongoing invasion from external sources
-  OutputDir = OutputDir,		      #Directory for storing results
-  DoPlots = TRUE	     #Option to omit printing of line graphs.Default is to print.
-)
-End <- Sys.time()
-ParallelTime <- End-Start
-
-################################
-###Initial info as vector of probabilities
-###with ongoing external communication
-################################
-ModelName = paste0("StandardCurrentClim_DetProb_ParallelOngoingExternalInfo",DetectionProbs[detprob])
-if(DoClimateChange == TRUE)
-  ModelName = paste0("StandardFutureClim_DetProb_ParallelOngoingExternalInfo",DetectionProbs[detprob])
-OutputDir = paste0(ResultsDir,ModelName,"/")
-dir.create(OutputDir)
-Start <- Sys.time()
-INApestMetaParallel(
-  ModelName = ModelName,
-  Nperm = Nperm,                  #Number of permutations per parameter combination
-  Ntimesteps = Ntimesteps,                 #Simulation duration
-  DetectionProb = DetectionProbs[detprob],  #Annual detection probability or vector of probabilties per node (e.g. farm) (must be between 0 and 1)
-  ManageProb = 0.99,             #Annual Probability or vector of probabilities vector length nrow(SDDprob)of node adopting management upon detection
-  MortalityProb = 0.99,           #Annual mortality probability under management
-  SpreadReduction = 0.9,        #Reduction in dispersal probability when management adopted. Must be between 0 (no spread reduction) and 1 (complete prevention of spread). Can be single value or vector length nrow(SDDprob)
-  InitialPopulation = d$N0,        #Population size at start if simulations
-  InitBioP = NA,		#Proportion of nodes infested at start of simulations
-  InvasionRisk = PropTotalHumans*AnnualIncursionRate,  #Vector of probabilities of external invasion risk
-  ExternalInfoProb = ExternalInfoProb, #
-  EnvEstabProb = 1,           #Environmentally determined establishment probability. Can be single value, vector (nodes) or matrix (nodes x timesteps)
-  Survival = 1,           # local population survival probability. Set to 1 for no environmental limitation on survival. Can be single number, vector (nodes) or matrix (nodes x timesteps)
-  K = K,		       #Population carrying capacity
-  PropaguleProduction = alpha*d$R0, #Propagules produced per individual
-  PropaguleEstablishment = estab, #Propagules establishment rate
-  IncursionStartPop=10,      #option to set population size for new incursions
-  SDDprob = nd,                   #Natural disperal probability between each pair of nodes
-  SEAM = 0,			#Option to provide socioeconomic adjacency matrix for information spread
-  LDDprob = hd,         #Option to provide long distance (human-mediated) dispersal matrix instead of distance-independent dispesal rate
-  #e.g. could be weighted by law of human visitation or data on stock movements
-  LDDrate = H_vectors,         #Proportion of available propagules entering LDD
-  OngoingExternalInvasion = F,   ##Option to include ongoing invasion from external sources
-  OngoingExternalInfo = T,   ##Option to include ongoing invasion from external sources
-  OutputDir = OutputDir,		      #Directory for storing results
-  DoPlots = TRUE	     #Option to omit printing of line graphs.Default is to print.
-)
-End <- Sys.time()
-ParallelTime <- End-Start
-
-################################
-###Initial info as matrix of probabilities
-###with ongoing external communication
-################################
-ExternalInfoProbMatrix = matrix(ncol = Ntimesteps, nrow  = nrow(d))
-for(i in 1:20)
-  ExternalInfoProbMatrix[,i] = ExternalInfoProb
-for(i in 21:Ntimesteps)
-  ExternalInfoProbMatrix[,i] = ExternalInfoProb*10
-ModelName = paste0("StandardCurrentClim_DetProb_ParallelOngoingExternalInfoMatrix",DetectionProbs[detprob])
-if(DoClimateChange == TRUE)
-  ModelName = paste0("StandardFutureClim_DetProb_ParallelOngoingExternalInfoMatrix",DetectionProbs[detprob])
-OutputDir = paste0(ResultsDir,ModelName,"/")
-dir.create(OutputDir)
-Start <- Sys.time()
-INApestMetaParallel(
-  ModelName = ModelName,
-  Nperm = Nperm,                  #Number of permutations per parameter combination
-  Ntimesteps = Ntimesteps,                 #Simulation duration
-  DetectionProb = DetectionProbs[detprob],  #Annual detection probability or vector of probabilties per node (e.g. farm) (must be between 0 and 1)
-  ManageProb = 0.99,             #Annual Probability or vector of probabilities vector length nrow(SDDprob)of node adopting management upon detection
-  MortalityProb = 0.99,           #Annual mortality probability under management
-  SpreadReduction = 0.9,        #Reduction in dispersal probability when management adopted. Must be between 0 (no spread reduction) and 1 (complete prevention of spread). Can be single value or vector length nrow(SDDprob)
-  InitialPopulation = d$N0,        #Population size at start if simulations
-  InitBioP = NA,		#Proportion of nodes infested at start of simulations
-  InvasionRisk = PropTotalHumans*AnnualIncursionRate,  #Vector of probabilities of external invasion risk
-  ExternalInfoProb = ExternalInfoProbMatrix, #
-  EnvEstabProb = 1,           #Environmentally determined establishment probability. Can be single value, vector (nodes) or matrix (nodes x timesteps)
-  Survival = 1,           # local population survival probability. Set to 1 for no environmental limitation on survival. Can be single number, vector (nodes) or matrix (nodes x timesteps)
-  K = K,		       #Population carrying capacity
-  PropaguleProduction = alpha*d$R0, #Propagules produced per individual
-  PropaguleEstablishment = estab, #Propagules establishment rate
-  IncursionStartPop=10,      #option to set population size for new incursions
-  SDDprob = nd,                   #Natural disperal probability between each pair of nodes
-  SEAM = 0,			#Option to provide socioeconomic adjacency matrix for information spread
-  LDDprob = hd,         #Option to provide long distance (human-mediated) dispersal matrix instead of distance-independent dispesal rate
-  #e.g. could be weighted by law of human visitation or data on stock movements
-  LDDrate = H_vectors,         #Proportion of available propagules entering LDD
-  OngoingExternalInvasion = F,   ##Option to include ongoing invasion from external sources
-  OngoingExternalInfo = T,   ##Option to include ongoing invasion from external sources
-  OutputDir = OutputDir,		      #Directory for storing results
-  DoPlots = TRUE	     #Option to omit printing of line graphs.Default is to print.
-)
-End <- Sys.time()
-ParallelTime <- End-Start
