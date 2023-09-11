@@ -286,8 +286,6 @@ InitInfo[InitInfo == 0] = InitDetection[InitInfo == 0]
 ###Populate information status vector ahead of timestep loop
 HaveInfo = InitInfo
 
-###Populate information status vector ahead of timestep loop
-HaveInfo = InitInfo
 
   # initialise the population
   N <- InitBio
@@ -375,7 +373,7 @@ HaveInfo = InitInfo
   
   ###Identify nodes with known extant infestations 
   Detected = Invaded*HaveInfo
-  N0 = rbinom(nrow(SDDprob),N,NodeSurvival*(1-MortalityProb*Managing))
+  N0 = rbinom(nrow(SDDprob),N,NodeSurvival*(1-NodeMortalityProb*Managing))
   if(sum(N0)<=0 )
     N = N0 
   Pin <-0
@@ -384,7 +382,7 @@ HaveInfo = InitInfo
   if(sum(N0)>0 ) 
   {
       
-  N <- LocalDynamics(sddprob = SDDprob, nodepropaguleproduction = NodePropaguleProduction,nodeenvestabprob = NodeEnvEstabProb,n=N,
+  N <- LocalDynamics(sddprob = SDDprob, nodepropaguleproduction = NodePropaguleProduction,nodeenvestabprob = NodeEnvEstabProb,n=N0,
                      lddprob = LDDprob, lddrate = LDDrate,k_is_0 = K_is_0, nodeK = NodeK,nodepropaguleestablishment = NodePropaguleEstablishment,
                      nodespreadreduction = NodeSpreadReduction,managing = Managing)
   } 
@@ -413,15 +411,16 @@ HaveInfo = InitInfo
   N[N > NodeK] = NodeK[N > NodeK] 
   }
  
-  ###Add nodes with information resulting from external sources
-  if(OngoingExternalInfo == T)
-    {
-    if(is.matrix(ExternalInfoProb) == F)
-      ExternalInfo = rbinom(1:nrow(SDDprob),size = 1,prob = ExternalInfoProb)
-    if(is.matrix(ExternalInfoProb) == T)
-      ExternalInfo = rbinom(1:nrow(SDDprob),size = 1,prob = ExternalInfoProb[,timestep])
-    HaveInfo[HaveInfo == 0] = ExternalInfo[HaveInfo==0]
-    }
+ ###Add nodes with information resulting from external sources
+ if(OngoingExternalInfo == T)
+  {
+  if(is.matrix(ExternalInfoProb) == F)
+    ExternalInfo = rbinom(1:nrow(SDDprob),size = 1,prob = ExternalInfoProb)
+  if(is.matrix(ExternalInfoProb) == T)
+    ExternalInfo = rbinom(1:nrow(SDDprob),size = 1,prob = ExternalInfoProb[,timestep])
+  HaveInfo[HaveInfo == 0] = ExternalInfo[HaveInfo==0]
+  }
+  
  ###Update infestation vector
  Invaded = ifelse(N>0,1,0)
  

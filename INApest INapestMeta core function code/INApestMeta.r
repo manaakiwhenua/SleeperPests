@@ -382,7 +382,7 @@ HaveInfo = InitInfo
   if(sum(N0)>0 ) 
   {
       
-  N <- LocalDynamics(sddprob = SDDprob, nodepropaguleproduction = NodePropaguleProduction,nodeenvestabprob = NodeEnvEstabProb,n=N,
+  N <- LocalDynamics(sddprob = SDDprob, nodepropaguleproduction = NodePropaguleProduction,nodeenvestabprob = NodeEnvEstabProb,n=N0,
                      lddprob = LDDprob, lddrate = LDDrate,k_is_0 = K_is_0, nodeK = NodeK,nodepropaguleestablishment = NodePropaguleEstablishment,
                      nodespreadreduction = NodeSpreadReduction,managing = Managing)
   } 
