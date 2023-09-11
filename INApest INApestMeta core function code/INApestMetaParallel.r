@@ -339,6 +339,8 @@ for (timestep in 1:Ntimesteps)
   
   ###Adjust starting population for natural and managed mortality
   N0 = rbinom(nrow(SDDprob),N,NodeSurvival*(1-NodeMortalityProb*Managing))
+  if(sum(N0)<=0 )
+    N = N0
   Pin <-0
   Qin <- 0  
     # natural dispersal 

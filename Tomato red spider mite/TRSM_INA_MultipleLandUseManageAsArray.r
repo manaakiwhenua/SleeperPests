@@ -563,7 +563,7 @@ End <- Sys.time()
 ParallelTime <- End-Start
 
 
-
+Nperm = 100
 ModelName = "IdenticalManINApestMetaParallel"
 OutputDir = paste0(ResultsDir,ModelName,"/")
 dir.create(OutputDir)
