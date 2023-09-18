@@ -19,8 +19,7 @@
 ###are detected, the proportion of infestations detected and nodes under management against time 
 ###########################################################################
 ###########################################################################
-
-local.dynamics = function(sddprob = SDDprob, nodepropaguleproduction = NodePropaguleProduction,nodeenvestabprob = NodeEnvEstabProb,n=N,
+local.dynamics = function(sddprob = SDDprob, nodepropaguleproduction = NodePropaguleProduction,nodeenvestabprob = NodeEnvEstabProb,n=N0,
 lddprob = LDDprob, lddrate = LDDrate,k_is_0 = K_is_0, nodeK = NodeK,nodepropaguleestablishment = NodePropaguleEstablishment,
 nodespreadreduction = NodeSpreadReduction,managing = Managing)
 {
@@ -51,14 +50,14 @@ ModelName, #Name for storing results to file
 Nperm,                  #Number of permutations per parameter combination
 Ntimesteps,                 #Simulation duration timesteps can be any length of time
 LocalDynamics = local.dynamics, #Local population growth,dispersal and management function
-DetectionProb,          #Annual detection probability or vector of probabilties per node (e.g. farm) (must be between 0 and 1)
-DetectionSD = NULL, #Option to provide standard deviation for management probability can be single number or vector (nodes)
-ManageProb,             #Annual Probability or vector of probabilities vector length nrow(SDDprob)of node adopting management upon detection
-ManageSD = NULL, #Option to provide standard deviation for management probability can be single number or vector (nodes)
-MortalityProb,           #Annual mortality probability under management
-MortalitySD = NULL, #Option to provide standard deviation for management probability can be single number or vector (nodes)
+DetectionProb,          #Per-individual detection probability or vector of probabilties per node (e.g. farm) (must be between 0 and 1)
+DetectionSD = NULL, #Option to provide standard deviation for detection probability. Can be single number or vector (nodes)
+ManageProb,             #Probability or vector of probabilities vector length nrow(SDDprob)of node adopting management upon detection
+ManageSD = NULL, #Option to provide standard deviation for management probability. Can be single number or vector (nodes)
+MortalityProb,           #Mortality probability under management
+MortalitySD = NULL, #Option to provide standard deviation for mortality probability. Can be single number or vector (nodes)
 SpreadReduction,        #Reduction in dispersal probability when management adopted. Must be between 0 (no spread reduction) and 1 (complete prevention of spread). Can be single value or vector length nrow(SDDprob)
-SpreadReductionSD = NULL, #Option to provide standard deviation for management probability can be single number or vector (nodes)
+SpreadReductionSD = NULL, #Option to provide standard deviation for spread reduction probability can be single number or vector (nodes)
 InitialPopulation = NA,        #Vector or matrix (nodes x timesteps) of population sizes at start of simulations
 InitBioP = NA,		#Proportion of nodes infested at start of simulations
 InvasionRisk = NA,           #Vector of probabilities of invasion from external sources
@@ -279,15 +278,14 @@ Invaded = ifelse(InitBio>0,1,0)
 ###Probability of info at start of simulation depends on
 ###Presence of pest and detection probability
 ###Select nodes that have detected infestation 
-InitDetection = rbinom(1:nrow(SDDprob),size = 1,prob = Invaded*NodeDetectionProb)
+InitDetection = rbinom(1:nrow(SDDprob),size = 1,prob = 1-(1-NodeDetectionProb)^InitBio)
+
 ###Add detections to nodes which already have info (e.g. pre-emptive control and hygiene measures)
 InitInfo[InitInfo == 0] = InitDetection[InitInfo == 0]
 
 ###Populate information status vector ahead of timestep loop
 HaveInfo = InitInfo
 
-###Populate information status vector ahead of timestep loop
-HaveInfo = InitInfo
 
   # initialise the population
   N <- InitBio
@@ -375,7 +373,7 @@ HaveInfo = InitInfo
   
   ###Identify nodes with known extant infestations 
   Detected = Invaded*HaveInfo
-  N0 = rbinom(nrow(SDDprob),N,NodeSurvival*(1-MortalityProb*Managing))
+  N0 = rbinom(nrow(SDDprob),N,NodeSurvival*(1-NodeMortalityProb*Managing))
   if(sum(N0)<=0 )
     N = N0 
   Pin <-0
@@ -384,7 +382,7 @@ HaveInfo = InitInfo
   if(sum(N0)>0 ) 
   {
       
-  N <- LocalDynamics(sddprob = SDDprob, nodepropaguleproduction = NodePropaguleProduction,nodeenvestabprob = NodeEnvEstabProb,n=N,
+  N <- LocalDynamics(sddprob = SDDprob, nodepropaguleproduction = NodePropaguleProduction,nodeenvestabprob = NodeEnvEstabProb,n=N0,
                      lddprob = LDDprob, lddrate = LDDrate,k_is_0 = K_is_0, nodeK = NodeK,nodepropaguleestablishment = NodePropaguleEstablishment,
                      nodespreadreduction = NodeSpreadReduction,managing = Managing)
   } 
@@ -413,15 +411,16 @@ HaveInfo = InitInfo
   N[N > NodeK] = NodeK[N > NodeK] 
   }
  
-  ###Add nodes with information resulting from external sources
-  if(OngoingExternalInfo == T)
-    {
-    if(is.matrix(ExternalInfoProb) == F)
-      ExternalInfo = rbinom(1:nrow(SDDprob),size = 1,prob = ExternalInfoProb)
-    if(is.matrix(ExternalInfoProb) == T)
-      ExternalInfo = rbinom(1:nrow(SDDprob),size = 1,prob = ExternalInfoProb[,timestep])
-    HaveInfo[HaveInfo == 0] = ExternalInfo[HaveInfo==0]
-    }
+ ###Add nodes with information resulting from external sources
+ if(OngoingExternalInfo == T)
+  {
+  if(is.matrix(ExternalInfoProb) == F)
+    ExternalInfo = rbinom(1:nrow(SDDprob),size = 1,prob = ExternalInfoProb)
+  if(is.matrix(ExternalInfoProb) == T)
+    ExternalInfo = rbinom(1:nrow(SDDprob),size = 1,prob = ExternalInfoProb[,timestep])
+  HaveInfo[HaveInfo == 0] = ExternalInfo[HaveInfo==0]
+  }
+  
  ###Update infestation vector
  Invaded = ifelse(N>0,1,0)
  
@@ -435,7 +434,7 @@ HaveInfo = InitInfo
  PopulationResults[,timestep,perm] = N
 
  ###Select new nodes where infestation detected
- NewHaveInfo =  rbinom(1:nrow(SDDprob),size = 1,prob = Invaded*NodeDetectionProb)
+ NewHaveInfo =  rbinom(1:nrow(SDDprob),size = 1,prob = 1-(1-NodeDetectionProb)^N)
  
  ###Add newly detected infestations to info vector
  ###Note once nodes obtain info they always have info (only zero values updated)
