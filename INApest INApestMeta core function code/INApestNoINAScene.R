@@ -21,8 +21,7 @@
 ###########################################################################
 
 #######################################################################
-###This version manually implements parallel processing in foreach for the permutation loop.
-###Also manually implements steps formerly performed by INAscene
+###This version manually implements manually implements steps formerly performed by INAscene
 #######################################################################
 INApestNoINAscene = function(
 ModelName,              #Name for storing results to disk 
@@ -60,9 +59,6 @@ DoPlots = TRUE	     #Option to omit printing of line graphs. Default is to print
 ###2) Might also be interesting to allow for other aspects of management response to vary depending on information held by neighbours
 ####e.g. detection probability might increase if neighbours area managing
 
-###Changes for final report
-###1) Change local extinction to survival
-###2) Change timesteps to steps 
 
 ###Declare array tracking infestation status 
 ###of individual nodes in each timestep of each realisation
@@ -206,7 +202,7 @@ if(is.na(sum(InitialInfo))== F || is.na(InitInfoP) == F || is.na(sum(ExternalInf
 ###If DetectionProb given as single value or vector (nodes)
 if(is.matrix(DetectionProb)==FALSE &&(length(DetectionProb) == 1 ||length(DetectionProb) == nrow(SDDprob) ))
       {
-	NodeDetectionProb = rnorm(DetectionProb,DetectionSD,n = nrow(SDDprob))
+      NodeDetectionProb = rnorm(DetectionProb,DetectionSD,n = nrow(SDDprob))
       NodeDetectionProb[NodeDetectionProb<0] = 0
       NodeDetectionProb[NodeDetectionProb>1] = 1
       }
@@ -224,7 +220,7 @@ if(is.matrix(DetectionProb)==TRUE && nrow(DetectionProb) == nrow(SDDprob) && nco
 ###If ManageProb given as single value or vector (nodes)
 if(is.matrix(ManageProb)==FALSE &&(length(ManageProb) == 1 ||length(ManageProb) == nrow(SDDprob) ))
       {
-	    NodeManageProb = rnorm(ManageProb,ManageSD,n = nrow(SDDprob))
+      NodeManageProb = rnorm(ManageProb,ManageSD,n = nrow(SDDprob))
       NodeManageProb[NodeManageProb<0] = 0
       NodeManageProb[NodeManageProb>1] = 1
       }
@@ -233,7 +229,7 @@ if(is.matrix(ManageProb)==FALSE &&(length(ManageProb) == 1 ||length(ManageProb) 
 ###If SpreadReduction given as single value or vector (nodes)
 if(is.matrix(SpreadReduction)==FALSE &&(length(SpreadReduction) == 1 ||length(SpreadReduction) == nrow(SDDprob) ))
       {
-	    NodeSpreadReduction = rnorm(SpreadReduction,ManageSD,n = nrow(SDDprob))
+      NodeSpreadReduction = rnorm(SpreadReduction,ManageSD,n = nrow(SDDprob))
       NodeSpreadReduction[NodeSpreadReduction<0] = 0
       NodeSpreadReduction[NodeSpreadReduction>1] = 1
       }
@@ -253,6 +249,7 @@ if(is.matrix(EradicationProb)==FALSE &&(length(EradicationProb) == 1 ||length(Er
 ###Presence of pest and detection probability
 ###Select nodes that have detected infestation 
 InitDetection = rbinom(1:nrow(SDDprob),size = 1,prob = InitBio*NodeDetectionProb)
+
 ###Add detections to nodes which already have info (e.g. pre-emptive control and hygiene measures)
 InitInfo[InitInfo == 0] = InitDetection[InitInfo == 0]
 
@@ -315,7 +312,7 @@ for(timestep in 1:Ntimesteps)
   ###If EradicationProb given as matrix (nodes x timesteps)
   if(is.matrix(EradicationProb)==TRUE && nrow(EradicationProb) == nrow(SDDprob) && ncol(EradicationProb) == Ntimesteps)
       {
-	    NodeEradicationProb = rnorm(EradicationProb[,timestep],EradicationSD,n = nrow(SDDprob))
+      NodeEradicationProb = rnorm(EradicationProb[,timestep],EradicationSD,n = nrow(SDDprob))
       NodeEradicationProb[NodeEradicationProb<0] = 0
       NodeEradicationProb[NodeEradicationProb>1] = 1
       }
@@ -460,15 +457,6 @@ for(perm in 1:Nperm)
 Sub = InvasionSummary[InvasionSummary$Realisation == perm,]
 lines(Sub$Timestep,Sub$NodesInfested,col  = perm)
 }
-
-###Option to plot points for Marlborough historic data
-if(mean(DetectionProb) == 0)
-{
-#points(13,56*0.67,col = 1,cex = 2,pch = 19) ###Historic N farms from Bell 2006 https://nzpps.org/_journal/index.php/nzpp/article/view/4417/4245
-					    ###67% of infested paddocks under grazing
-#points(18,(96-20)*0.67,col = 1,cex = 2,pch = 19) ###Subtract 20 here as 20 new incursions due to subdivisions 
-}
-
 dev.off()
 
 Quantiles = as.data.frame(aggregate(InvasionSummary$NodesInfested, by = list(InvasionSummary$Timestep),quantile,prob = c(0.025,0.5,0.975)))
@@ -481,20 +469,10 @@ ylab = "Number of nodes infested", main = Title)
 lines(Quantiles[,1],Yvals[,2],lwd = 3)
 lines(Quantiles[,1],Yvals[,1],lwd = 3,col = 2)
 lines(Quantiles[,1],Yvals[,3],lwd = 3,col = 2)
-
-###Option to plot points for Marlborough historic data
-if(mean(DetectionProb) == 0)
-{
-#points(13,56*0.67,col = 1,cex = 2,pch = 19) ###Historic N farms from Bell 2006 https://nzpps.org/_journal/index.php/nzpp/article/view/4417/4245
-					    ###67% of infested paddocks under grazing
-#points(18,(96-20)*0.67,col = 1,cex = 2,pch = 19) ###Subtract 20 here as 20 new incursions due to subdivisions 
-}
 dev.off()
-
 
 ###Change in number of farms managing through time
 ###Plots of raw values for each realisation and summaries (median and 95% CI) provided
-
 ManagingSummary = as.data.frame(matrix(ncol = 3, nrow = 0))
 colnames(ManagingSummary) = c("Realisation",   "Timestep",  "NodesManaging")
 
