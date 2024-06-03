@@ -21,7 +21,7 @@
 ###########################################################################
 
 #######################################################################
-###This version manually implements manually implements steps formerly performed by INAscene
+###This version manually implements steps formerly performed by INAscene
 #######################################################################
 INApestNoINAscene = function(
 ModelName,              #Name for storing results to disk 

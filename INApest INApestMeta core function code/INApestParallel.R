@@ -30,7 +30,7 @@ library(abind)
 library(doParallel)
 
 
-INApestParallelNoINAscene = function(
+INApestParallel = function(
 ModelName,              #Name for storing results to disk 
 Nperm,                  #Number of permutations per parameter combination
 Ntimesteps,                 #Simulation duration
@@ -139,7 +139,7 @@ registerDoParallel(cluster)
 acomb <- function(...) abind(..., along=4)
 
 ###Need to include required packages in the .packages arguement of the foreach call
-PermOut <- foreach(1:Nperm, .combine = 'acomb',.packages=c("abind","INA")) %dopar% 
+PermOut <- foreach(1:Nperm, .combine = 'acomb',.packages=c("abind")) %dopar% 
 {
 InvasionResultsLoop <- array(dim = c(nrow(SDDprob),Ntimesteps))
 ManagingResultsLoop <- InvasionResultsLoop

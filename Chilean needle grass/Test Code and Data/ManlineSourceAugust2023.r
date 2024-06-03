@@ -70,10 +70,10 @@ EradicationProb = EradicationProb*CompleteDetectionProb
 ###########################################################################
 ###########################################################################
 
-source("Scripts/INApestParallelNoINAscene.R")
 source("Scripts/INApestParallel.R")
+source("Scripts/INApestParallelINAScene.R")
+source("Scripts/INApestINAScene.R")
 source("Scripts/INApest.R")
-source("Scripts/INApestNoINAscene.R")
 source("Scripts/INApestHeatMaps.R")
 
 #############################################################
