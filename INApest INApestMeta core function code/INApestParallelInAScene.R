@@ -31,7 +31,7 @@ library(INA)
 library(doParallel)
 
 
-INApestParallel = function(
+INApestParallelINAscene = function(
 ModelName,              #Name for storing results to disk 
 Nperm,                  #Number of permutations per parameter combination
 Ntimesteps,                 #Simulation duration

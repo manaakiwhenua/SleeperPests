@@ -23,7 +23,7 @@
 #######################################################################
 ###This version manually implements steps formerly performed by INAscene
 #######################################################################
-INApestNoINAscene = function(
+INApest = function(
 ModelName,              #Name for storing results to disk 
 Nperm,                  #Number of permutations per parameter combination
 Ntimesteps,                 #Simulation duration
