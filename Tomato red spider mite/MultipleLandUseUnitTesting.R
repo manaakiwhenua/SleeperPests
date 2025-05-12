@@ -10,7 +10,8 @@ Klanduse = matrix(nrow = length(K),ncol = 2)
 Klanduse[,1] = floor(K*Planduses[1])
 Klanduse[,2] = ceiling(K*Planduses[2])
 N0landuse  = cbind(floor(d$N0*Planduses[1]),ceiling(d$N0*Planduses[2]))
-
+#Klanduse[118,1] = 10
+#N0landuse[118,] = 10
 ###########################################################
 ###Serial function
 ###########################################################

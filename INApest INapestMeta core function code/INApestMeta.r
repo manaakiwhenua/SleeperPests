@@ -94,6 +94,14 @@ inv_K <- 1 / sum(K)
 NodeK = K
 }
 
+###If carrying capacity provided as matrix assign values from first timestep for population initialisation
+if(is.matrix(K) == TRUE)
+  {
+  K_is_0 <- K[,1]<=0
+  inv_K <- 1 / sum(K[,1])
+  NodeK = K[,1] 
+}    
+  
 if(is.matrix(PropaguleProduction) == FALSE)
   NodePropaguleProduction = PropaguleProduction
 
@@ -185,6 +193,14 @@ if(is.na(IncursionStartPop) == F)
 
 if(length(InitialPopulation) == nrow(SDDprob))
 	InitBio = InitialPopulation
+
+###Ensure initial population not greater than carrying capacity
+InitBio[InitBio > NodeK] = NodeK[InitBio > NodeK] 
+
+# initialise the population
+N <- InitBio
+if(sum(N) == 0 && OngoingExternalInvasion == F)
+  warning("No initial populations and no future external invasions")
 
 ###Select nodes with information at start of simulation  according either to "InitialInfo" binary vector OR
 ###"ExternalInfoProb" probabilities and/or initial proportion of nodes with information ("InitInfoP") OR
@@ -287,8 +303,7 @@ InitInfo[InitInfo == 0] = InitDetection[InitInfo == 0]
 HaveInfo = InitInfo
 
 
-  # initialise the population
-  N <- InitBio
+
   
     
   # run simulation

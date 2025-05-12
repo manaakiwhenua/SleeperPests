@@ -200,6 +200,15 @@ InitBio = InitialPopulation
 if(nrow(InitialPopulation) == nrow(SDDprob))
   InitBio = InitialPopulation
 
+###Ensure initial population not greater than carrying capacity
+for(i in 1:Nlanduses)
+  InitBio[,i] = apply(cbind(NodeK[,i], InitBio[,i]),MARGIN = 1,FUN = min)
+
+# initialise the population
+N <- InitBio
+if(sum(N) == 0 && OngoingExternalInvasion == F)
+  warning("No initial populations and no future external invasions")
+
 ###Select nodes with information at start of simulation  according either to "InitialInfo" binary vector OR
 ###"ExternalInfoProb" probabilities and/or initial proportion of nodes with information ("InitInfoP") OR
 ###just "InitInfoP" if neither "InitialInfo" or "ExternalInfoProb" supplied by user.
@@ -306,10 +315,7 @@ InitInfo[InitInfo == 0] = InitDetection[InitInfo == 0]
 ###Populate information status vector ahead of timestep loop
 HaveInfo = InitInfo
 
-  # initialise the population
-  N <- InitBio
-  
-
+ 
 ###Declare matrices outside loop
 Managing = matrix(ncol = Nlanduses,nrow = nrow(SDDprob))
 N0 = matrix(ncol = Nlanduses,nrow = nrow(SDDprob))

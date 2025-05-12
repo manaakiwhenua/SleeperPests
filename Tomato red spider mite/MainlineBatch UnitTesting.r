@@ -39,6 +39,9 @@ source("InfoSpreadxOngoingIncursion Test May2025.R")
 ###Test external info functionality
 source("ExternalInfo Test May2025.r")
 
+###Test external info functionality
+source("ExternalInvasion Test May2025.r")
+
 ##############################################################
 ###Run tests under future climate
 ##############################################################
@@ -53,7 +56,8 @@ source("InfoSpreadxOngoingIncursion Test May2025.R")
 ###Test external info functionality
 source("ExternalInfo Test May2025.r")
 
-
+###Test external info functionality
+source("ExternalInvasion Test May2025.r")
 
 
 
