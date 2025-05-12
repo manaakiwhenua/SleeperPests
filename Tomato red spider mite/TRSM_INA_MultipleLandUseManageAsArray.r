@@ -630,7 +630,7 @@ INApestMetaMultipleLandUse(
   DoPlots = TRUE	     #Option to omit printing of line graphs.Default is to print.
 )
 End <- Sys.time()
-ParallelTime <- End-Start
+SerialTime <- End-Start
 
 
 ModelName = "IdenticalManMultipleLandUseTestParallel"

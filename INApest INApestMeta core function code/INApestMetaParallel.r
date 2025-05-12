@@ -171,7 +171,7 @@ if(length(InitialPopulation) == nrow(SDDprob))
 ###just "InitInfoP" if neither "InitialInfo" or "ExternalInfoProb" supplied by user.
 ###If no initial info variables provided, no nodes have info at start of simulations
 InitInfo = rep(0,times = nrow(SDDprob))
-if(length(InitialInfo) == nrow(SDDprob) || (is.na(InitInfoP) == F && InitInfoP>0) || is.na(ExternalInfoProb) == F )
+if(length(InitialInfo) == nrow(SDDprob) || (is.na(InitInfoP) == F && InitInfoP>0) || is.na(sum(ExternalInfoProb)) == F )
 {
 if(length(InitialInfo) != nrow(SDDprob))
   {

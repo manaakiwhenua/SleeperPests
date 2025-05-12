@@ -47,7 +47,7 @@ library (gnorm)  # generalised normal distribution aka exponential power functio
 
 # set csv file names
 input_file   <- "Tomato red spider mite data all NZ.csv"
-ResultsDir = "OngoingTestMay2023/"
+ResultsDir = "TestingMay2025/"
 dir.create(ResultsDir)
 
 
@@ -273,8 +273,6 @@ Klanduse[,1] = floor(K*Planduses[1])
 Klanduse[,2] = ceiling(K*Planduses[2])
 N0landuse  = cbind(floor(d$N0*Planduses[1]),ceiling(d$N0*Planduses[2]))
 
-Nperm = 10
-Nyears = 50
 AnnualIncursionRate = 0.1
 H_vectors <- pmin(1, human_prop * d$humans)
 DetectionProbs = c(0,0.15,0.2,0.3,0.5,0.75,0.9)
@@ -284,7 +282,6 @@ DetectionProbs = c(0,0.15,0.2,0.3,0.5,0.75,0.9)
 #ModelName = paste0("StandardCurrentClim_DetProb_Parallel",DetectionProbs[detprob])
 #if(DoClimateChange == TRUE)
 #  ModelName = paste0("StandardFutureClim_DetProb_Parallel",DetectionProbs[detprob])
-source("INApestMetaParallelMultipleLandUse.r")
 Ntimesteps = 50
 Nperm = 50
 ModelName = "MultipleLandUseTest"

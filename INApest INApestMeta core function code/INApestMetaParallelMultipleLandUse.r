@@ -10,7 +10,7 @@
 ### b) Annual management adoption probability subsequent to detection
 ### c) Annual mortality probability under management
 ### d) Spread reduction when management adopted
-###5) A binary vector of intially infested nodes OR
+###5) A binary vector of initially infested nodes OR
 ###   A vector of invasion risk probabilities and proportion of nodes initially invaded
 ###Key outputs are:
 ###3-dimensional arrays of invasion, management and detection status for each node in each timestep of each permuation
@@ -23,6 +23,8 @@
 #######################################################################
 ###This version implements parallel processing in foreach for the permutation loop.
 ###See file "ParallelSetup.r" for notes on steps for setting up parallel processing
+###Allows for multiple land uses within a location, each with different management parameters 
+###and carrying capacity
 #######################################################################
 
 library(abind)
@@ -203,7 +205,7 @@ if(nrow(InitialPopulation) == nrow(SDDprob))
 ###just "InitInfoP" if neither "InitialInfo" or "ExternalInfoProb" supplied by user.
 ###If no initial info variables provided, no nodes have info at start of simulations
 InitInfo = rep(0,times = nrow(SDDprob))
-if(length(InitialInfo) == nrow(SDDprob) || (is.na(InitInfoP) == F && InitInfoP>0) || is.na(ExternalInfoProb) == F )
+if(length(InitialInfo) == nrow(SDDprob) || (is.na(InitInfoP) == F && InitInfoP>0) || is.na(sum(ExternalInfoProb)) == F )
 {
 if(length(InitialInfo) != nrow(SDDprob))
   {
