@@ -9,8 +9,6 @@ source(paste0(CoreFunctionDir,"INApestMetaParallel.r"))
 source(paste0(CoreFunctionDir,"INApestMetaMultipleLandUse.r"))
 source(paste0(CoreFunctionDir,"INApestMetaParallelMultipleLandUse.r"))
 
-###Test effect of ongoing external invasions (e.g. border incursions)
-###Under Current climate
 #DoClimateChange=F
 #DoHumanSpread = T
 ###Prepare input data
@@ -36,10 +34,10 @@ source("MultipleLandUseUnitTesting.R")
 ###Test effect of information spread on management outcomes
 source("InfoSpreadxOngoingIncursion Test May2025.R")
 
-###Test external info functionality
+###Test info functionality
 source("ExternalInfo Test May2025.r")
 
-###Test external info functionality
+###Test invasion functionality
 source("ExternalInvasion Test May2025.r")
 
 ##############################################################
@@ -53,10 +51,10 @@ source("dataprepsmall.r")
 ###Test effect of information spread on management outcomes
 source("InfoSpreadxOngoingIncursion Test May2025.R")
 
-###Test external info functionality
+###Test info functionality
 source("ExternalInfo Test May2025.r")
 
-###Test external info functionality
+###Test invasion functionality
 source("ExternalInvasion Test May2025.r")
 
 

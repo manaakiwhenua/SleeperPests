@@ -1,5 +1,5 @@
 #####################################################################################
-###Test external invasion functionality
+###Test initial invasion and ongoing external invasion functionality
 #####################################################################################
 Nperm = 30
 Ntimesteps = 50
@@ -8,8 +8,8 @@ DetectionProb = 0.1
 ###Make this high for obvious effect
 AnnualIncursionRate = 0.1
 
-ExternalInvasionDir <- paste0(ResultsDir,"ExternalInvasion/")
-dir.create(ExternalInvasionDir)
+InvasionDir <- paste0(ResultsDir,"InvasionInputTest/")
+dir.create(InvasionDir)
 
 ################################
 ###Detection prob 0.1 no external invasion
@@ -17,10 +17,10 @@ dir.create(ExternalInvasionDir)
 InitialPop = rep(0,times = nrow(d))
 Sample <- sample(1:nrow(d),10)
 InitialPop[Sample] = 10
-ModelName = paste0("CurrentClim_DetProb_",DetectionProb)
+ModelName = paste0("CurrentClimInitInvPopVector",DetectionProb)
 if(DoClimateChange == TRUE)
-  ModelName = paste0("FutureClim_DetProb_",DetectionProb)
-OutputDir = paste0(ExternalInvasionDir,ModelName,"/")
+  ModelName = paste0("FutureClimInitInvPopVector",DetectionProb)
+OutputDir = paste0(InvasionDir,ModelName,"/")
 dir.create(OutputDir)
 Start <- Sys.time()
 INApestMetaParallel(
@@ -56,13 +56,12 @@ Time <- End-Start
 ################################
 ###Initial invasion as binary vector
 ################################
-InitialPop = rep(0,times = nrow(d))
-Sample <- sample(1:nrow(d),10)
-InitialPop[Sample] = 1
-ModelName = paste0("CurrentClim_DetProb_InitialInvasion",DetectionProb)
+InitialPopBinary <- InitialPop
+InitialPopBinary[InitialPop>0] = 1
+ModelName = paste0("CurrentClimInitInvBinary",DetectionProb)
 if(DoClimateChange == TRUE)
-ModelName = paste0("FutureClim_DetProb_InitialInvasion",DetectionProb)
-OutputDir = paste0(ExternalInvasionDir,ModelName,"/")
+ModelName = paste0("FutureClimInitInvBinary",DetectionProb)
+OutputDir = paste0(InvasionDir,ModelName,"/")
 dir.create(OutputDir)
 Start <- Sys.time()
 INApestMetaParallel(
@@ -73,7 +72,7 @@ DetectionProb = DetectionProb,  #Annual detection probability or vector of proba
 ManageProb = 0.99,             #Annual Probability or vector of probabilities vector length nrow(SDDprob)of node adopting management upon detection
 MortalityProb = 0.99,           #Annual mortality probability under management
 SpreadReduction = 0.9,        #Reduction in dispersal probability when management adopted. Must be between 0 (no spread reduction) and 1 (complete prevention of spread). Can be single value or vector length nrow(SDDprob)
-InitialPopulation = InitialPop,        #Population size at start if simulations
+InitialPopulation = InitialPopBinary,        #Population size at start if simulations
 InitBioP = NA,		#Proportion of nodes infested at start of simulations
 InvasionRisk = NA,  #Vector of probabilities of external invasion risk
 InitialInfo = NA, #
@@ -100,10 +99,10 @@ Time <- End-Start
 ###Initial invasion as proportion of nodes
 ################################
 InitInvP = 10/nrow(d)
-ModelName = paste0("CurrentClim_DetProb_InitInvP",DetectionProb)
+ModelName = paste0("CurrentClimInitInvPnodes",DetectionProb)
 if(DoClimateChange == TRUE)
-  ModelName = paste0("FutureClim_DetProb_InitInvP",DetectionProb)
-OutputDir = paste0(ExternalInvasionDir,ModelName,"/")
+  ModelName = paste0("FutureClimInitInvPnodes",DetectionProb)
+OutputDir = paste0(InvasionDir,ModelName,"/")
 dir.create(OutputDir)
 Start <- Sys.time()
 INApestMetaParallel(
@@ -141,10 +140,10 @@ Time <- End-Start
 ################################
 ###Initial invasion as vector of probabilities
 ################################
-ModelName = paste0("CurrentClim_DetProb_ExternalInvProb",DetectionProb)
+ModelName = paste0("CurrentClimInitInvProbVector",DetectionProb)
 if(DoClimateChange == TRUE)
-  ModelName = paste0("FutureClim_DetProb_ExternalInvProb",DetectionProb)
-OutputDir = paste0(ExternalInvasionDir,ModelName,"/")
+  ModelName = paste0("FutureClimInitInvProbVector",DetectionProb)
+OutputDir = paste0(InvasionDir,ModelName,"/")
 dir.create(OutputDir)
 Start <- Sys.time()
 INApestMetaParallel(
@@ -186,10 +185,10 @@ Time <- End-Start
 ###and proportion of nodes
 ################################
 InitInvP = 10/nrow(d)
-ModelName = paste0("CurrentClim_DetProb_ExternalInvProbInitInvP",DetectionProb)
+ModelName = paste0("CurrentClimInitInvProbVectorxPnodes",DetectionProb)
 if(DoClimateChange == TRUE)
-  ModelName = paste0("FutureClim_DetProb_ExternalInvProbInitInvP",DetectionProb)
-OutputDir = paste0(ExternalInvasionDir,ModelName,"/")
+  ModelName = paste0("FutureClimInitInvProbVectorxPnodes",DetectionProb)
+OutputDir = paste0(InvasionDir,ModelName,"/")
 dir.create(OutputDir)
 Start <- Sys.time()
 INApestMetaParallel(
@@ -228,10 +227,10 @@ Time <- End-Start
 ###Initial invasion as vector of probabilities
 ###with ongoing external invasion
 ################################
-ModelName = paste0("CurrentClim_DetProb_OngoingExternalInv",DetectionProb)
+ModelName = paste0("CurrentClimOngoingExternalInvVector",DetectionProb)
 if(DoClimateChange == TRUE)
-  ModelName = paste0("FutureClim_DetProb_OngoingExternalInv",DetectionProb)
-OutputDir = paste0(ExternalInvasionDir,ModelName,"/")
+  ModelName = paste0("FutureClimOngoingExternalInvVector",DetectionProb)
+OutputDir = paste0(InvasionDir,ModelName,"/")
 dir.create(OutputDir)
 Start <- Sys.time()
 INApestMetaParallel(
@@ -274,10 +273,10 @@ for(i in 1:20)
   ExternalInvProbMatrix[,i] = PropTotalHumans*AnnualIncursionRate
 for(i in 21:Ntimesteps)
   ExternalInvProbMatrix[,i] = PropTotalHumans*AnnualIncursionRate*10
-ModelName = paste0("CurrentClim_DetProb_ExternalInvMatrix",DetectionProb)
+ModelName = paste0("CurrentClimExternalInvMatrix",DetectionProb)
 if(DoClimateChange == TRUE)
-  ModelName = paste0("FutureClim_DetProb_ExternalInvMatrix",DetectionProb)
-OutputDir = paste0(ExternalInvasionDir,ModelName,"/")
+  ModelName = paste0("FutureClimExternalInvMatrix",DetectionProb)
+OutputDir = paste0(InvasionDir,ModelName,"/")
 dir.create(OutputDir)
 Start <- Sys.time()
 INApestMetaParallel(

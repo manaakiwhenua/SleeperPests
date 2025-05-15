@@ -1,20 +1,20 @@
 #####################################################################################
-###Code testing inclusion of pre-emptive management in nodes adjacent to detected infestations
-###And ongoing risk of incursions at the border
+###Test initial info and ongoing external communication functionality. 
 #####################################################################################
 Nperm = 30
 Ntimesteps = 50
 DetectionProb = 0.1
-ExternalInfoDir <- paste0(ResultsDir,"ExternalInfo/")
-dir.create(ExternalInfoDir)
+AnnualIncursionRate = 0.1
+InfoDir <- paste0(ResultsDir,"InfoInputTest/")
+dir.create(InfoDir)
 
 ################################
-###Detection prob 0.1 no external info
+###Detection prob 0.1 no initial info
 ################################
-ModelName = paste0("CurrentClim_DetProb_",DetectionProb)
+ModelName = paste0("CurrentClimNoInitInfo",DetectionProb)
 if(DoClimateChange == TRUE)
-  ModelName = paste0("FutureClim_DetProb_",DetectionProb)
-OutputDir = paste0(ExternalInfoDir,ModelName,"/")
+  ModelName = paste0("FutureClimNoInitInfo",DetectionProb)
+OutputDir = paste0(InfoDir,ModelName,"/")
 dir.create(OutputDir)
 Start <- Sys.time()
 INApestMetaParallel(
@@ -53,10 +53,10 @@ Time <- End-Start
 InitialInfo = rep(0,times = nrow(d))
 Sample <- sample(1:nrow(d),10)
 InitialInfo[Sample] = 1
-ModelName = paste0("CurrentClim_DetProb_InitialInfo",DetectionProb)
+ModelName = paste0("CurrentClimInitInfoBinaryVector",DetectionProb)
 if(DoClimateChange == TRUE)
-ModelName = paste0("FutureClim_DetProb_InitialInfo",DetectionProb)
-OutputDir = paste0(ExternalInfoDir,ModelName,"/")
+ModelName = paste0("FutureClimInitInfoBinaryVector",DetectionProb)
+OutputDir = paste0(InfoDir,ModelName,"/")
 dir.create(OutputDir)
 Start <- Sys.time()
 INApestMetaParallel(
@@ -94,10 +94,10 @@ Time <- End-Start
 ###Initial info as proportion of nodes
 ################################
 InitInfoP = 10/nrow(d)
-ModelName = paste0("CurrentClim_DetProb_InitInfoP",DetectionProb)
+ModelName = paste0("CurrentClimInitInfoPNodes",DetectionProb)
 if(DoClimateChange == TRUE)
-  ModelName = paste0("FutureClim_DetProb_InitInfoP",DetectionProb)
-OutputDir = paste0(ExternalInfoDir,ModelName,"/")
+  ModelName = paste0("FutureClimInitInfoPnodes",DetectionProb)
+OutputDir = paste0(InfoDir,ModelName,"/")
 dir.create(OutputDir)
 Start <- Sys.time()
 INApestMetaParallel(
@@ -136,10 +136,10 @@ Time <- End-Start
 ###Initial info as vector of probabilities
 ################################
 ExternalInfoProb = rep(10/nrow(d),times = nrow(d))
-ModelName = paste0("CurrentClim_DetProb_ExternalInfoProb",DetectionProb)
+ModelName = paste0("CurrentClimInitInfoProbVector",DetectionProb)
 if(DoClimateChange == TRUE)
-  ModelName = paste0("FutureClim_DetProb_ExternalInfoProb",DetectionProb)
-OutputDir = paste0(ExternalInfoDir,ModelName,"/")
+  ModelName = paste0("FutureClimInitInfoProbVector",DetectionProb)
+OutputDir = paste0(InfoDir,ModelName,"/")
 dir.create(OutputDir)
 Start <- Sys.time()
 INApestMetaParallel(
@@ -180,10 +180,10 @@ Time <- End-Start
 ###Initial info as vector of probabilities
 ###and proportion of nodes
 ################################
-ModelName = paste0("CurrentClim_DetProb_ExternalInfoProbInitInfoP",DetectionProb)
+ModelName = paste0("CurrentClimInitInfoProbVectorPnodes",DetectionProb)
 if(DoClimateChange == TRUE)
-  ModelName = paste0("FutureClim_DetProb_ExternalInfoProbInitInfoP",DetectionProb)
-OutputDir = paste0(ExternalInfoDir,ModelName,"/")
+  ModelName = paste0("FutureClimInitInfoProbVectorPnodes",DetectionProb)
+OutputDir = paste0(InfoDir,ModelName,"/")
 dir.create(OutputDir)
 Start <- Sys.time()
 INApestMetaParallel(
@@ -222,10 +222,10 @@ Time <- End-Start
 ###Initial info as vector of probabilities
 ###with ongoing external communication
 ################################
-ModelName = paste0("CurrentClim_DetProb_OngoingExternalInfo",DetectionProb)
+ModelName = paste0("CurrentClimOngoingExternalInfoVector",DetectionProb)
 if(DoClimateChange == TRUE)
-  ModelName = paste0("FutureClim_DetProb_OngoingExternalInfo",DetectionProb)
-OutputDir = paste0(ExternalInfoDir,ModelName,"/")
+  ModelName = paste0("FutureClimOngoingExternalInfoVector",DetectionProb)
+OutputDir = paste0(InfoDir,ModelName,"/")
 dir.create(OutputDir)
 Start <- Sys.time()
 INApestMetaParallel(
@@ -268,10 +268,10 @@ for(i in 1:20)
   ExternalInfoProbMatrix[,i] = ExternalInfoProb
 for(i in 21:Ntimesteps)
   ExternalInfoProbMatrix[,i] = ExternalInfoProb*10
-ModelName = paste0("CurrentClim_DetProb_ExternalInfoMatrix",DetectionProb)
+ModelName = paste0("CurrentClimOngoingExternalInfoMatrix",DetectionProb)
 if(DoClimateChange == TRUE)
-  ModelName = paste0("FutureClim_DetProb_ExternalInfoMatrix",DetectionProb)
-OutputDir = paste0(ExternalInfoDir,ModelName,"/")
+  ModelName = paste0("FutureClimOngoingExternalInfoMatrix",DetectionProb)
+OutputDir = paste0(InfoDir,ModelName,"/")
 dir.create(OutputDir)
 Start <- Sys.time()
 INApestMetaParallel(

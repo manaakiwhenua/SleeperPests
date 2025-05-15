@@ -1,3 +1,7 @@
+############################################
+###Test that serial and parallel MultipleLandUse functions give similar results for same inputs
+############################################
+
 Nperm = 30
 Ntimesteps = 50
 
