@@ -47,7 +47,6 @@ SDDprob,                   #Short-distance (self-mediated) disperal probability 
 SEAM = 0,			#Option to provide socioeconomic adjacency matrix for information spread
 LDDprob = 0,         #Option to provide long-distance (human-mediated) dispersal probability matrix
 			      #e.g. could be weighted by law of human visitation or data on stock movements
-geocoords,              #XY points for INAscene
 OngoingExternalInvasion = F,   ##Option to include ongoing invasion from external sources
 OngoingExternalInfo = F,   ##Option to include ongoing communication from external sources
 OutputDir = NA,		      #Directory for storing results
@@ -210,7 +209,7 @@ if(is.matrix(DetectionProb)==FALSE &&(length(DetectionProb) == 1 ||length(Detect
 ###If DetectionProb given as matrix (nodes x timesteps) use values for first timestep to get initial detections
 if(is.matrix(DetectionProb)==TRUE && nrow(DetectionProb) == nrow(SDDprob) && ncol(DetectionProb) == Ntimesteps)
       {
-	    NodeDetectionProb = rnorm(DetectionProb[,timestep],DetectionSD,n = nrow(SDDprob))
+	    NodeDetectionProb = rnorm(DetectionProb[,1],DetectionSD,n = nrow(SDDprob))
       NodeDetectionProb[NodeDetectionProb<0] = 0
       NodeDetectionProb[NodeDetectionProb>1] = 1
       }

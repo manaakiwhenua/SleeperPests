@@ -18,3 +18,4 @@ install.packages("devtools")
 install.packages("igraph")
 install.packages("tidyverse")
 devtools::install_github("GarrettLab/INA")
+

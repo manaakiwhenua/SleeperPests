@@ -234,7 +234,7 @@ if(is.matrix(DetectionProb)==FALSE &&(length(DetectionProb) == 1 ||length(Detect
 ###If DetectionProb given as matrix (nodes x timesteps) use values for first timestep to get initial detections
 if(is.matrix(DetectionProb)==TRUE && nrow(DetectionProb) == nrow(SDDprob) && ncol(DetectionProb) == Ntimesteps)
       {
-	NodeDetectionProb = rnorm(DetectionProb[,timestep],DetectionSD,n = nrow(SDDprob))
+	NodeDetectionProb = rnorm(DetectionProb[,1],DetectionSD,n = nrow(SDDprob))
       NodeDetectionProb[NodeDetectionProb<0] = 0
       NodeDetectionProb[NodeDetectionProb>1] = 1
       }
