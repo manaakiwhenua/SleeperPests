@@ -1,25 +1,9 @@
 ##################################################
-###Simulate spread in sink region from starting invasions
-###allocated by weighted randomisation.
-###In this instance initial invasion probability
-###is weighted by incursion risk from an infested region.
-###Requires identification of source and sink regions (using Agribase region codes)
-###and distance-based invasion probabilities between individual farms
-###in source and sink regions. 
-###These are obtained by running source files:
-###"CrossRegion_FarmDistanceInvasionProb.R"
-###"CrossRegion_FarmDistanceInvasionProbLDD.R"
-###"CrossRegion_LDDWeights.R"
-###Records farms infested, farms under management, number and proportion of extant infestations detected 
-###and invasive threat to neighbouring regions
-###This version implements information spread to
-###farms within a threshold distance of known infestations
-###Represents management scenario where authorities communicate with 
-###neighbours of farms with known infestations
+###Simulate spread in sink region with constant invasion threat from the source region
+###This version uses results from a zero management scenario (detection prob = 0)
+###In the source region
 ##################################################
-####################################################
-###Potential upgrades
-####################################################
+
 
 library(INA)
 library(tidyverse)
@@ -33,6 +17,8 @@ memory.limit(size=600000)
 ###########################################################################
 
 source("INApest.R")
+source("CrossRegionInvasionThreat.R")
+
 
 ######################################################
 ######################################################
@@ -84,7 +70,7 @@ AnnualEradicationProb = AnnualEradicationProb*CompleteDetectionProb
 ###Define directories for storing results
 #############################################################
 
-ResultsDir= paste0(main.dir,"/CrossRegionConstantThreat/",ClimateScenarios[cs],"/")
+ResultsDir= paste0(main.dir,"/CrossRegionConstantThreatNoInfoSpreadv2/",ClimateScenarios[cs],"/")
 dir.create(ResultsDir,recursive = T,showWarnings = F)
 Regions = c("AUCK", "EBOP", "CANT", "OTAG", "GISB", "WAIK", "HBAY","MNWG", "WELL", "MARL", "STHL", "NRTH", "TNKI",
 "TASM", "NELS")
@@ -129,12 +115,12 @@ FarmNames = row.names(adj)
 ###set all other SEAM values to zero
 #############################################################
 
-InfoMaxDist = 150 #Info trnasfer threshold distance in metres
+#InfoMaxDist = 150 #Info trnasfer threshold distance in metres
                   #Can be set to maximum annual (non-human aided) dispersal distance of pest
-CommunicationRate = 0.25 #Proportion of nodes within threshold distance contacted each year
-SEAM = dist_mat
-SEAM = ifelse(dist_mat < InfoMaxDist,CommunicationRate,0)
-diag(SEAM) = 1
+#CommunicationRate = 0.25 #Proportion of nodes within threshold distance contacted each year
+#SEAM = dist_mat
+#SEAM = ifelse(dist_mat < InfoMaxDist,CommunicationRate,0)
+#diag(SEAM) = 1
 
 ######################################################
 ######################################################
@@ -166,21 +152,20 @@ if(EI_Prob_CurveType == "SplitLinear")
 
 ##############################################
 ###Read in farm-level cross-region invasion risk
-###based on simulation results from source region (HBAY)
-###with no management applied in source region (detection probability = 0)
-###Load for all years (invasion risk supplied as matrix)
+###based on simulation results from source region
+###Load for all years
 ##############################################
 SourceResultsDir = r"[R:\Projects\SL2116_MPI_SleeperPests\Analysis\Chilean needle grass\Updated Analyses 2022\CurrentFutureClimate\HistoricExamplesLDDMatrixInfoSpread_v2\]"
 SourceThreatDir = paste0(SourceResultsDir,ClimateScenarios[cs],"/",SourceRegion,"/CrossRegionThreat/")
 
-CrossRegionThreatFile = paste0(SourceThreatDir,"DetProb_0_EradProb_0.05_SpreadReduction_0.999_",SourceRegion,"_",SinkRegion,"FarmRisk.rds") 
+CrossRegionThreatFile = paste0(SourceThreatDir,"DetProb_0.2_EradProb_0.05_SpreadReduction_0.999_",SourceRegion,"_",SinkRegion,"FarmRisk.rds") 
 ExternalFarmRisk = readRDS(CrossRegionThreatFile)
 
 ####################################################
 ###Input paramaters for INA
 ####################################################
 ###Set number of realisations
-Nperm = 30
+Nperm = 100
 ###Set simulation duration
 Nyears = 80
 
@@ -204,7 +189,6 @@ SpreadReduction = 0.999
 ###Call INApest function 
 ###Looping through different detection probabilities
 ###Function incorporates management variables in filenames of outputs
-###External invasion risk supplied as matrix allowing variation through time
 ##################################################
 
 for(detprob in 1:length(DetectionProbs))
@@ -225,13 +209,47 @@ InitBioP = NA,			#Proportion of nodes infested at start of simulations
 InvasionRisk = ExternalFarmRisk,           #Vector of probabilities for weighting random assignment of initial invasion occurrences
 EnvEstabProb = prob_est,           #Environmentally determined establishment probability
 SDDprob = adj,                   #distance-based disperal probability
-SEAM = SEAM,			#Option to provide socioeconomic adjacency matrix
+#SEAM = SEAM,			#Option to provide socioeconomic adjacency matrix
 LDDprob = LDDprob,              #Option to provide long distance dispersal probability matrix
 				#e.g. could be weighted by human visitation law or data on stock movements
 OngoingExternal = T,    #Allow ongoing invasion from external sources
 geocoords = geocoords,              #XY points for INAscene
 OutputDir = RegionResultsDir			#Directory for storing results	
 )
+
+##################################################
+###Use INApest outputs to calculate 
+###Invasion threat to other regions
+##################################################
+if(1 == 2)
+{
+ThreatSource = SinkRegion
+for(sink in 1:length(Regions))
+if(Regions[sink] != ThreatSource)
+{
+ThreatSink = Regions[sink]
+InputDir = paste0(main.dir,"/",ClimateScenarios[cs],"/Inputs/")
+OutputDir = CrossRegionThreatDir
+dir.create(OutputDir)
+CrossRegionInvasionDir = paste0(main.dir,paste0("/",ClimateScenarios[cs],"/Inputs/CrossRegionDistance/"))
+InvasionFileNameStem = paste0(RegionResultsDir,"DetProb_",DetectionProb,"_EradProb_",round(AnnualEradicationProb,digits =2),
+		"_SpreadReduction_",SpreadReduction,"_")
+OutputFileNameStem = paste0(OutputDir,"DP_",DetectionProb,"_EP_",round(AnnualEradicationProb,digits =2),
+		"_SR_",SpreadReduction,"_")
+SourceInvasionProb = readRDS(paste0(InvasionFileNameStem,"InvasionProb.rds"))
+CrossRegionInvasionThreat(
+ThreatSource = ThreatSource, ###Source region
+ThreatSink = ThreatSink, ###Sink region
+LDDrate = LongDistProbPerFarm, ###annual long distance dispersal events per source farm
+SourceInvasionProb = SourceInvasionProb, ###Annual farm-level invasion prob from simulations
+CrossRegionInvasionDir=CrossRegionInvasionDir , ###Directory where cross-region invasion probs stored
+EIDir = InputDir, ##Directory where Ecoclimatic Index data stored
+OutputFileNameStem = OutputFileNameStem
+)
+}
+}
+##################################################
+##################################################
 
 }
 
