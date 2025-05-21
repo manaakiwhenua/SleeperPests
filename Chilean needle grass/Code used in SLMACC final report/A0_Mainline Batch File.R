@@ -75,12 +75,7 @@ source("AgribaseClimexDistMatrix.R")
 ###Calculates minimum Euclidean distance between farm boundaries
 ###so that farms with parcels in multiple regions may have close neighbours in different regions
 ##################################################
-###Current climate
-cs = 1
-###Future climate 2040
-#cs = 2
-###Future climate 2090
-#cs = 3
+for(cs in 1:3)
 source("CrossRegion_FarmDistance.R")
 
 ##############################################
@@ -90,12 +85,7 @@ source("CrossRegion_FarmDistance.R")
 ###between farms in the same region 
 ###Very time consuming so best to run separate climate scenarios in parallel
 ##############################################
-###Current climate
-cs = 1
-###Future climate 2040
-#cs = 2
-###Future climate 2090
-#cs = 3
+for(cs in 1:3)
 source("CrossRegion_FarmDistanceInvasionProb.R")
 
 ##################################################
@@ -105,12 +95,7 @@ source("CrossRegion_FarmDistanceInvasionProb.R")
 ###Use data on cattle movements from NAIT to weight LDD probability by distance
 ##################################################
 
-###Current climate
-cs = 1
-###Future climate 2040
-#cs = 2
-###Future climate 2090
-#cs = 3
+for(cs in 1:3)
 source("CrossRegion_FarmDistanceInvasionProbLDD.R")
 
 ##################################################
@@ -120,12 +105,7 @@ source("CrossRegion_FarmDistanceInvasionProbLDD.R")
 ###Using long distance dispersal probabilities as weights
 ##################################################
 
-###Current climate
-#cs = 1
-###Future climate 2040
-cs = 2
-###Future climate 2090
-#cs = 3
+for(cs in 1:3)
 source("CrossRegion_LDDWeights.R")
 
 #############################################################################
@@ -319,12 +299,7 @@ source("INASourceSinkHeatMaps.R")
 SinkRegion = "MNWG"
 SourceRegion = "HBAY"
 
-###Current climate
-cs = 1
-###Future climate 2040
-#cs = 2
-###Future climate 2090
-#cs = 3
+for(cs in 1:3)
 source("INASourceSinkLDDMatrixInfoSpreadv2.R")
 
 for(cs in 1:3)
@@ -337,12 +312,7 @@ source("INASourceSinkHeatMaps.R")
 SinkRegion = "CANT"
 SourceRegion = "MARL"
 
-###Current climate
-cs = 1
-###Future climate 2040
-#cs = 2
-###Future climate 2090
-#cs = 3
+for(cs in 1:3)
 source("INASourceSinkLDDMatrixInfoSpreadv2.R")
 
 for(cs in 1:3)
@@ -378,14 +348,7 @@ source("INASourceSinkHeatMaps.R")
 
 SinkRegion = "MNWG"
 SourceRegion = "HBAY"
-#for(cs in 1:3)
-cs = 1
-source("INASourceSinkLDDMatrixInfoSpreadConstantExternal.R")
-
-#cs = 2
-source("INASourceSinkLDDMatrixInfoSpreadConstantExternal.R")
-
-#cs = 3
+for(cs in 1:3)
 source("INASourceSinkLDDMatrixInfoSpreadConstantExternal.R")
 
 for(cs in 1:3)
@@ -402,13 +365,8 @@ source("INASourceSinkHeatMaps.R")
 
 SinkRegion = "MNWG"
 SourceRegion = "HBAY"
-#for(cs in 1:3)
-cs = 1
-source("INASourceSinkLDDMatrixNoInfoSpreadConstantExternal.R")
 
-#cs = 2
-source("INASourceSinkLDDMatrixNoInfoSpreadConstantExternal.R")
-#cs = 3
+for(cs in 1:3)
 source("INASourceSinkLDDMatrixNoInfoSpreadConstantExternal.R")
 
 
@@ -465,13 +423,7 @@ source("INASourceSinkHeatMaps.R")
 
 SinkRegion = "MNWG"
 SourceRegion = "HBAY"
-#for(cs in 1:3)
-cs = 1
-source("INASourceSinkLDDMatrixNoInfoSpreadConstantExternalv2.R")
-
-#cs = 2
-source("INASourceSinkLDDMatrixNoInfoSpreadConstantExternalv2.R")
-#cs = 3
+for(cs in 1:3)
 source("INASourceSinkLDDMatrixNoInfoSpreadConstantExternalv2.R")
 
 for(cs in 1:3)
