@@ -127,6 +127,9 @@ acomb <- function(...) abind(..., along=4)
 ###Need to include required packages in the .packages arguement of the foreach call
 PermOut <- foreach(1:Nperm, .combine = 'acomb',.packages=c("abind")) %dopar% 
   {
+  ###Max integer for propagule dispersal using rmultinom
+  MaxInteger <- .Machine$integer.max  
+  
   InvasionResultsLoop <- array(dim = c(nrow(SDDprob),Ntimesteps))
   PopulationResultsLoop <- InvasionResultsLoop
   ManagingResultsLoop <- InvasionResultsLoop
@@ -369,17 +372,20 @@ for (timestep in 1:Ntimesteps)
   ###adjust propagule spread for environmentally determined establishment probability
   ###in receiving nodes
   Pout <- Propagules*(1-LDDrate)
-  if(sum(Pout)>0 ) 
+  if(sum(Pout)>0 && sum(Pout)<= MaxInteger) 
     Pin <- t(rmultinom(1, size=sum(Pout*rowSums(SDDprob)), prob=Pout %*% SDDprob))  # propagules are dispersed
-  
+  if(sum(Pout) > MaxInteger) 
+    Pin <- colSums(sweep(SDDprob,1,Pout,`*`))
   ###human-mediated spread
   ###adjust propagule spread for environmentally determined establishment probability
   ###in receiving nodes
   if (is.matrix(LDDprob)==T) 
     {
     Qout  = Propagules*LDDrate *(1-NodeSpreadReduction*Managing)       
-    if(sum(Qout)>0)  
+    if(sum(Qout)>0 && sum(Qout) < MaxInteger)  
       Qin <- t(rmultinom(1, size=sum(Qout*rowSums(LDDprob)), prob=Qout %*% LDDprob))    # propagules are dispersed
+    if(sum(Qout) > MaxInteger) 
+      Qin <- colSums(sweep(LDDprob,1,Qout,`*`))
     }
   
   
@@ -390,6 +396,7 @@ for (timestep in 1:Ntimesteps)
   #Where K is the number of available patches within the node
   #This also incorporates density dependence since propagule success depends on availability of uninfested host plants 
   #or unoccupied patches
+  ###Note can produce NAs if NodeK-N0 very large and using old version of R
   N <- ifelse(K_is_0, 0, N0 + rbinom(nrow(SDDprob), NodeK-N0, 1 - exp(-NodePropaguleEstablishment*NodeEnvEstabProb*(Pin+Qin))))
 
   } 
