@@ -282,7 +282,7 @@ HaveInfo = InitInfo
 
     
   # run simulation
-for (timestep in 1:Ntimesteps) 
+for(timestep in 1:Ntimesteps) 
   { 
  
   ###Allow for variation in establishment through time
@@ -372,9 +372,9 @@ for (timestep in 1:Ntimesteps)
   ###adjust propagule spread for environmentally determined establishment probability
   ###in receiving nodes
   Pout <- Propagules*(1-LDDrate)
-  if(sum(Pout)>0 && sum(Pout)<= MaxInteger) 
+  if(sum(Pout)>0 && sum(Pout)< MaxInteger) 
     Pin <- t(rmultinom(1, size=sum(Pout*rowSums(SDDprob)), prob=Pout %*% SDDprob))  # propagules are dispersed
-  if(sum(Pout) > MaxInteger) 
+  if(sum(Pout) >= MaxInteger) 
     Pin <- colSums(sweep(SDDprob,1,Pout,`*`))
   ###human-mediated spread
   ###adjust propagule spread for environmentally determined establishment probability
@@ -384,7 +384,7 @@ for (timestep in 1:Ntimesteps)
     Qout  = Propagules*LDDrate *(1-NodeSpreadReduction*Managing)       
     if(sum(Qout)>0 && sum(Qout) < MaxInteger)  
       Qin <- t(rmultinom(1, size=sum(Qout*rowSums(LDDprob)), prob=Qout %*% LDDprob))    # propagules are dispersed
-    if(sum(Qout) > MaxInteger) 
+    if(sum(Qout) >= MaxInteger) 
       Qin <- colSums(sweep(LDDprob,1,Qout,`*`))
     }
   

@@ -1,4 +1,4 @@
-rm(list = ls())
+#rm(list = ls())
 library(hstats)
 library(graphics)
 rm(list = ls())
