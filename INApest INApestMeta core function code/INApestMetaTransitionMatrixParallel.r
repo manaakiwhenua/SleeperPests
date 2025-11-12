@@ -21,7 +21,7 @@
 ###########################################################################
 local.dynamics.transition.matrix = function(nodetransition = NodeTransition,weights = Weights,sddprob = SDDprob, nodeenvestabprob = NodeEnvEstabProb,n0=N0,
                                             lddprob = LDDprob, lddrate = LDDrate,k_is_0 = K_is_0, nodeK = NodeK,nodepropaguleestablishment = NodePropaguleEstablishment,
-                                            nodespreadreduction = NodeSpreadReduction,managing = Managing)
+                                            nodespreadreduction = NodeSpreadReduction,managing = Managing, MaxInteger = MaxInteger)
 {
   
   n_pops <- nrow(n0)
@@ -90,14 +90,21 @@ local.dynamics.transition.matrix = function(nodetransition = NodeTransition,weig
     ###self-mediated spread
     total_p <- sum((propagules*(1-lddrate))* rowSums(sddprob))
     sddprob_matrix <- (propagules*(1-lddrate)) %*% sddprob
-    Pin <- as.numeric(t(rmultinom(1, size = floor(total_p), prob = sddprob_matrix)))
+    if(floor(total_p) < MaxInteger)
+      Pin <- as.numeric(t(rmultinom(1, size = floor(total_p), prob = sddprob_matrix)))
+    else
+      Pin <- floor(colSums(sweep(sddprob,1,floor(total_p) ,`*`)))
     ###human-mediated spread
     if (is.matrix(lddprob)){
       total_q <- sum((propagules*lddrate)* rowSums(lddprob))  
       lddprob_matrix <- (propagules*lddrate) %*% lddprob  
-      Qin <- as.numeric(t(rmultinom(1, size = floor(total_q*(1-nodespreadreduction*managing)), prob = lddprob_matrix)))  
+      if(floor(total_q) < MaxInteger)
+        Qin <- as.numeric(t(rmultinom(1, size = floor(total_q*(1-nodespreadreduction*managing)), prob = lddprob_matrix)))  
+      else
+        Qin <- floor(colSums(sweep(lddprob,1,floor(total_q) ,`*`)))
     } 
   }
+  
   
   # --- STEP 4: Recruitment after dispersal ---
   
@@ -301,6 +308,8 @@ perm_results <- parLapply(cl, seq_len(Nperm), function(i_perm) {
   # worker environment
   set.seed(12345 + i_perm)  # reproducible per-perm RNG
   
+  ###Max integer for propagule dispersal using rmultinom
+  MaxInteger <- .Machine$integer.max  
   # Local containers for this permutation
   n_nodes <- nrow(SDDprob)
   PopulationResults_local      <- matrix(0, nrow = n_nodes, ncol = Ntimesteps)
@@ -386,14 +395,21 @@ perm_results <- parLapply(cl, seq_len(Nperm), function(i_perm) {
   
   # --- Determine dimensions and pre-sample detection/mortality arrays (as in your code) ---
   # Build NodeDetectionProb array (n_nodes x Nstages x Ntimesteps)
-  if (!is.array(DetectionProb) && (length(DetectionProb) == 1 || length(DetectionProb) == n_nodes)) {
+  ###Randomly assign detection probabilities
+  # --- Case 1: Single value or vector (stages only) ---
+  if (!is.array(DetectionProb) && (length(DetectionProb) == 1 || length(DetectionProb) == Nstages)) {
+    
     NodeDetectionProb <- array(NA, dim = c(n_nodes, Nstages, Ntimesteps))
+    
     for (s in 1:Nstages) {
       for (t in 1:Ntimesteps) {
         NodeDetectionProb[, s, t] <- pmax(0, pmin(1,
                                                   rnorm(n_nodes,
-                                                        mean = if (length(DetectionProb) == 1) DetectionProb else DetectionProb,
-                                                        sd   = if (is.matrix(DetectionSD)) DetectionSD[, s] else DetectionSD)
+                                                        mean = if (length(DetectionProb) == 1) DetectionProb else DetectionProb[s],
+                                                        sd   = if (is.matrix(DetectionSD)) DetectionSD[, s]   # <--- per node & stage
+                                                        else if (length(DetectionSD) == 1) DetectionSD
+                                                        else DetectionSD[s]
+                                                  )
         ))
       }
     }
@@ -422,14 +438,19 @@ perm_results <- parLapply(cl, seq_len(Nperm), function(i_perm) {
   }
   
   # NodeMortalityProb: analogous logic (kept concise - follow same pattern)
-  if (!is.array(MortalityProb) && (length(MortalityProb) == 1 || length(MortalityProb) == n_nodes)) {
+  if (!is.array(MortalityProb) && (length(MortalityProb) == 1 || length(MortalityProb) == Nstages)) {
+    
     NodeMortalityProb <- array(NA, dim = c(n_nodes, Nstages, Ntimesteps))
+    
     for (s in 1:Nstages) {
       for (t in 1:Ntimesteps) {
         NodeMortalityProb[, s, t] <- pmax(0, pmin(1,
                                                   rnorm(n_nodes,
-                                                        mean = if (length(MortalityProb) == 1) MortalityProb else MortalityProb,
-                                                        sd   = if (is.matrix(MortalitySD)) MortalitySD[, s] else MortalitySD)
+                                                        mean = if (length(MortalityProb) == 1) MortalityProb else MortalityProb[s],
+                                                        sd   = if (is.matrix(MortalitySD)) MortalitySD[, s]   # <--- per node & stage
+                                                        else if (length(MortalitySD) == 1) MortalitySD
+                                                        else MortalitySD[s]
+                                                  )
         ))
       }
     }
@@ -510,7 +531,7 @@ perm_results <- parLapply(cl, seq_len(Nperm), function(i_perm) {
                          nodeenvestabprob = NodeEnvEstabProb, n0 = N0, lddprob = LDDprob,
                          lddrate = LDDrate, k_is_0 = K_is_0, nodeK = NodeK,
                          nodepropaguleestablishment = NodePropaguleEstablishment,
-                         nodespreadreduction = NodeSpreadReduction, managing = Managing)
+                         nodespreadreduction = NodeSpreadReduction, managing = Managing,MaxInteger=MaxInteger)
     }
     
     # Info spread via SEAM

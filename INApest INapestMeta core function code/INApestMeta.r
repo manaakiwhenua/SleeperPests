@@ -21,22 +21,25 @@
 ###########################################################################
 local.dynamics = function(sddprob = SDDprob, nodepropaguleproduction = NodePropaguleProduction,nodeenvestabprob = NodeEnvEstabProb,n=N0,
 lddprob = LDDprob, lddrate = LDDrate,k_is_0 = K_is_0, nodeK = NodeK,nodepropaguleestablishment = NodePropaguleEstablishment,
-nodespreadreduction = NodeSpreadReduction,managing = Managing)
+nodespreadreduction = NodeSpreadReduction,managing = Managing, maxinteger = MaxInteger)
 {
 Propagules <- rpois(nrow(sddprob), nodepropaguleproduction * n)# propagules are produced
       ###self-mediated spread
       Pin = 0
       Qin = 0
       Pout <- Propagules*(1-lddrate)
-      if(sum(Pout)>0 ) 
+      if(sum(Pout)>0 && sum(Pout) < maxinteger) 
        Pin <- t(rmultinom(1, size=sum(Pout*rowSums(sddprob)), prob=Pout %*% sddprob))  # propagules are dispersed
-      
+      else
+        Pin <- floor(colSums(sweep(sddprob,1,Pout ,`*`)))
       ###human-mediated spread
       if (is.matrix(lddprob)==T) 
        {
        Qout  = Propagules*lddrate *(1-nodespreadreduction*managing)       
-       if(sum(Qout)>0)  
+       if(sum(Qout)>0 && sum(Pout) < maxinteger) 
         Qin <- t(rmultinom(1, size=sum(Qout*rowSums(lddprob)), prob=Qout %*% lddprob))    # propagules are dispersed
+       else
+         Qin <- floor(colSums(sweep(lddprob,1,Qout ,`*`)))
        }
      
     # propagule success depends on availability of uninfested host plants
@@ -86,6 +89,9 @@ DoPlots = TRUE	     #Option to omit printing of line graphs.Default is to print.
 ###   DPindividual could vary between nodes
 ###2) Allow provision of natural mortality rate to permit extinction of local populations (may happen in climates where R0 is very low?)
 
+###Max integer for propagule dispersal using rmultinom
+MaxInteger <- .Machine$integer.max  
+  
 # pre-evaluate some variables for efficiency
 if(is.matrix(K) == FALSE)
 {
@@ -399,7 +405,7 @@ HaveInfo = InitInfo
       
   N <- LocalDynamics(sddprob = SDDprob, nodepropaguleproduction = NodePropaguleProduction,nodeenvestabprob = NodeEnvEstabProb,n=N0,
                      lddprob = LDDprob, lddrate = LDDrate,k_is_0 = K_is_0, nodeK = NodeK,nodepropaguleestablishment = NodePropaguleEstablishment,
-                     nodespreadreduction = NodeSpreadReduction,managing = Managing)
+                     nodespreadreduction = NodeSpreadReduction,managing = Managing,maxinteger = MaxInteger)
   } 
  ###Update info vector for any info spread (if SEAM supplied)
  ###Note once nodes obtain info they always have info (only zero values updated)
