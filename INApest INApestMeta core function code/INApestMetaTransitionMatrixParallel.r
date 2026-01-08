@@ -51,35 +51,54 @@ local.dynamics.transition.matrix = function(nodetransition = NodeTransition,weig
   
   
   # Loop over stages (must remain sequential)
+  # Loop over stages (must remain sequential)
   for (s in S:2) {
     
-    # Stage-specific vectors across populations
+    # Current stage population
     N_prev <- n[s - 1, ]
+    
+    # --- Extract transition probabilities ---
     trans_prob <- vapply(nodetransition_list, function(Ap) Ap[s, s - 1], numeric(1))      # s-1 -> s
-    surv_prob  <- vapply(nodetransition_list, function(Ap) Ap[s, s], numeric(1))          # stasis
+    stay_prob  <- vapply(nodetransition_list, function(Ap) Ap[s - 1, s - 1], numeric(1))  # stasis
+    surv_total_prob <- trans_prob + stay_prob
     
-    # Stage transitions (s-1 -> s)
-    n_trans_candidates <- rbinom(n_pops, size = N_prev, prob = trans_prob)
+    # Ensure probabilities <= 1
+    surv_total_prob <- pmin(surv_total_prob, 1)
     
-    total_pop       <- colSums(n * w)
-    slots_available <- pmax(0, floor((nodeK - total_pop) / w[s]))
-    n_trans_limits  <- pmin(slots_available, n_trans_candidates)
+    # --- STEP 1: Mortality first ---
+    # Individuals surviving in stage s-1
+    N_surv <- rbinom(n_pops, size = N_prev, prob = surv_total_prob)
     
-    # Establishment probability per population
-    est_prob <- 1 - exp(-nodepropaguleestablishment* n_trans_candidates)
+    # --- STEP 2: Progression probability conditional on survival ---
+    prog_cond_prob <- ifelse(
+      surv_total_prob > 0,
+      trans_prob / surv_total_prob,
+      0
+    )
     
-    # Vectorized transition
+    # Candidates attempting to move to next stage
+    n_trans_candidates <- rbinom(n_pops, size = N_surv, prob = prog_cond_prob)
+    
+    # --- STEP 3: Capacity check (total_pop accounts for mortality) ---
+    total_pop <- colSums(n * w) - w[s - 1] * (N_prev - N_surv)
+    
+    slots_available <- pmax(
+      0,
+      floor((nodeK - total_pop) / w[s])
+    )
+    
+    n_trans_limits <- pmin(slots_available, n_trans_candidates)
+    
+    # --- STEP 4: Establishment (if any) ---
+    est_prob <- 1 - exp(-nodepropaguleestablishment * n_trans_candidates)
     n_trans_actual <- rbinom(n_pops, size = n_trans_limits, prob = est_prob)
     
-    
-    # Add transitioned individuals to stage pops
-    n[s, ] <- n[s, ] +  n_trans_actual
-    
-    # Remove transitioned individuals from previous stage
+    # --- STEP 5: Update stage populations ---
+    n[s, ]     <- n[s, ] + n_trans_actual
     n[s - 1, ] <- N_prev - n_trans_actual
     
-    # Apply survival to all individuals currently in stage s
-    # This includes both existing and newly transitioned individuals
+    # --- STEP 6: Survival in stage s (stasis) ---
+    surv_prob <- vapply(nodetransition_list, function(Ap) Ap[s, s], numeric(1))
     n[s, ] <- rbinom(n_pops, size = n[s, ], prob = surv_prob)
   }
   
@@ -93,7 +112,8 @@ local.dynamics.transition.matrix = function(nodetransition = NodeTransition,weig
     if(floor(total_p) < MaxInteger)
       Pin <- as.numeric(t(rmultinom(1, size = floor(total_p), prob = sddprob_matrix)))
     else
-      Pin <- floor(colSums(sweep(sddprob,1,floor(total_p) ,`*`)))
+      Pin <- colSums(sweep(sddprob, 1, floor(propagules*(1-lddrate)), `*`))
+    
     ###human-mediated spread
     if (is.matrix(lddprob)){
       total_q <- sum((propagules*lddrate)* rowSums(lddprob))  
@@ -101,9 +121,12 @@ local.dynamics.transition.matrix = function(nodetransition = NodeTransition,weig
       if(floor(total_q) < MaxInteger)
         Qin <- as.numeric(t(rmultinom(1, size = floor(total_q*(1-nodespreadreduction*managing)), prob = lddprob_matrix)))  
       else
-        Qin <- floor(colSums(sweep(lddprob,1,floor(total_q) ,`*`)))
+        Qin <- colSums(sweep(lddprob, 1, floor(propagules*lddrate*(1-nodespreadreduction*managing)), `*`))
+      
+      
     } 
   }
+  
   
   
   # --- STEP 4: Recruitment after dispersal ---
@@ -129,6 +152,117 @@ local.dynamics.transition.matrix = function(nodetransition = NodeTransition,weig
   return(t(n))
 }
 
+local.dynamics.transition.matrix.skip <- function(
+    nodetransition = NodeTransition,
+    weights = Weights,
+    sddprob = SDDprob,
+    nodeenvestabprob = NodeEnvEstabProb,
+    n0 = N0,
+    lddprob = LDDprob,
+    lddrate = LDDrate,
+    k_is_0 = K_is_0,
+    nodeK = NodeK,
+    nodepropaguleestablishment = NodePropaguleEstablishment,
+    nodespreadreduction = NodeSpreadReduction,
+    managing = Managing,
+    MaxInteger = MaxInteger
+) {
+  
+  n_pops <- nrow(n0)
+  S <- ncol(n0)
+  w <- if (is.null(weights)) rep(1, S) else weights
+  
+  # --- Create new population matrix ---
+  n <- t(n0)
+  
+  # --- STEP 1: Propagule production (skip seedbank stasis A[1,1]) ---
+  if (is.list(nodetransition)) {
+    fec_means <- vapply(seq_len(n_pops), function(p) {
+      sum(nodetransition[[p]][1, -1] * n[-1, p])
+    }, numeric(1))
+  } else {
+    fec_means <- as.numeric(nodetransition[1, -1] %*% n[-1, , drop = FALSE])
+  }
+  propagules <- ifelse(fec_means > 0, rpois(n_pops, fec_means), 0) 
+  
+  # Pre-extract transition matrices
+  nodetransition_list <- if (is.list(nodetransition)) nodetransition else replicate(n_pops, nodetransition, simplify = FALSE)
+  
+  # --- STEP 0: Terminal stage survival ---
+  surv_prob_S <- vapply(nodetransition_list, function(Ap) Ap[S, S], numeric(1))
+  n[S, ] <- rbinom(n_pops, size = n[S, ], prob = surv_prob_S)
+  
+  # --- STEP 1: Stage transitions with skipping ---
+  total_biomass <- colSums(n * w)
+  
+  for (j in (S-1):1) {
+    N_prev <- n[j, ]
+    trans_mat <- vapply(nodetransition_list, function(Ap) Ap[j:S, j], numeric(S - j + 1))
+    surv_prob <- pmin(colSums(trans_mat), 1)
+    N_surv <- rbinom(n_pops, size = N_prev, prob = surv_prob)
+    dest_prob <- sweep(trans_mat, 2, surv_prob, FUN = function(x, s) ifelse(s > 0, pmax(x, 0) / s, 0))
+    
+    # Multinomial allocation
+    moves <- matrix(0, nrow = S - j + 1, ncol = n_pops)
+    nonzero <- which(N_surv > 0)
+    if (length(nonzero) > 0) {
+      for (p in nonzero) moves[, p] <- rmultinom(1, size = N_surv[p], prob = dest_prob[, p])
+    }
+    
+    # Capacity-aware constraint (sequential stages)
+    free_capacity <- pmax(0, nodeK - total_biomass)
+    stages <- S - j + 1
+    slots <- matrix(0, nrow = stages, ncol = n_pops)
+    for (k in seq_len(stages)) {
+      slots[k, ] <- floor(free_capacity / w[j + k - 1])
+    }
+    
+    # Limit movers by slots
+    moves <- pmin(moves, slots)
+    
+    # Update populations
+    n[j, ] <- N_prev - colSums(moves[-1, , drop = FALSE])
+    for (k in 2:stages) n[j + k - 1, ] <- n[j + k - 1, ] + moves[k, ]
+    
+    # Update biomass ledger
+    delta_biomass <- colSums(moves[-1, , drop = FALSE] * w[(j + 1):(j + nrow(moves)-1)])
+    total_biomass <- total_biomass + delta_biomass
+  }
+  
+  # --- STEP 2: Propagule dispersal ---
+  Pin <- numeric(n_pops)
+  Qin <- numeric(n_pops)
+  if (sum(propagules) > 0) {
+    # Self-mediated dispersal (SDD)
+    total_p <- sum((propagules * (1 - lddrate)) * rowSums(sddprob))
+    sddprob_matrix <- (propagules * (1 - lddrate)) %*% sddprob
+    if (floor(total_p) < MaxInteger) {
+      Pin <- as.numeric(t(rmultinom(1, size = floor(total_p), prob = sddprob_matrix)))
+    } else {
+      Pin <- colSums(sweep(sddprob, 1, floor(propagules * (1 - lddrate)), `*`))
+    }
+    
+    # Human-mediated dispersal (LDD)
+    if (is.matrix(lddprob)) {
+      total_q <- sum((propagules * lddrate) * rowSums(lddprob))
+      lddprob_matrix <- (propagules * lddrate) %*% lddprob
+      if (floor(total_q) < MaxInteger) {
+        Qin <- as.numeric(t(rmultinom(1, size = floor(total_q * (1 - nodespreadreduction * managing)), prob = lddprob_matrix)))
+      } else {
+        Qin <- colSums(sweep(lddprob, 1, floor(propagules * lddrate * (1 - nodespreadreduction * managing)), `*`))
+      }
+    }
+  }
+  
+  # --- STEP 3: Recruitment after dispersal ---
+  slots <- pmax(0, floor((nodeK - colSums(n * w)) / w[1]))
+  max_recruits <- pmin(slots, Pin + Qin)
+  est_prob <- 1 - exp(-nodepropaguleestablishment * nodeenvestabprob * (Pin + Qin))
+  recruits <- rbinom(n_pops, size = max_recruits, prob = est_prob)
+  n[1, ] <- n[1, ] + recruits
+  
+  return(t(n))
+}
 
 INApestMetaTansitionMatrixParallel = function(
 ModelName, #Name for storing results to file 
