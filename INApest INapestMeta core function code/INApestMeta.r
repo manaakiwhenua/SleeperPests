@@ -51,18 +51,26 @@ return(Nout)
 ###Alternative population function suitable for passively dispersing propagules
 ###as opposed to actively searching offspring
 ###############################################################################
-local.dynamics.crowded = function(sddprob = SDDprob, nodepropaguleproduction = NodePropaguleProduction,nodeenvestabprob = NodeEnvEstabProb,n=N0,
-                                  lddprob = LDDprob, lddrate = LDDrate,k_is_0 = K_is_0, nodeK = NodeK,nodepropaguleestablishment = NodePropaguleEstablishment,
-                                  nodespreadreduction = NodeSpreadReduction,managing = Managing, maxinteger = MaxInteger)
-{
-  #sddprob = SDDprob   
-  
+local.dynamics.crowded <- function(
+    sddprob = SDDprob,
+    nodepropaguleproduction = NodePropaguleProduction,
+    nodeenvestabprob = NodeEnvEstabProb,
+    n = N0,
+    lddprob = LDDprob,
+    lddrate = LDDrate,
+    k_is_0 = K_is_0,
+    nodeK = NodeK,
+    nodepropaguleestablishment = NodePropaguleEstablishment,
+    nodespreadreduction = NodeSpreadReduction,
+    managing = Managing,
+    maxinteger = MaxInteger
+) {
   N <- length(n)            # number of populations
   active <- n > 0           # populations with at least 1 individual
   
   ### --- 1. Propagule production ---
   Propagules <- numeric(N)
-  Propagules[active] <- rpois(sum(active), lambda = nodepropaguleproduction[active] * n[active])
+  Propagules[active] <- rpois(sum(active), lambda = pmax(0, nodepropaguleproduction[active] * n[active]))
   
   ### Naturally exported propagules per population
   Pnatural <- numeric(N)
@@ -80,61 +88,59 @@ local.dynamics.crowded = function(sddprob = SDDprob, nodepropaguleproduction = N
   nodeN0slots <- nodepropaguleestablishment * nodeK
   SlotsPer_N0 <- numeric(N)
   SlotsPer_N0[active] <- (nodeK[active] - n[active]) / nodeK[active] * nodeN0slots[active] *
-    (1 - (1 - 1 / nodeN0slots[active])^(PropagulesPerN0[active]*nodeenvestabprob[active]) )
+    (1 - (1 - 1 / pmax(1, nodeN0slots[active]))^(PropagulesPerN0[active] * nodeenvestabprob[active]))
   
   N0slotp <- numeric(N)
-  N0slotp[active] <- SlotsPer_N0[active] / nodeK[active]
+  N0slotp[active] <- pmin(1, SlotsPer_N0[active] / nodeK[active])   # ensure fraction ≤1
   log1mp <- numeric(N)
   log1mp[active] <- log1p(-N0slotp[active])
   Pslot_col <- numeric(N)
   Pslot_col[active] <- 1 - exp(n[active] * log1mp[active])
   
-  available <- pmax(0,nodeK - n)
-  Recruits <- rpois(sum(active),lambda = available[active]*Pslot_col[active])
-  Recruits <- pmin(Recruits,nodeK[active]-n[active])
-  #plot(nodeK[active],n[active]+Recruits)
-  #abline(0,1)
-  #summary(nodeK[active]-n[active])
+  available <- pmax(0, nodeK - n)
+  Recruits <- rpois(sum(active), lambda = available[active] * pmax(0, Pslot_col[active]))
+  Recruits <- pmin(Recruits, available[active])
   
   ### Add self-recruits
   n[active] <- n[active] + Recruits
-  #plot(nodeK[active],n[active])
-  #abline(0,1)
+  
   ### --- Recruitment from external sources ---
   diag(sddprob) <- 0  # exclude self as target
-  
-  
   Pin <- numeric(N)
-  if(sum(Pout) > 0 && sum(Pout) < maxinteger) {
+  if (sum(Pout) > 0) {
     # vectorized multinomial approximation per population
-    Pin <- colSums(sweep(sddprob, 1, Pout, `*`))
-  } else {
-    Pin <- floor(colSums(sweep(sddprob, 1, Pout, `*`)))
+    if (sum(Pout) < maxinteger) {
+      Pin <- colSums(sweep(sddprob, 1, Pout, `*`))
+    } else {
+      Pin <- floor(colSums(sweep(sddprob, 1, Pout, `*`)))
+    }
   }
   
   ### Human-mediated spread
   Qin <- numeric(N)
-  if(is.matrix(lddprob)) {
+  if (is.matrix(lddprob)) {
     Qout <- Propagules * lddrate * (1 - nodespreadreduction * managing)
-    if(sum(Qout) > 0 && sum(Qout) < maxinteger) {
-      Qin <- colSums(sweep(lddprob, 1, Qout, `*`))
-    } else {
-      Qin <- floor(colSums(sweep(lddprob, 1, Qout, `*`)))
+    if (sum(Qout) > 0) {
+      if (sum(Qout) < maxinteger) {
+        Qin <- colSums(sweep(lddprob, 1, Qout, `*`))
+      } else {
+        Qin <- floor(colSums(sweep(lddprob, 1, Qout, `*`)))
+      }
     }
   }
   
   ### External recruits
   Propagulessurviving <- (Pin + Qin) * nodeenvestabprob
-  available <- pmax(0,nodeK - n)
-  ExternalRecruits <- rpois(N, lambda = available*(1 - (1 - 1/nodeK)^(Propagulessurviving)))
-  #summary((nodeK - n))
+  available <- pmax(0, nodeK - n)
+  ExternalRecruits <- rpois(N, lambda = available * (1 - (1 - 1 / pmax(1, nodeK))^(Propagulessurviving)))
+  ExternalRecruits <- pmin(ExternalRecruits, available)
   
-  ExternalRecruits <- pmin(ExternalRecruits,available)
   ### Total population after one timestep
   Nout <- n + ExternalRecruits
-  summary(nodeK-Nout)
+  
   return(Nout)
 }
+
 
 local.dynamics.wave = function(sddprob = SDDprob, nodepropaguleproduction = NodePropaguleProduction,nodeenvestabprob = NodeEnvEstabProb,n=N0,
                                   lddprob = LDDprob, lddrate = LDDrate,k_is_0 = K_is_0, nodeK = NodeK,
