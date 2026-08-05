@@ -19,6 +19,15 @@
 ###are detected, the proportion of infestations detected and nodes under management against time 
 ###########################################################################
 ###########################################################################
+# Local stage dynamics with passive- or active-propagule dispersal.
+#
+# Backward-compatible options added for animal applications:
+#   * BlockedTransitionMortality controls mortality among individuals that
+#     attempt a stage transition but fail to obtain a target-stage slot.
+#   * nodepropaguleestablishment = 1 lets active dispersers search every
+#     available slot after they select a destination cell.
+#   * DispersalDensityFactor > 0 biases movement toward cells that were less
+#     occupied when propagules were produced, before mortality or transitions.
 local.dynamics.transition.matrix <- function(
     nodetransition = NodeTransition,
     weights = Weights,
@@ -33,18 +42,81 @@ local.dynamics.transition.matrix <- function(
     nodespreadreduction = NodeSpreadReduction,
     managing = Managing,
     MaxInteger = MaxInteger,
-    ApplyFootprintToTransitions = FALSE
+    ApplyFootprintToTransitions = FALSE,
+    BlockedTransitionMortality = 0,
+    DispersalDensityFactor = 0
 ) {
   n_pops <- nrow(n0)
   S <- ncol(n0)
-  w <- if (is.null(weights)) rep(1, S) else weights
   n <- t(n0)
+  
+  # Stage weights may be supplied in the original form as one value per
+  # stage, or as an n_pops x S matrix for node-specific stage weights.
+  # A vector is expanded to an identical row for every population, exactly
+  # preserving previous scale-invariance and density-dispersal applications.
+  if (is.null(weights)) {
+    w <- matrix(1, nrow = n_pops, ncol = S)
+  } else if (is.matrix(weights)) {
+    if (!identical(dim(weights), c(n_pops, S))) {
+      stop("A weights matrix must have n_pops rows and S columns")
+    }
+    w <- weights
+  } else {
+    if (length(weights) != S) {
+      stop("A weights vector must contain one value per stage")
+    }
+    w <- matrix(
+      rep(weights, each = n_pops),
+      nrow = n_pops,
+      ncol = S
+    )
+  }
+  
+  if (any(!is.finite(w)) || any(w <= 0)) {
+    stop("All stage weights must be finite and greater than zero")
+  }
   
   # Recycle node-level inputs once rather than repeatedly inside loops.
   nodeK <- rep_len(nodeK, n_pops)
   node.seedbankK <- rep_len(node.seedbankK, n_pops)
   nodeenvestabprob <- rep_len(nodeenvestabprob, n_pops)
   nodepropaguleestablishment <- rep_len(nodepropaguleestablishment, n_pops)
+  
+  # Probability that a progression candidate dies when it fails to secure
+  # a target-stage slot. A scalar applies to every source stage and node; a
+  # vector of length S - 1 supplies one probability for each source stage;
+  # and an n_pops x (S - 1) matrix permits node-by-stage values. The default
+  # zero exactly preserves the former treatment of blocking as stasis.
+  if (is.matrix(BlockedTransitionMortality)) {
+    if (!identical(dim(BlockedTransitionMortality), c(n_pops, S - 1L))) {
+      stop(
+        "BlockedTransitionMortality must be scalar, length S - 1, or an n_pops x (S - 1) matrix"
+      )
+    }
+    blocked_transition_mortality <- BlockedTransitionMortality
+  } else if (length(BlockedTransitionMortality) == 1L) {
+    blocked_transition_mortality <- matrix(
+      BlockedTransitionMortality,
+      nrow = n_pops,
+      ncol = S - 1L
+    )
+  } else if (length(BlockedTransitionMortality) == S - 1L) {
+    blocked_transition_mortality <- matrix(
+      rep(BlockedTransitionMortality, each = n_pops),
+      nrow = n_pops,
+      ncol = S - 1L
+    )
+  } else {
+    stop(
+      "BlockedTransitionMortality must be scalar, length S - 1, or an n_pops x (S - 1) matrix"
+    )
+  }
+  
+  if (any(!is.finite(blocked_transition_mortality)) ||
+      any(blocked_transition_mortality < 0 |
+          blocked_transition_mortality > 1)) {
+    stop("BlockedTransitionMortality probabilities must be between 0 and 1")
+  }
   
   # ------------------------------------------------------------
   # STEP 1: Propagule production and transition extraction
@@ -57,22 +129,34 @@ local.dynamics.transition.matrix <- function(
       stop("A nodetransition list must contain one matrix per population")
     }
     
-    fecundity <- vapply(
-      nodetransition,
-      function(A) A[1, -1],
-      numeric(S - 1)
+    fecundity <- matrix(
+      vapply(
+        nodetransition,
+        function(A) A[1, -1],
+        numeric(S - 1)
+      ),
+      nrow = S - 1L,
+      ncol = n_pops
     )
     
-    transition_probabilities <- vapply(
-      nodetransition,
-      function(A) A[cbind(2:S, 1:(S - 1))],
-      numeric(S - 1)
+    transition_probabilities <- matrix(
+      vapply(
+        nodetransition,
+        function(A) A[cbind(2:S, 1:(S - 1))],
+        numeric(S - 1)
+      ),
+      nrow = S - 1L,
+      ncol = n_pops
     )
     
-    stasis_probabilities <- vapply(
-      nodetransition,
-      function(A) diag(A)[1:(S - 1)],
-      numeric(S - 1)
+    stasis_probabilities <- matrix(
+      vapply(
+        nodetransition,
+        function(A) diag(A)[1:(S - 1)],
+        numeric(S - 1)
+      ),
+      nrow = S - 1L,
+      ncol = n_pops
     )
     
     terminal_survival_prob <- vapply(
@@ -109,6 +193,85 @@ local.dynamics.transition.matrix <- function(
   }
   
   propagules <- rpois(n_pops, fec_means)
+  
+  # ------------------------------------------------------------
+  # STEP 1b: Optional density-dependent animal dispersal
+  # ------------------------------------------------------------
+  #
+  # Reweight dispersal before mortality and stage transitions. Propagules
+  # produced in STEP 1 therefore respond to the same pre-transition census
+  # that produced them. For the hornet model, gynes can consequently respond
+  # to main nests that are present during gyne production, even though those
+  # annual nests subsequently die during STEP 2.
+  #
+  # NA or 0 leaves the original dispersal matrix unchanged. For any positive
+  # value, DispersalDensityFactor is the exponent alpha. The source-cell
+  # diagonal is treated like every other destination. Probability absent from
+  # an original row remains an outside-landscape option, permitting export.
+  
+  if (length(DispersalDensityFactor) != 1L) {
+    stop("DispersalDensityFactor must be a single value")
+  }
+  
+  density_dependent_dispersal <-
+    !is.na(DispersalDensityFactor) &&
+    DispersalDensityFactor != 0
+  
+  if (density_dependent_dispersal) {
+    if (!is.finite(DispersalDensityFactor) ||
+        DispersalDensityFactor <= 0) {
+      stop(
+        "DispersalDensityFactor must be finite and positive, or 0/NA to disable it"
+      )
+    }
+    
+    if (any(propagules > 0)) {
+      # Weighted occupancy of stages 2:S in the pre-transition census.
+      pre_transition_population <- rowSums(
+        n0[, 2:S, drop = FALSE] * w[, 2:S, drop = FALSE]
+      )
+      
+      # Cells with K <= 0 cannot attract dispersers. Calculating the ratio
+      # only for positive capacities also avoids division by zero.
+      relative_occupancy <- rep(1, n_pops)
+      positive_capacity <- nodeK > 0
+      relative_occupancy[positive_capacity] <- pmin(
+        1,
+        pmax(
+          0,
+          pre_transition_population[positive_capacity] /
+            nodeK[positive_capacity]
+        )
+      )
+      
+      # Zero occupancy gives attractiveness one; occupancy at or above K
+      # gives attractiveness zero.
+      cell_attractiveness <-
+        pmax(0, 1 - relative_occupancy) ^ DispersalDensityFactor
+      
+      # The outside landscape retains constant attractiveness one.
+      base_export_probability <- pmax(0, 1 - rowSums(sddprob))
+      
+      # R stores matrices column-wise. Repeating each destination value
+      # n_pops times scales columns without sweep().
+      cell_choice_weights <-
+        sddprob * rep(cell_attractiveness, each = n_pops)
+      
+      total_choice_weights <-
+        rowSums(cell_choice_weights) + base_export_probability
+      
+      # A row-length vector is recycled down every column, normalising the
+      # destination and export choices without sweep() or matrix subsetting.
+      row_multiplier <- numeric(n_pops)
+      valid_rows <- total_choice_weights > 0
+      row_multiplier[valid_rows] <- 1 / total_choice_weights[valid_rows]
+      
+      # If all reachable cells are full and no original export probability
+      # exists, the adjusted row remains zero and propagules find no modelled
+      # destination.
+      sddprob <- cell_choice_weights * row_multiplier
+    }
+  }
   
   # ------------------------------------------------------------
   # STEP 2: Stage transitions
@@ -171,13 +334,15 @@ local.dynamics.transition.matrix <- function(
     )
     
     # STEP 2c: target stage and all higher stages consume capacity.
-    total_pop <- capacity_above + n[s, ] * w[s]
+    # stage_weight is node-specific when weights was supplied as a matrix.
+    stage_weight <- w[, s]
+    total_pop <- capacity_above + n[s, ] * stage_weight
     slots_available <- pmax(
       0,
-      floor((nodeK - total_pop) / w[s])
+      floor((nodeK - total_pop) / stage_weight)
     )
     
-    max_slots <- nodeK / w[s]
+    max_slots <- nodeK / stage_weight
     free_fraction <- ifelse(
       max_slots > 0,
       slots_available / max_slots,
@@ -197,12 +362,39 @@ local.dynamics.transition.matrix <- function(
     
     n_trans_actual <- pmin(n_trans_actual, slots_available)
     
-    # STEP 2e: blocked candidates remain in their source stage.
+    # STEP 2e: resolve stasis and mortality of blocked candidates.
+    # Individuals allocated to stasis are unaffected. Only candidates that
+    # attempted progression but did not obtain a target-stage slot are exposed
+    # to BlockedTransitionMortality for their source stage (s - 1).
+    n_stay <- N_surv - n_trans_candidates
+    n_blocked <- n_trans_candidates - n_trans_actual
+    blocked_mortality_prob <- blocked_transition_mortality[, s - 1L]
+    n_blocked_survivors <- n_blocked
+    
+    # Avoid unnecessary random draws at the exact 0 and 1 limits. In
+    # particular, BlockedTransitionMortality = 0 preserves the previous RNG
+    # sequence as well as the previous biological behaviour.
+    certain_death <- n_blocked > 0 & blocked_mortality_prob == 1
+    n_blocked_survivors[certain_death] <- 0
+    
+    stochastic_blocking <-
+      n_blocked > 0 &
+      blocked_mortality_prob > 0 &
+      blocked_mortality_prob < 1
+    
+    if (any(stochastic_blocking)) {
+      n_blocked_survivors[stochastic_blocking] <- rbinom(
+        n = sum(stochastic_blocking),
+        size = n_blocked[stochastic_blocking],
+        prob = 1 - blocked_mortality_prob[stochastic_blocking]
+      )
+    }
+    
     n[s, ] <- n[s, ] + n_trans_actual
-    n[s - 1, ] <- N_surv - n_trans_actual
+    n[s - 1, ] <- n_stay + n_blocked_survivors
     
     # This now equals the weighted population in stages s:S.
-    capacity_above <- total_pop + n_trans_actual * w[s]
+    capacity_above <- total_pop + n_trans_actual * stage_weight
   }
   
   # ------------------------------------------------------------
@@ -275,27 +467,44 @@ local.dynamics.transition.matrix <- function(
   Qin <- pmax(0, floor(Qin))
   env_prob <- pmin(1, pmax(0, nodeenvestabprob))
   
-  # Pin is constrained to the union of maternal dispersal footprints.
-  footprint_area <- nodepropaguleestablishment * nodeK
-  coverage_pressure <- numeric(n_pops)
-  
-  if (any(Pin > 0) && any(mother_counts > 0)) {
-    coverage_pressure <- as.numeric(
-      (mother_counts * footprint_area) %*% sddprob
-    ) / nodeK
-  }
-  
-  accessible_fraction <- pmin(
-    1,
-    pmax(0, -expm1(-coverage_pressure))
+  # A value below one retains the passive-propagule maternal-footprint model.
+  # Setting every value to one removes mother dependence: any naturally
+  # dispersed propagule that reaches a cell can search all its free slots.
+  unrestricted_natural_search <- all(
+    is.finite(nodepropaguleestablishment) &
+      nodepropaguleestablishment >= 1
   )
+  
+  if (unrestricted_natural_search) {
+    accessible_fraction <- as.numeric(Pin > 0)
+    coverage_pressure <- accessible_fraction
+  } else {
+    footprint_area <- nodepropaguleestablishment * nodeK
+    coverage_pressure <- numeric(n_pops)
+    
+    if (any(Pin > 0) && any(mother_counts > 0)) {
+      coverage_numerator <- as.numeric(
+        (mother_counts * footprint_area) %*% sddprob
+      )
+      
+      positive_capacity <- nodeK > 0
+      coverage_pressure[positive_capacity] <-
+        coverage_numerator[positive_capacity] /
+        nodeK[positive_capacity]
+    }
+    
+    accessible_fraction <- pmin(
+      1,
+      pmax(0, -expm1(-coverage_pressure))
+    )
+  }
   
   natural_slots <- floor(seedbank_slots * accessible_fraction)
   
   # Retain rare, non-zero colonisation links without creating slots when
-  # no naturally dispersed seed arrived.
+  # no naturally dispersed propagule arrived.
   natural_slots <- ifelse(
-    Pin > 0 & coverage_pressure > 0,
+    Pin > 0 & accessible_fraction > 0,
     pmax(1, natural_slots),
     0
   )
@@ -303,23 +512,21 @@ local.dynamics.transition.matrix <- function(
   natural_slots <- pmin(natural_slots, seedbank_slots)
   other_slots <- pmax(0, seedbank_slots - natural_slots)
   
-  # Natural seeds compete only within maternal footprints.
   lambda_P <- ifelse(
     natural_slots > 0,
     env_prob * Pin / pmax(natural_slots, 1),
     0
   )
   
-  # Human-mediated seeds have access to every available seedbank slot.
   lambda_Q <- ifelse(
     seedbank_slots > 0,
     env_prob * Qin / pmax(seedbank_slots, 1),
     0
   )
   
-  # Qin contributes inside and outside the natural footprint(dispersal shadows of mothers); Pin only inside.
-  p_natural_slots <- 1 - exp(-(lambda_P + lambda_Q))
-  p_other_slots <- 1 - exp(-lambda_Q)
+  # Qin contributes inside and outside the natural footprint; Pin only inside.
+  p_natural_slots <- -expm1(-(lambda_P + lambda_Q))
+  p_other_slots <- -expm1(-lambda_Q)
   
   recruits <-
     rbinom(n_pops, natural_slots, p_natural_slots) +
@@ -330,6 +537,8 @@ local.dynamics.transition.matrix <- function(
   
   t(n)
 }
+
+
 
 # local.dynamics.transition.matrix.skip <- function(
 #     nodetransition = NodeTransition,
@@ -484,6 +693,8 @@ SEAM = 0,			#Option to provide socioeconomic adjacency matrix for information sp
 LDDprob = NA,         #Option to provide long distance (human-mediated) dispersal matrix instead of distance-independent dispesal rate
 			      #e.g. could be weighted by law of human visitation or data on stock movements
 LDDrate = 0,         #Proportion of available propagules entering LDD
+DispersalDensityFactor = 0,
+BlockedTransitionMortality = 0,
 OngoingExternalInvasion = F,   ##Option to include ongoing invasion from external sources
 OngoingExternalInfo = F,   ##Option to include ongoing communication from external sources
 OutputDir = NA,		      #Directory for storing results
@@ -622,7 +833,8 @@ vars_to_export <- c(
   "K", "SeedbankK","PropaguleEstablishment", "SEAM", "ExternalInfoProb", "OngoingExternalInvasion",
   "OngoingExternalInfo", "DetectionProb", "DetectionSD", "ManageProb", "ManageSD",
   "MortalityProb", "MortalitySD", "SpreadReduction", "SpreadReductionSD",
-  "Weights", "NodeK", "NodeSeedbankK","LDDprob", "LDDrate", "NodePropaguleEstablishment"
+  "Weights", "NodeK", "NodeSeedbankK","LDDprob", "LDDrate", "NodePropaguleEstablishment", 
+  "DispersalDensityFactor","BlockedTransitionMortality"
   )
 
 clusterExport(cl, vars_to_export, envir = environment())
@@ -870,7 +1082,9 @@ perm_results <- parLapply(cl, seq_len(Nperm), function(i_perm) {
                          nodeenvestabprob = NodeEnvEstabProb, n0 = N0, lddprob = LDDprob,
                          lddrate = LDDrate,  nodeK = NodeK, node.seedbankK = NodeSeedbankK,
                          nodepropaguleestablishment = NodePropaguleEstablishment,
-                         nodespreadreduction = NodeSpreadReduction, managing = Managing,MaxInteger=MaxInteger)
+                         nodespreadreduction = NodeSpreadReduction, managing = Managing,
+                         MaxInteger=MaxInteger,BlockedTransitionMortality = BlockedTransitionMortality,
+                         DispersalDensityFactor=DispersalDensityFactor)
     }
     
     # Info spread via SEAM
@@ -907,7 +1121,13 @@ perm_results <- parLapply(cl, seq_len(Nperm), function(i_perm) {
     # Record results for this timestep into local containers
     ManagingResults_local[, timestep] <- Managing
     InvasionResults_local[, timestep] <- Invaded
-    PopulationResults_local[, timestep] <- N %*% Weights
+    weighted_population <- if (is.matrix(Weights)) {
+      rowSums(N[, 2:Nstages, drop = FALSE] *
+                Weights[, 2:Nstages, drop = FALSE])
+    } else {
+      as.numeric(N[, 2:Nstages, drop = FALSE] %*% Weights[2:Nstages])
+    }
+    PopulationResults_local[, timestep] <- weighted_population
     PopulationStageResults_local[, , timestep] <- N
     
     # detection: compute per-stage detection probs at current N and NodeDetectionProb[,,timestep]
