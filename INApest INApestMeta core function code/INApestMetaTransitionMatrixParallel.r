@@ -658,7 +658,7 @@ local.dynamics.transition.matrix <- function(
 #   return(t(n))
 # }
 
-INApestMetaTansitionMatrixParallel = function(
+INApestMetaTransitionMatrixParallel = function(
 ModelName, #Name for storing results to file 
 Nperm,                  #Number of permutations per parameter combination
 Ntimesteps,                 #Simulation duration timesteps can be any length of time
