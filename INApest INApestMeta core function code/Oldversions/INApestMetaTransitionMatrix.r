@@ -1047,9 +1047,9 @@ K,		       #Population carrying capacity - vector (nodes) or matrix (nodes x tim
 SeedbankK,        # Seedbank carrying capacity - vector (nodes) or matrix (nodes x timesteps)
 PropaguleEstablishment, #Propagules establishment probability
 IncursionStartPop=NA,      #option to set population size for new incursions
-SDDprob,                   #Natural dispersal probability matrix, or 3D array (nodes x nodes x timesteps)
+SDDprob,                   #Natural disperal probability between each pair of nodes
 SEAM = 0,			#Option to provide socioeconomic adjacency matrix for information spread
-LDDprob = NA,         #Option to provide long distance (human-mediated) dispersal matrix or 3D array (nodes x nodes x timesteps) instead of distance-independent dispesal rate
+LDDprob = NA,         #Option to provide long distance (human-mediated) dispersal matrix instead of distance-independent dispesal rate
 			      #e.g. could be weighted by law of human visitation or data on stock movements
 LDDrate = 0,         #Proportion of available propagules entering LDD
 DispersalDensityFactor = 0,
@@ -1068,12 +1068,6 @@ DoPlots = TRUE	     #Option to omit printing of line graphs.Default is to print.
 ###Max integer for propagule dispersal using rmultinom
 MaxInteger <- .Machine$integer.max  
   
-###Allow SDD and LDD connectivity to vary through time
-if(length(dim(SDDprob)) == 3 && (dim(SDDprob)[1] != dim(SDDprob)[2] || dim(SDDprob)[3] != Ntimesteps))
-  stop("SDDprob 3D array must have dimensions nodes x nodes x Ntimesteps")
-if(length(dim(LDDprob)) == 3 && (dim(LDDprob)[1] != nrow(SDDprob) || dim(LDDprob)[2] != nrow(SDDprob) || dim(LDDprob)[3] != Ntimesteps))
-  stop("LDDprob 3D array must have dimensions nodes x nodes x Ntimesteps")
-
 # pre-evaluate some variables for efficiency
 if(is.matrix(K) == FALSE)
 {
@@ -1455,14 +1449,6 @@ HaveInfo = InitInfo
     ###Print progress
     cat("\r", "Realisation ", perm, "Timestep ", timestep, "...")
  
-    ###Allow for variation in dispersal connectivity through time
-    NodeSDDprob = SDDprob
-    if(length(dim(SDDprob)) == 3)
-      NodeSDDprob = SDDprob[,,timestep]
-    NodeLDDprob = LDDprob
-    if(length(dim(LDDprob)) == 3)
-      NodeLDDprob = LDDprob[,,timestep]
-
     ###Allow for variation in recruit establishment through time
     ###e.g.  climate change predictions
     ###Note: could be done outside loop, but would take heaps of memory to store 
@@ -1539,7 +1525,7 @@ HaveInfo = InitInfo
   # Apply management-driven mortality
   N0 <- matrix(NA, nrow = nrow(N), ncol = ncol(N))
   for (s in 1:Nstages) {
-    N0[, s] <- rbinom(n = nrow(N), size = N[, s], prob = 1 - (NodeMortalityProb[, s,timestep] * Managing))
+    N0[, s] <- rbinom(n = nrow(N), size = N[, s], prob = 1 - (NodeMortalityProb[, s,t] * Managing))
   }
   
   # Update population matrix
@@ -1552,8 +1538,8 @@ HaveInfo = InitInfo
   if(sum(N0)>0 ) 
   {
       
-  N <- LocalDynamics(nodetransition = NodeTransition,weights = Weights,sddprob = NodeSDDprob, nodeenvestabprob = NodeEnvEstabProb,n0=N0,
-                     lddprob = NodeLDDprob, lddrate = LDDrate, nodeK = NodeK, 
+  N <- LocalDynamics(nodetransition = NodeTransition,weights = Weights,sddprob = SDDprob, nodeenvestabprob = NodeEnvEstabProb,n0=N0,
+                     lddprob = LDDprob, lddrate = LDDrate, nodeK = NodeK, 
                      node.seedbankK = NodeSeedbankK,nodepropaguleestablishment = NodePropaguleEstablishment,
                      nodespreadreduction = NodeSpreadReduction,managing = Managing,
                      MaxInteger=MaxInteger,BlockedTransitionMortality = BlockedTransitionMortality,

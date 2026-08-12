@@ -96,9 +96,9 @@ K,		       #Population carrying capacity - vector (nodes)
 PropaguleProduction, #Propagules produced per individual
 PropaguleEstablishment, #Propagules establishment probability
 IncursionStartPop=NA,      #option to set population size for new incursions
-SDDprob,                   #Natural dispersal probability matrix, or 3D array (nodes x nodes x timesteps)
+SDDprob,                   #Natural disperal probability between each pair of nodes
 SEAM = 0,			#Option to provide socioeconomic adjacency matrix for information spread
-LDDprob = NA,         #Option to provide long distance (human-mediated) dispersal matrix or 3D array (nodes x nodes x timesteps) instead of distance-independent dispesal rate
+LDDprob = NA,         #Option to provide long distance (human-mediated) dispersal matrix instead of distance-independent dispesal rate
 			      #e.g. could be weighted by law of human visitation or data on stock movements
 LDDrate = 0,         #Proportion of available propagules entering LDD
 OngoingExternalInvasion = F,   ##Option to include ongoing invasion from external sources
@@ -113,12 +113,6 @@ DoPlots = TRUE	     #Option to omit printing of line graphs.Default is to print.
 ###2) Allow provision of natural mortality rate to permit extinction of local populations (may happen in climates where R0 is very low?)
 
   
-  ###Allow SDD and LDD connectivity to vary through time
-  if(length(dim(SDDprob)) == 3 && (dim(SDDprob)[1] != dim(SDDprob)[2] || dim(SDDprob)[3] != Ntimesteps))
-    stop("SDDprob 3D array must have dimensions nodes x nodes x Ntimesteps")
-  if(length(dim(LDDprob)) == 3 && (dim(LDDprob)[1] != nrow(SDDprob) || dim(LDDprob)[2] != nrow(SDDprob) || dim(LDDprob)[3] != Ntimesteps))
-    stop("LDDprob 3D array must have dimensions nodes x nodes x Ntimesteps")
-
   # pre-evaluate some variables for efficiency
   if(length(dim(K)) <3)
     {
@@ -167,14 +161,6 @@ DoPlots = TRUE	     #Option to omit printing of line graphs.Default is to print.
     MortalitySD = MortalityProb/10
   
 
-###Set initial dispersal connectivity
-  NodeSDDprob = SDDprob
-  if(length(dim(SDDprob)) == 3)
-    NodeSDDprob = SDDprob[,,1]
-  NodeLDDprob = LDDprob
-  if(length(dim(LDDprob)) == 3)
-    NodeLDDprob = LDDprob[,,1]
-
 ###########################################################
 ###Start of simulation
 ###########################################################
@@ -207,37 +193,40 @@ for (perm in 1:Nperm)
   InitBio = matrix(ncol = Nlanduses, nrow = nrow(SDDprob))
   InitBio[,] = 0
   InintInfested = rep(0,times = nrow(SDDprob))
-  
-  if(is.matrix(InitialPopulation) == T && nrow(InitialPopulation) == nrow(SDDprob) && ncol(InitialPopulation) == Nlanduses)
-    InitBio = InitialPopulation
-  
-  if(is.matrix(InitialPopulation) == F || nrow(InitialPopulation) != nrow(SDDprob) || ncol(InitialPopulation) != Nlanduses)
+  if(nrow(InitialPopulation) != nrow(SDDprob))
     {
-    risk = NULL
-    if(is.matrix(InvasionRisk) == T && nrow(InvasionRisk) == nrow(SDDprob))
-      risk = InvasionRisk[,1]
-    if(is.matrix(InvasionRisk) == F && length(InvasionRisk) == nrow(SDDprob))
-      risk = InvasionRisk
-    
-    if(is.na(InitBioP) == F)
-      Infested = sample(1:nrow(SDDprob),size = ceiling(nrow(SDDprob)*InitBioP),prob = risk)
-    if(is.na(InitBioP) == T && is.null(risk) == F)
+    if(length(InvasionRisk) == nrow(SDDprob))
       {
-      Infested = rbinom(1:nrow(SDDprob),size = 1,prob = risk)
-      Infested = which(Infested == 1)
+      if(is.na(InitBioP) == F)
+        Infested = sample(1:nrow(SDDprob),size = ceiling(nrow(SDDprob)*InitBioP),prob = InvasionRisk)
+      if(is.na(InitBioP) == T)
+        {
+        Infested = rbinom(1:nrow(SDDprob),size = 1,prob = InvasionRisk)
+        Infested = which(Infested == 1)
+        } 
       }
-    if(is.na(InitBioP) == T && is.null(risk) == T)
-      Infested = integer(0)
-    
-    if(is.na(IncursionStartPop) == T)
+    if(length(InvasionRisk) != nrow(SDDprob))
+      {
+      if(is.matrix(InvasionRisk) == F)
+        Infested = sample(1:nrow(SDDprob),size = ceiling(nrow(SDDprob)*InitBioP))
+      if(is.matrix(InvasionRisk) == T)
+        {
+        Infested = rbinom(1:nrow(SDDprob),size = 1,prob = InvasionRisk[,1])
+        Infested = which(Infested == 1)
+        }
+      }
+    if(is.na(IncursionStartPop) == T) 
       InintInfested[Infested] = 1
-    if(is.na(IncursionStartPop) == F)
+    if(is.na(IncursionStartPop) == F) 
       InintInfested[Infested] = IncursionStartPop
     ###Find alternative to for loop
     InVector = cbind(InintInfested,K)
     InitialPopulation <- t(apply(InVector,1,FUN = SampleVector))
     InitBio = InitialPopulation
     }
+  
+  if(nrow(InitialPopulation) == nrow(SDDprob))
+    InitBio = InitialPopulation
   
   ###Ensure initial population not greater than carrying capacity
   for(i in 1:Nlanduses)
@@ -370,12 +359,6 @@ for (perm in 1:Nperm)
     cat("\r", "Realisation ", perm, "Timestep ", timestep, "...")
  
     
-    ###Allow for variation in dispersal connectivity through time
-    if(length(dim(SDDprob)) == 3)
-      NodeSDDprob = SDDprob[,,timestep]
-    if(length(dim(LDDprob)) == 3)
-      NodeLDDprob = LDDprob[,,timestep]
-
     ###Allow for variation in establishment through time
     ###e.g.  climate change predictions
     ###Note: could be done outside loop, but would take heaps of memory to store 
@@ -466,8 +449,8 @@ for (perm in 1:Nperm)
   if(sum(N0)>0 ) 
     {
       
-    N <- LocalDynamics(sddprob = NodeSDDprob, nodepropaguleproduction = NodePropaguleProduction,nodeenvestabprob = NodeEnvEstabProb,n=N0,
-                     lddprob = NodeLDDprob, lddrate = LDDrate,k_is_0 = K_is_0, nodeK = NodeK,nodepropaguleestablishment = NodePropaguleEstablishment,
+    N <- LocalDynamics(sddprob = SDDprob, nodepropaguleproduction = NodePropaguleProduction,nodeenvestabprob = NodeEnvEstabProb,n=N0,
+                     lddprob = LDDprob, lddrate = LDDrate,k_is_0 = K_is_0, nodeK = NodeK,nodepropaguleestablishment = NodePropaguleEstablishment,
                      nodespreadreduction = NodeSpreadReduction,managing = Managing)
     } 
  ###Update info vector for any info spread (if SEAM supplied)

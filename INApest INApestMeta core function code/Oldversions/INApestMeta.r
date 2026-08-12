@@ -19,63 +19,273 @@
 ###are detected, the proportion of infestations detected and nodes under management against time 
 ###########################################################################
 ###########################################################################
+local.dynamics = function(sddprob = SDDprob, nodepropaguleproduction = NodePropaguleProduction,nodeenvestabprob = NodeEnvEstabProb,n=N0,
+lddprob = LDDprob, lddrate = LDDrate,k_is_0 = K_is_0, nodeK = NodeK,nodepropaguleestablishment = NodePropaguleEstablishment,
+nodespreadreduction = NodeSpreadReduction,managing = Managing, maxinteger = MaxInteger)
+{
+Propagules <- rpois(nrow(sddprob), nodepropaguleproduction * n)# propagules are produced
+      ###self-mediated spread
+      Pin = 0
+      Qin = 0
+      Pout <- Propagules*(1-lddrate)
+      if(sum(Pout)>0 && sum(Pout) < maxinteger) 
+       Pin <- t(rmultinom(1, size=sum(Pout*rowSums(sddprob)), prob=Pout %*% sddprob))  # propagules are dispersed
+      else
+        Pin <- floor(colSums(sweep(sddprob,1,Pout ,`*`)))
+      ###human-mediated spread
+      if (is.matrix(lddprob)==T) 
+       {
+       Qout  = Propagules*lddrate *(1-nodespreadreduction*managing)       
+       if(sum(Qout)>0 && sum(Pout) < maxinteger) 
+        Qin <- t(rmultinom(1, size=sum(Qout*rowSums(lddprob)), prob=Qout %*% lddprob))    # propagules are dispersed
+       else
+         Qin <- floor(colSums(sweep(lddprob,1,Qout ,`*`)))
+       }
+     
+    # propagule success depends on availability of uninfested host plants
+    Nout <- ifelse(k_is_0, 0, n + rbinom(nrow(sddprob), nodeK-n, 1 - exp(-nodepropaguleestablishment*nodeenvestabprob*(Pin+Qin))))
+return(Nout)
+}
 
-#######################################################################
-###This version implements parallel processing in foreach for the permutation loop.
-###See file "ParallelSetup.r" for notes on steps for setting up parallel processing
-#######################################################################
+###############################################################################
+###Alternative population function suitable for passively dispersing propagules
+###as opposed to actively searching offspring
+###############################################################################
+local.dynamics.crowded <- function(
+    sddprob = SDDprob,
+    nodepropaguleproduction = NodePropaguleProduction,
+    nodeenvestabprob = NodeEnvEstabProb,
+    n = N0,
+    lddprob = LDDprob,
+    lddrate = LDDrate,
+    k_is_0 = K_is_0,
+    nodeK = NodeK,
+    nodepropaguleestablishment = NodePropaguleEstablishment,
+    nodespreadreduction = NodeSpreadReduction,
+    managing = Managing,
+    maxinteger = MaxInteger
+) {
+  N <- length(n)            # number of populations
+  active <- n > 0           # populations with at least 1 individual
+  
+  ### --- 1. Propagule production ---
+  Propagules <- numeric(N)
+  Propagules[active] <- rpois(sum(active), lambda = pmax(0, nodepropaguleproduction[active] * n[active]))
+  
+  ### Naturally exported propagules per population
+  Pnatural <- numeric(N)
+  Pnatural[active] <- round(Propagules[active] * (1 - lddrate))
+  
+  # Pout vector (seeds exported outside source population)
+  Pout <- numeric(N)
+  Pout[active] <- round(Pnatural[active] * (1 - diag(sddprob)[active]))
+  
+  ### Seeds per mother
+  PropagulesPerN0 <- numeric(N)
+  PropagulesPerN0[active] <- (Pnatural[active] - Pout[active]) / n[active]
+  
+  ### --- Recruitment from self-produced propagules ---
+  nodeN0slots <- nodepropaguleestablishment * nodeK
+  SlotsPer_N0 <- numeric(N)
+  SlotsPer_N0[active] <- (nodeK[active] - n[active]) / nodeK[active] * nodeN0slots[active] *
+    (1 - (1 - 1 / pmax(1, nodeN0slots[active]))^(PropagulesPerN0[active] * nodeenvestabprob[active]))
+  
+  N0slotp <- numeric(N)
+  N0slotp[active] <- pmin(1, SlotsPer_N0[active] / nodeK[active])   # ensure fraction ≤1
+  log1mp <- numeric(N)
+  log1mp[active] <- log1p(-N0slotp[active])
+  Pslot_col <- numeric(N)
+  Pslot_col[active] <- 1 - exp(n[active] * log1mp[active])
+  
+  available <- pmax(0, nodeK - n)
+  Recruits <- rpois(sum(active), lambda = available[active] * pmax(0, Pslot_col[active]))
+  Recruits <- pmin(Recruits, available[active])
+  
+  ### Add self-recruits
+  n[active] <- n[active] + Recruits
+  
+  ### --- Recruitment from external sources ---
+  diag(sddprob) <- 0  # exclude self as target
+  Pin <- numeric(N)
+  if (sum(Pout) > 0) {
+    # vectorized multinomial approximation per population
+    if (sum(Pout) < maxinteger) {
+      Pin <- colSums(sweep(sddprob, 1, Pout, `*`))
+    } else {
+      Pin <- floor(colSums(sweep(sddprob, 1, Pout, `*`)))
+    }
+  }
+  
+  ### Human-mediated spread
+  Qin <- numeric(N)
+  if (is.matrix(lddprob)) {
+    Qout <- Propagules * lddrate * (1 - nodespreadreduction * managing)
+    if (sum(Qout) > 0) {
+      if (sum(Qout) < maxinteger) {
+        Qin <- colSums(sweep(lddprob, 1, Qout, `*`))
+      } else {
+        Qin <- floor(colSums(sweep(lddprob, 1, Qout, `*`)))
+      }
+    }
+  }
+  
+  ### External recruits
+  Propagulessurviving <- (Pin + Qin) * nodeenvestabprob
+  available <- pmax(0, nodeK - n)
+  ExternalRecruits <- rpois(N, lambda = available * (1 - (1 - 1 / pmax(1, nodeK))^(Propagulessurviving)))
+  ExternalRecruits <- pmin(ExternalRecruits, available)
+  
+  ### Total population after one timestep
+  Nout <- n + ExternalRecruits
+  
+  return(Nout)
+}
 
-library(abind)
-library(doParallel)
 
+local.dynamics.wave = function(sddprob = SDDprob, nodepropaguleproduction = NodePropaguleProduction,nodeenvestabprob = NodeEnvEstabProb,n=N0,
+                                  lddprob = LDDprob, lddrate = LDDrate,k_is_0 = K_is_0, nodeK = NodeK,
+                               nodespreadreduction = NodeSpreadReduction,managing = Managing, maxinteger = MaxInteger,
+                               nodermax = NodeRmax, #Maximum dispersal radius
+                               nodeage = NodeAge, #Local population age
+                               nodearea = NodeArea, #area of site/population
+                               nodeslotdensity = NodeSlotDensity #slots per unit area, computed outside functinon as NodeK/NodeArea
+                               )
+{
+  #sddprob = SDDprob   
+  
+  N <- length(n)            # number of populations
+  active <- n > 0           # populations with at least 1 individual
+  
+  nodeage[active] <- nodeage[active] + 1  
+  ### --- 1. Propagule production ---
+  Propagules <- numeric(N)
+  Propagules[active] <- rpois(sum(active), lambda = nodepropaguleproduction[active] * n[active])
+  
+  ### Naturally exported propagules per population
+  Pnatural <- numeric(N)
+  Pnatural[active] <- round(Propagules[active] * (1 - lddrate))
+  
+  # Pout vector (seeds exported outside source population)
+  Pout <- numeric(N)
+  Pout[active] <- round(Pnatural[active] * (1 - diag(sddprob)[active]))
+  
+  ### Seeds per mother
+  PropagulesPerN0 <- numeric(N)
+  PropagulesPerN0[active] <- (Pnatural[active] - Pout[active]) / n[active]
+  
+  ### --- Recruitment from self-produced propagules ---
+  ###Maximum avaialble slots per mother
+  nodeN0slots <- pi*(nodermax^2)*nodeslotdensity
+  
+  #Increment area available to population based on populaton age and dispersal radius
+  #Use half circular area for invasion from edge
+  GenArea <- pmin(nodearea,pi*((nodermax*nodeage)^2)/2)
+  SlotsPer_N0 <- numeric(N)
+  SlotsPer_N0[active] <- (GenArea[active]*nodeslotdensity[active] - n[active]) / GenArea[active] * nodeN0slots[active] *
+    (1 - (1 - 1 / nodeN0slots[active])^(PropagulesPerN0[active]*nodeenvestabprob[active]) )
+  
+  N0slotp <- numeric(N)
+  N0slotp[active] <- SlotsPer_N0[active] / GenArea[active]
+  log1mp <- numeric(N)
+  log1mp[active] <- log1p(-N0slotp[active])
+  Pslot_col <- numeric(N)
+  Pslot_col[active] <- 1 - exp(n[active] * log1mp[active])
+  
+  available <- pmax(0,GenArea*nodeslotdensity - n)
+  Recruits <- rpois(sum(active),lambda = available[active]*Pslot_col[active])
+  Recruits <- pmin(Recruits,GenArea[active]*nodeslotdensity[active]-n[active])
+  #plot(nodeK[active],n[active]+Recruits)
+  #abline(0,1)
+  #summary(nodeK[active]-n[active])
+  
+  ### Add self-recruits
+  n[active] <- n[active] + Recruits
+  #plot(nodeK[active],n[active])
+  #abline(0,1)
+  ### --- Recruitment from external sources ---
+  diag(sddprob) <- 0  # exclude self as target
+  
+  
+  Pin <- numeric(N)
+  if(sum(Pout) > 0 && sum(Pout) < maxinteger) {
+    # vectorized multinomial approximation per population
+    Pin <- colSums(sweep(sddprob, 1, Pout, `*`))
+  } else {
+    Pin <- floor(colSums(sweep(sddprob, 1, Pout, `*`)))
+  }
+  
+  ### Human-mediated spread
+  Qin <- numeric(N)
+  if(is.matrix(lddprob)) {
+    Qout <- Propagules * lddrate * (1 - nodespreadreduction * managing)
+    if(sum(Qout) > 0 && sum(Qout) < maxinteger) {
+      Qin <- colSums(sweep(lddprob, 1, Qout, `*`))
+    } else {
+      Qin <- floor(colSums(sweep(lddprob, 1, Qout, `*`)))
+    }
+  }
+  
+  ### External recruits
+  Propagulessurviving <- (Pin + Qin) * nodeenvestabprob
+  available <- pmax(0,nodeK - n)
+  ExternalRecruits <- rpois(N, lambda = available*(1 - (1 - 1/nodeK)^(Propagulessurviving)))
+  #summary((nodeK - n))
+  
+  ExternalRecruits <- pmin(ExternalRecruits,available)
+  ### Total population after one timestep
+  Nout <- n + ExternalRecruits
+  return(list(
+    n = Nout,
+    nodeage = nodeage
+  ))
+}
 
-INApestMetaParallel = function(
+INApestMeta = function(
 ModelName, #Name for storing results to file 
 Nperm,                  #Number of permutations per parameter combination
 Ntimesteps,                 #Simulation duration timesteps can be any length of time
+LocalDynamics = local.dynamics, #Local population growth,dispersal and management function
 DetectionProb,          #Per-individual detection probability or vector of probabilties per node (e.g. farm) (must be between 0 and 1)
-DetectionSD = NULL, #Option to provide standard deviation for detection probability can be single number or vector (nodes)
+DetectionSD = NULL, #Option to provide standard deviation for detection probability. Can be single number or vector (nodes)
 ManageProb,             #Probability or vector of probabilities vector length nrow(SDDprob)of node adopting management upon detection
 ManageSD = NULL, #Option to provide standard deviation for management probability. Can be single number or vector (nodes)
 MortalityProb,           #Mortality probability under management
 MortalitySD = NULL, #Option to provide standard deviation for mortality probability. Can be single number or vector (nodes)
 SpreadReduction,        #Reduction in dispersal probability when management adopted. Must be between 0 (no spread reduction) and 1 (complete prevention of spread). Can be single value or vector length nrow(SDDprob)
-SpreadReductionSD = NULL, #Option to provide standard deviation for spread reduction. Can be single number or vector (nodes)
-InitialPopulation = NA,        #Vector of population sizes at start of simulations
+SpreadReductionSD = NULL, #Option to provide standard deviation for spread reduction probability can be single number or vector (nodes)
+InitialPopulation = NA,        #Vector or matrix (nodes x timesteps) of population sizes at start of simulations
 InitBioP = NA,		#Proportion of nodes infested at start of simulations
-InvasionRisk = NA,           #Vector or matrix (nodes x timesteps) of probabilities of invasion from external sources
+InvasionRisk = NA,           #Vector of probabilities of invasion from external sources
 InitialInfo = NA,        #Vector or of nodes with information at start of simulations
 InitInfoP = NA,		#Proportion of nodes with information at start of simulations
 ExternalInfoProb = NA,           #Vector of probabilities of communication from external sources
 EnvEstabProb = 1,           #Environmentally determined establishment probability. Can be single value, vector (nodes) or matrix (nodes x timesteps)
 Survival = 1,           # local population survival probability. Set to 1 for no environmental limitation on survival. Can be single number, vector (nodes) or matrix (nodes x timesteps)
 K,		       #Population carrying capacity - vector (nodes)
-PropaguleProduction, #Propagules produced per individual, can be single value, vector (nodes) or matrix (nodes x years)
-PropaguleEstablishment, #Propagules establishment probability. The likelihood of a dispersing propagule encountering a single
-                        #host plant or establishment site within a node. Can be a ratio of search radius or patch size to node area
+PropaguleProduction, #Propagules produced per individual
+PropaguleEstablishment, #Propagules establishment probability
 IncursionStartPop=NA,      #option to set population size for new incursions
-SDDprob,                   #Natural dispersal probability matrix, or 3D array (nodes x nodes x timesteps)
+SDDprob,                   #Natural disperal probability between each pair of nodes
 SEAM = 0,			#Option to provide socioeconomic adjacency matrix for information spread
-LDDprob = NA,         #Option to provide long distance (human-mediated) dispersal matrix or 3D array (nodes x nodes x timesteps) instead of distance-independent dispesal rate
+LDDprob = NA,         #Option to provide long distance (human-mediated) dispersal matrix instead of distance-independent dispesal rate
 			      #e.g. could be weighted by law of human visitation or data on stock movements
 LDDrate = 0,         #Proportion of available propagules entering LDD
 OngoingExternalInvasion = F,   ##Option to include ongoing invasion from external sources
 OngoingExternalInfo = F,   ##Option to include ongoing communication from external sources
 OutputDir = NA,		      #Directory for storing results
-DoPlots = TRUE	     #Option to omit printing of line graphs.Default is to print.
+DoPlots = TRUE,	     #Option to omit printing of line graphs.Default is to print.
+Area = NULL, #Node/farm area. Used in local.dynamics.wave
+Rmax = NULL #maximum dispersal radius. Used in local.dynamics.wave.
 )
 {
 ###POTENTIAL ADDITIONS
 ###1) Make detection prob a function of population size. Could be based on individual detection prob so that DetectionProb = 1-(1-DPindividual)^N)
 ###   DPindividual could vary between nodes
+###2) Allow provision of natural mortality rate to permit extinction of local populations (may happen in climates where R0 is very low?)
 
-
-###Allow SDD and LDD connectivity to vary through time
-if(length(dim(SDDprob)) == 3 && (dim(SDDprob)[1] != dim(SDDprob)[2] || dim(SDDprob)[3] != Ntimesteps))
-  stop("SDDprob 3D array must have dimensions nodes x nodes x Ntimesteps")
-if(length(dim(LDDprob)) == 3 && (dim(LDDprob)[1] != nrow(SDDprob) || dim(LDDprob)[2] != nrow(SDDprob) || dim(LDDprob)[3] != Ntimesteps))
-  stop("LDDprob 3D array must have dimensions nodes x nodes x Ntimesteps")
-
+###Max integer for propagule dispersal using rmultinom
+MaxInteger <- .Machine$integer.max  
+  
 # pre-evaluate some variables for efficiency
 if(is.matrix(K) == FALSE)
 {
@@ -84,17 +294,74 @@ inv_K <- 1 / sum(K)
 NodeK = K
 }
 
-if(is.matrix(PropaguleProduction) == FALSE)
- NodePropaguleProduction = PropaguleProduction
+###If carrying capacity provided as matrix assign values from first timestep for population initialisation
+if(is.matrix(K) == TRUE)
+  {
+  K_is_0 <- K[,1]<=0
+  inv_K <- 1 / sum(K[,1])
+  NodeK = K[,1] 
+}    
+  
+# Ensure NodePropaguleProduction exists
+NodePropaguleProduction <- NULL
+if(is.matrix(PropaguleProduction) == FALSE) {
+  NodePropaguleProduction <- PropaguleProduction
+}
+if(length(NodePropaguleProduction) == 1) {
+  NodePropaguleProduction <- rep(PropaguleProduction, nrow(SDDprob))
+}
 
-if(is.matrix(PropaguleEstablishment) == FALSE)
-  NodePropaguleEstablishment = PropaguleEstablishment
+# Ensure NodePropaguleEstablishment exists
+NodePropaguleEstablishment <- NULL
+if(is.matrix(PropaguleEstablishment) == FALSE) {
+  NodePropaguleEstablishment <- PropaguleEstablishment
+}
+if(length(NodePropaguleEstablishment) == 1) {
+  NodePropaguleEstablishment <- rep(PropaguleEstablishment, nrow(SDDprob))
+}
 
-if(is.matrix(EnvEstabProb) == F)
+# Environment establishment probability
+NodeEnvEstabProb <- NULL
+if(is.matrix(EnvEstabProb) == FALSE) {
   NodeEnvEstabProb <- EnvEstabProb
+}
+if(length(NodeEnvEstabProb) == 1) {
+  NodeEnvEstabProb <- rep(EnvEstabProb, nrow(SDDprob))
+}
 
-if(is.matrix(Survival) == F)
+# Survival
+NodeSurvival <- NULL
+if(is.matrix(Survival) == FALSE) {
   NodeSurvival <- Survival
+}
+
+# Node area
+if(!is.null(Area))
+  NodeArea <- Area
+# Maximum dispersal radius
+if(!is.null(Rmax))
+  NodeRmax <- Rmax
+  
+
+###Declare array tracking population size
+###of individual nodes in each timestep of each realisation
+PopulationResults = array(dim = c(nrow(SDDprob),Ntimesteps,Nperm))
+
+###Declare array tracking invasion status
+###of individual nodes in each timestep of each realisation
+InvasionResults = array(dim = c(nrow(SDDprob),Ntimesteps,Nperm))
+
+
+###Declare array tracking detection status 
+###of individual nodes in each timestep of each realisation
+DetectedResults = InvasionResults
+
+###Declare array for tracking management adoption status 
+###of individual nodes in each timestep of each realisation
+###This is a measure of potential disruption to farm businesses
+###or ongoing management burden (surveillance and removal)
+###for publicly-owned lands
+ManagingResults = InvasionResults
 
 
 ###Declare matrix for information spread simulations
@@ -119,77 +386,42 @@ if(is.null(MortalitySD) == T)
 ###Start of simulation
 ###########################################################
     
-totalCores = detectCores()
-#Leave one core to avoid overload your computer
-cluster <- makeCluster(totalCores[1]-1) 
-registerDoParallel(cluster)
-###Loop through each realisation
-###Nodes with information (which have detected infestation) at start of simulations
-###vary across realisations 
-
-###Define a function for combining results of each permutation
-acomb <- function(...) abind(..., along=4)
-
-###Need to include required packages in the .packages arguement of the foreach call
-PermOut <- foreach(1:Nperm, .combine = 'acomb',.packages=c("abind")) %dopar% 
-  {
-  ###Max integer for propagule dispersal using rmultinom
-  MaxInteger <- .Machine$integer.max  
-
-  ###Set initial dispersal connectivity
-  NodeSDDprob = SDDprob
-  if(length(dim(SDDprob)) == 3)
-    NodeSDDprob = SDDprob[,,1]
-  NodeLDDprob = LDDprob
-  if(length(dim(LDDprob)) == 3)
-    NodeLDDprob = LDDprob[,,1]
-  
-  InvasionResultsLoop <- array(dim = c(nrow(SDDprob),Ntimesteps))
-  PopulationResultsLoop <- InvasionResultsLoop
-  ManagingResultsLoop <- InvasionResultsLoop
-  DetectedResultsLoop <- InvasionResultsLoop
-
-  
-  ###If carrying capacity provided as matrix assign values from first timestep for population initialisation
-  if(is.matrix(K) == TRUE)
-    {
-    K_is_0 <- K[,1]<=0
-    inv_K <- 1 / sum(K[,1])
-    NodeK = K[,1] 
-    }      
-  
-  
+for (perm in 1:Nperm) 
+{ 
 ###Assign initial infestations according either to "InitialInvasion" binary vector OR
 ###"InvasionRisk" probabilities and/or initial proportion of nodes infested ("InitBioP") OR
 ###just "InitBioP" if neither "InitialInvasion" or "InvasionRisk" supplied by user
 InitBio = rep(0,times = nrow(SDDprob))
-
-if(length(InitialPopulation) == nrow(SDDprob))
-  InitBio = InitialPopulation
-
 if(length(InitialPopulation) != nrow(SDDprob))
 {
-risk = NULL
-if(is.matrix(InvasionRisk) == T && nrow(InvasionRisk) == nrow(SDDprob))
-  risk = InvasionRisk[,1]
-if(is.matrix(InvasionRisk) == F && length(InvasionRisk) == nrow(SDDprob))
-  risk = InvasionRisk
-
-if(is.na(InitBioP) == F)
-  Infested = sample(1:nrow(SDDprob),size = ceiling(nrow(SDDprob)*InitBioP),prob = risk)
-if(is.na(InitBioP) == T && is.null(risk) == F)
-  {
-  Infested = rbinom(1:nrow(SDDprob),size = 1,prob = risk)
-  Infested = which(Infested == 1)
-  }
-if(is.na(InitBioP) == T && is.null(risk) == T)
-  Infested = integer(0)
-
-if(is.na(IncursionStartPop) == T)
-  InitBio[Infested] = 1
-if(is.na(IncursionStartPop) == F)
-  InitBio[Infested] = IncursionStartPop
+ if(length(InvasionRisk) == nrow(SDDprob))
+        {
+ 	if(is.na(InitBioP) == F)
+	  Infested = sample(1:nrow(SDDprob),size = ceiling(nrow(SDDprob)*InitBioP),prob = InvasionRisk)
+	if(is.na(InitBioP) == T)
+          {
+	  Infested = rbinom(1:nrow(SDDprob),size = 1,prob = InvasionRisk)
+          Infested = which(Infested == 1)
+	  } 
+	}
+ if(length(InvasionRisk) != nrow(SDDprob))
+        {
+ 	if(is.matrix(InvasionRisk) == F)
+	 Infested = sample(1:nrow(SDDprob),size = ceiling(nrow(SDDprob)*InitBioP))
+        if(is.matrix(InvasionRisk) == T)
+          {
+          Infested = rbinom(1:nrow(SDDprob),size = 1,prob = InvasionRisk[,1])
+          Infested = which(Infested == 1)
+	  }
+	}
+if(is.na(IncursionStartPop) == T) 
+	InitBio[Infested] = 1
+if(is.na(IncursionStartPop) == F) 
+	InitBio[Infested] = IncursionStartPop
 }
+
+if(length(InitialPopulation) == nrow(SDDprob))
+	InitBio = InitialPopulation
 
 ###Ensure initial population not greater than carrying capacity
 InitBio[InitBio > NodeK] = NodeK[InitBio > NodeK] 
@@ -204,36 +436,37 @@ if(sum(N) == 0 && OngoingExternalInvasion == F)
 ###just "InitInfoP" if neither "InitialInfo" or "ExternalInfoProb" supplied by user.
 ###If no initial info variables provided, no nodes have info at start of simulations
 InitInfo = rep(0,times = nrow(SDDprob))
-if(length(InitialInfo) == nrow(SDDprob) || (is.na(InitInfoP) == F && InitInfoP>0) || is.na(sum(ExternalInfoProb)) == F )
+if(is.na(sum(InitialInfo))== F || is.na(InitInfoP) == F || is.na(sum(ExternalInfoProb)) == F )
 {
-if(length(InitialInfo) != nrow(SDDprob))
+  if(length(InitialInfo) != nrow(SDDprob))
   {
-  if(length(ExternalInfoProb) == nrow(SDDprob))
+    if(length(ExternalInfoProb) == nrow(SDDprob))
     {
-    if(is.na(InitInfoP) == F)
-      Info = sample(1:nrow(SDDprob),size = ceiling(nrow(SDDprob)*InitInfoP),prob = ExternalInfoProb)
-    if(is.na(InitInfoP) == T)
+      if(is.na(InitInfoP) == F)
+        Info = sample(1:nrow(SDDprob),size = ceiling(nrow(SDDprob)*InitInfoP),prob = ExternalInfoProb)
+      if(is.na(InitInfoP) == T)
       {
-      Info = rbinom(1:nrow(SDDprob),size = 1,prob = ExternalInfoProb) 
-      Info = which(Info == 1)
+        Info = rbinom(1:nrow(SDDprob),size = 1,prob = ExternalInfoProb) 
+        Info = which(Info == 1)
       } 
     }
-  if(length(ExternalInfoProb) != nrow(SDDprob))
+    if(length(ExternalInfoProb) != nrow(SDDprob))
     {
-    if(is.matrix(ExternalInfoProb) == F)
-      Info = sample(1:nrow(SDDprob),size = ceiling(nrow(SDDprob)*InitInfoP))
-    if(is.matrix(ExternalInfoProb) == T)
+      if(is.matrix(ExternalInfoProb) == F)
+        Info = sample(1:nrow(SDDprob),size = ceiling(nrow(SDDprob)*InitInfoP))
+      if(is.matrix(ExternalInfoProb) == T)
       {
-      Info = rbinom(1:nrow(SDDprob),size = 1,prob = ExternalInfoProb[,1])
-      Info = which(Info == 1)
+        Info = rbinom(1:nrow(SDDprob),size = 1,prob = ExternalInfoProb[,1])
+        Info = which(Info == 1)
       }
     }
-  InitInfo[Info] = 1
-  
+    InitInfo[Info] = 1
+    
   }
-if(length(InitialInfo) == nrow(SDDprob))
-  InitInfo = InitialInfo  
+  if(length(InitialInfo) == nrow(SDDprob))
+    InitInfo = InitialInfo  
 }
+
 
 ###Randomly assign annual detection probability, based on mean and sd
 ###If DetectionProb given as single value or vector (nodes)
@@ -280,6 +513,10 @@ if(is.matrix(MortalityProb)==FALSE &&(length(MortalityProb) == 1 ||length(Mortal
       NodeMortalityProb[NodeMortalityProb>1] = 1
       }
 
+
+
+
+
 ###Populate invasion status vector ahead of timestep loop
 Invaded = ifelse(InitBio>0,1,0) 
 
@@ -287,45 +524,51 @@ Invaded = ifelse(InitBio>0,1,0)
 ###Presence of pest and detection probability
 ###Select nodes that have detected infestation 
 InitDetection = rbinom(1:nrow(SDDprob),size = 1,prob = 1-(1-NodeDetectionProb)^InitBio)
+
+###Add detections to nodes which already have info (e.g. pre-emptive control and hygiene measures)
 InitInfo[InitInfo == 0] = InitDetection[InitInfo == 0]
+
 ###Populate information status vector ahead of timestep loop
 HaveInfo = InitInfo
 
+
+#Define node age vector. Only needed for local.dynamics.wave
+NodeAge = numeric(nrow(SDDprob))
     
   # run simulation
-for(timestep in 1:Ntimesteps) 
-  { 
+  for (timestep in 1:Ntimesteps) 
+    { 
+    ###Print progress
+    cat("\r", "Realisation ", perm, "Timestep ", timestep, "...")
  
-  ###Allow for variation in dispersal connectivity through time
-  if(length(dim(SDDprob)) == 3)
-    NodeSDDprob = SDDprob[,,timestep]
-  if(length(dim(LDDprob)) == 3)
-    NodeLDDprob = LDDprob[,,timestep]
-
-  ###Allow for variation in establishment through time
-  ###e.g.  climate change predictions
-  ###Note: could be done outside loop, but would take heaps of memory to store 
-  if(is.matrix(EnvEstabProb) == T)
-    NodeEnvEstabProb <- EnvEstabProb[,timestep]
-   
-  if(is.matrix(Survival) == T)
-    NodeSurvival <- Survival[,timestep]
+    ###Allow for variation in establishment through time
+    ###e.g.  climate change predictions
+    ###Note: could be done outside loop, but would take heaps of memory to store 
+    if(is.matrix(EnvEstabProb) == T)
+      NodeEnvEstabProb <- EnvEstabProb[,timestep]
+    
+    if(is.matrix(Survival) == T)
+      NodeSurvival <- Survival[,timestep]
     
     
-  ###If carrying capacity provided as matrix assign values for relevant timestep
-  if(is.matrix(K) == TRUE)
-    {
-    K_is_0 <- K[,timestep]<=0
-    inv_K <- 1 / sum(K[,timestep])
-    NodeK = K[,timestep] 
-    }  
+    ###If carrying capacity provided as matrix assign values for relevant timestep
+    if(is.matrix(K) == TRUE)
+      {
+      K_is_0 <- K[,timestep]<=0
+      inv_K <- 1 / sum(K[,timestep])
+      NodeK = K[,timestep] 
+      }  
+    
+    ###Calculate slot density - used in local.dynamics.wave
+    NodeSlotDensity <- NodeK/Area
+    
+    ###If propagule production provided as matrix assign values for relevant timestep
+    if(is.matrix(PropaguleProduction) == TRUE)
+      NodePropaguleProduction = PropaguleProduction[,timestep] 
+    
+    if(is.matrix(PropaguleEstablishment) == TRUE)
+      NodePropaguleEstablishment = PropaguleEstablishment[,timestep]
 
-  ###If propagule production provided as matrix assign values for relevant timestep
-  if(is.matrix(PropaguleProduction) == TRUE)
-    NodePropaguleProduction = PropaguleProduction[,timestep] 
-  
-  if(is.matrix(PropaguleEstablishment) == TRUE)
-    NodePropaguleEstablishment = PropaguleEstablishment[,timestep]
       
   ###Randomly assign annual detection probability, based on mean and sd
   ###If DetectionProb given as matrix (nodes x timesteps)
@@ -354,7 +597,7 @@ for(timestep in 1:Ntimesteps)
    	NodeSpreadReduction[NodeSpreadReduction>1] = 1
    	}
   
-  ###Randomly assign annual mortality probability when management applied
+  ###Randomly assign annual eradication probability when management applied
   ###If MortalityProb given as matrix (nodes x timesteps)
   if(is.matrix(MortalityProb)==TRUE && nrow(MortalityProb) == nrow(SDDprob) && ncol(MortalityProb) == Ntimesteps)
       {
@@ -370,52 +613,38 @@ for(timestep in 1:Ntimesteps)
   ###from neighbouring infested farms 
   Managing = rbinom(1:nrow(SDDprob),size = 1,prob = NodeManageProb*HaveInfo)
   
+  ###Management is only applied to nodes which have information
+  ###i.e. where pest has been detected or following communication of information
+  ###from neighbouring infested farms 
+  Managing = Managing*HaveInfo
+  
   ###Identify nodes with known extant infestations 
   Detected = Invaded*HaveInfo
-  
-  ###Adjust starting population for natural and managed mortality
-  N0 = rbinom(nrow(SDDprob),N,NodeSurvival*(1-NodeMortalityProb*Managing))
+  N0 = pmin(rpois(nrow(SDDprob),N*NodeSurvival*(1-NodeMortalityProb*Managing)),N)
   if(sum(N0)<=0 )
-    N = N0
+    N = N0 
   Pin <-0
   Qin <- 0  
     # natural dispersal 
   if(sum(N0)>0 ) 
   {
-    
-  Propagules <- rpois(nrow(SDDprob), NodePropaguleProduction * N0)# propagules are produced
-  
-  ###natural dispersal
-  ###adjust propagule spread for environmentally determined establishment probability
-  ###in receiving nodes
-  Pout <- Propagules*(1-LDDrate)
-  if(sum(Pout)>0 && sum(Pout)< MaxInteger) 
-    Pin <- t(rmultinom(1, size=sum(Pout*rowSums(NodeSDDprob)), prob=Pout %*% NodeSDDprob))  # propagules are dispersed
-  if(sum(Pout) >= MaxInteger) 
-    Pin <- colSums(sweep(NodeSDDprob,1,Pout,`*`))
-  ###human-mediated spread
-  ###adjust propagule spread for environmentally determined establishment probability
-  ###in receiving nodes
-  if (is.matrix(NodeLDDprob)==T) 
+  if(!identical(LocalDynamics, local.dynamics.wave))    
+  N <- LocalDynamics(sddprob = SDDprob, nodepropaguleproduction = NodePropaguleProduction,nodeenvestabprob = NodeEnvEstabProb,n=N0,
+                     lddprob = LDDprob, lddrate = LDDrate,k_is_0 = K_is_0, nodeK = NodeK,nodepropaguleestablishment = NodePropaguleEstablishment,
+                     nodespreadreduction = NodeSpreadReduction,managing = Managing,maxinteger = MaxInteger)
+  else
     {
-    Qout  = Propagules*LDDrate *(1-NodeSpreadReduction*Managing)       
-    if(sum(Qout)>0 && sum(Qout) < MaxInteger)  
-      Qin <- t(rmultinom(1, size=sum(Qout*rowSums(NodeLDDprob)), prob=Qout %*% NodeLDDprob))    # propagules are dispersed
-    if(sum(Qout) >= MaxInteger) 
-      Qin <- colSums(sweep(NodeLDDprob,1,Qout,`*`))
-    }
-  
-  
-  #Propagule establishment probability can be viewed as a spatial process indicating the likelihood
-  #that a dispersing propagule will encounter and individual site or host.
-  #The simplest approach is to express the search area as a proportion of the node area
-  #For a weed this could be the area of individual sites (patches) relative to node area
-  #Where K is the number of available patches within the node
-  #This also incorporates density dependence since propagule success depends on availability of uninfested host plants 
-  #or unoccupied patches
-  ###Note can produce NAs if NodeK-N0 very large and using old version of R
-  N <- ifelse(K_is_0, 0, N0 + rbinom(nrow(SDDprob), NodeK-N0, 1 - exp(-NodePropaguleEstablishment*NodeEnvEstabProb*(Pin+Qin))))
-
+     StepOut <-  LocalDynamics(sddprob = SDDprob, nodepropaguleproduction = NodePropaguleProduction,nodeenvestabprob = NodeEnvEstabProb,n=N0,
+                                     lddprob = LDDprob, lddrate = LDDrate,k_is_0 = K_is_0, nodeK = NodeK,
+                                     nodespreadreduction = NodeSpreadReduction,managing = Managing, maxinteger = MaxInteger,
+                                     nodermax = NodeRmax,
+                                     nodeage = NodeAge,
+                                     nodearea = NodeArea, #area of site/population
+                                     nodeslotdensity = NodeSlotDensity #slots per unit area, computed outside functinon as NodeK/NodeArea
+      )
+     N <- StepOut$n
+     NodeAge <- StepOut$nodeage
+     }
   } 
  ###Update info vector for any info spread (if SEAM supplied)
  ###Note once nodes obtain info they always have info (only zero values updated)
@@ -442,26 +671,27 @@ for(timestep in 1:Ntimesteps)
   N[N > NodeK] = NodeK[N > NodeK] 
   }
  
-  ###Add nodes with information resulting from external sources
-  if(OngoingExternalInfo == T)
-    {
-    if(is.matrix(ExternalInfoProb) == F)
-      ExternalInfo = rbinom(1:nrow(SDDprob),size = 1,prob = ExternalInfoProb)
-    if(is.matrix(ExternalInfoProb) == T)
-      ExternalInfo = rbinom(1:nrow(SDDprob),size = 1,prob = ExternalInfoProb[,timestep])
-    HaveInfo[HaveInfo == 0] = ExternalInfo[HaveInfo==0]
-     }
+ ###Add nodes with information resulting from external sources
+ if(OngoingExternalInfo == T)
+  {
+  if(is.matrix(ExternalInfoProb) == F)
+    ExternalInfo = rbinom(1:nrow(SDDprob),size = 1,prob = ExternalInfoProb)
+  if(is.matrix(ExternalInfoProb) == T)
+    ExternalInfo = rbinom(1:nrow(SDDprob),size = 1,prob = ExternalInfoProb[,timestep])
+  HaveInfo[HaveInfo == 0] = ExternalInfo[HaveInfo==0]
+  }
+  
  ###Update infestation vector
  Invaded = ifelse(N>0,1,0)
  
  ###Record nodes adopting management
- ManagingResultsLoop[,timestep] = Managing
+ ManagingResults[,timestep,perm] = Managing
   
  ###Record infested nodes
- InvasionResultsLoop[,timestep] = Invaded
+ InvasionResults[,timestep,perm] = Invaded
 
  ###Record populations
- PopulationResultsLoop[,timestep] = N
+ PopulationResults[,timestep,perm] = N
 
  ###Select new nodes where infestation detected
  NewHaveInfo =  rbinom(1:nrow(SDDprob),size = 1,prob = 1-(1-NodeDetectionProb)^N)
@@ -471,20 +701,12 @@ for(timestep in 1:Ntimesteps)
  HaveInfo[HaveInfo==0] = NewHaveInfo[HaveInfo==0]  
  
  ###Record detection status
- DetectedResultsLoop[,timestep] = HaveInfo*Invaded 
+ DetectedResults[,timestep,perm] = HaveInfo*Invaded 
  }
- abind(InvasionResultsLoop,PopulationResultsLoop,ManagingResultsLoop,DetectedResultsLoop,along = 3)
 }
-stopCluster(cluster)
 ###########################################################
 ###End of Simulation
 ###########################################################
-
-###Extract results for invasion, managing and dectection status into separate 3d arrays
-InvasionResults <- PermOut[,,1,]
-PopulationResults <- PermOut[,,2,]
-ManagingResults <- PermOut[,,3,]
-DetectedResults <- PermOut[,,4,]
 
 ###########################################################
 ###Save results for post-hoc analyses
@@ -520,7 +742,10 @@ if(DoPlots == T)
 ###Produce summary figs when processing completed
 ###########################################################
 
-Title = ModelName
+Title = paste0("Detection prob. ",round(mean(DetectionProb),digits = 3),
+	" Manage prob. ",round(mean(ManageProb),digits = 3),
+       "\nMortality prob. ",round(MortalityProb,digits =3),
+		" Spread Reduction ",round(mean(SpreadReduction),digits=3))
 
 
 ###Change in total population with time
@@ -746,7 +971,6 @@ lines(Quantiles[,1],Yvals[,1],lwd = 3,col = 2)
 lines(Quantiles[,1],Yvals[,3],lwd = 3,col = 2)
 dev.off()
 }
-closeAllConnections()
 }
 
 

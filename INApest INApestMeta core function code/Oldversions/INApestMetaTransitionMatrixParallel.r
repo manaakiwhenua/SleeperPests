@@ -538,6 +538,8 @@ local.dynamics.transition.matrix <- function(
   t(n)
 }
 
+
+
 # local.dynamics.transition.matrix.skip <- function(
 #     nodetransition = NodeTransition,
 #     weights = Weights,
@@ -655,369 +657,8 @@ local.dynamics.transition.matrix <- function(
 #   
 #   return(t(n))
 # }
-# 
-# local.dynamics.transition.matrix.crowded <- function(
-#     nodetransition = NodeTransition,
-#     weights = Weights,
-#     sddprob = SDDprob,
-#     nodeenvestabprob = NodeEnvEstabProb,
-#     n0 = N0,
-#     lddprob = LDDprob,
-#     lddrate = LDDrate,
-#     k_is_0 = K_is_0,                     # legacy, intentionally unused
-#     nodeK = NodeK,
-#     node.seedbankK = NodeSeedbankK,
-#     nodepropaguleestablishment = NodePropaguleEstablishment,
-#     nodespreadreduction = NodeSpreadReduction,
-#     managing = Managing,
-#     MaxInteger = MaxInteger
-# ) {
-#   
-#   n_pops <- nrow(n0)
-#   S <- ncol(n0)
-#   w <- if (is.null(weights)) rep(1, S) else weights
-#   
-#   # population matrix: stages × populations
-#   n <- t(n0)
-#   
-#   ## --- STEP 1: Propagule production (fecundity excludes A[1,1]) ---
-#   if (is.list(nodetransition)) {
-#     fec_means <- vapply(
-#       seq_len(n_pops),
-#       function(p) sum(nodetransition[[p]][1, -1] %*% n[-1, p]),
-#       numeric(1)
-#     )
-#   } else {
-#     fec_means <- as.numeric(t(nodetransition[1, -1]) %*% n[-1, ])
-#   }
-#   Propagules <- ifelse(fec_means > 0, rpois(n_pops, fec_means), 0)
-#   
-#   ## --- STEP 2: Terminal stage survival ---
-#   nodetransition_list <- if (is.list(nodetransition))
-#     nodetransition else replicate(n_pops, nodetransition, simplify = FALSE)
-#   
-#   surv_prob_S <- vapply(nodetransition_list, function(Ap) Ap[S, S], numeric(1))
-#   n[S, ] <- rbinom(n_pops, size = n[S, ], prob = surv_prob_S)
-#   
-#   ## --- STEP 3: Within-node transitions with skipping and biomass limits ---
-#   total_biomass <- colSums(n * w)
-#   
-#   for (j in (S - 1):1) {
-#     
-#     N_prev <- n[j, ]
-#     
-#     trans_mat <- vapply(
-#       nodetransition_list,
-#       function(Ap) Ap[j:S, j],
-#       numeric(S - j + 1)
-#     )
-#     
-#     surv_prob <- pmin(colSums(trans_mat), 1)
-#     N_surv <- rbinom(n_pops, size = N_prev, prob = surv_prob)
-#     
-#     dest_prob <- sweep(
-#       trans_mat, 2, surv_prob,
-#       FUN = function(x, s) if (s > 0) x / s else 0
-#     )
-#     
-#     moves <- matrix(0, nrow = S - j + 1, ncol = n_pops)
-#     nz <- which(N_surv > 0)
-#     if (length(nz) > 0)
-#       for (p in nz)
-#         moves[, p] <- rmultinom(1, size = N_surv[p], prob = dest_prob[, p])
-#     
-#     ## capacity constraint (sequential, biomass-based)
-#     free_capacity <- pmax(0, nodeK - total_biomass)
-#     stages <- S - j + 1
-#     slots <- matrix(0, nrow = stages, ncol = n_pops)
-#     for (k in seq_len(stages))
-#       slots[k, ] <- floor(free_capacity / w[j + k - 1])
-#     
-#     moves <- pmin(moves, slots)
-#     
-#     ## --- FIX 1: biomass bookkeeping ---
-#     biomass_lost  <- colSums(moves[-1, , drop = FALSE]) * w[j]
-#     biomass_gained <- colSums(moves[-1, , drop = FALSE] * w[(j + 1):S])
-#     
-#     n[j, ] <- N_prev - colSums(moves[-1, , drop = FALSE])
-#     for (k in 2:stages)
-#       n[j + k - 1, ] <- n[j + k - 1, ] + moves[k, ]
-#     
-#     total_biomass <- total_biomass - biomass_lost + biomass_gained
-#   }
-#   
-#   ## --- STEP 4: Self-recruitment from retained seeds ---
-#   N <- n_pops
-#   active <- n[1, ] > 0
-#   
-#   Pnatural <- numeric(N)
-#   Pnatural[active] <- round(Propagules[active] * (1 - lddrate))
-#   
-#   Pout <- numeric(N)
-#   Pout[active] <- round(Pnatural[active] * (1 - diag(sddprob)[active]))
-#   
-#   PropagulesPerN0 <- numeric(N)
-#   PropagulesPerN0[active] <- (Pnatural[active] - Pout[active]) / n[1, active]
-#   
-#   nodeN0slots <- nodepropaguleestablishment * nodeK
-#   SlotsPer_N0 <- numeric(N)
-#   SlotsPer_N0[active] <-
-#     (nodeK[active] - total_biomass[active]) / nodeK[active] *
-#     nodeN0slots[active] *
-#     (1 - (1 - 1 / pmax(1, nodeN0slots[active])) ^
-#        (PropagulesPerN0[active] * nodeenvestabprob[active]))
-#   
-#   N0slotp <- numeric(N)
-#   N0slotp[active] <- pmin(1, SlotsPer_N0[active] / nodeK[active])
-#   
-#   log1mp <- numeric(N)
-#   log1mp[active] <- log1p(-N0slotp[active])
-#   
-#   Pslot_col <- numeric(N)
-#   Pslot_col[active] <- 1 - exp(n[1, active] * log1mp[active])
-#   
-#   ## --- FIX 2: capacity in number of stage-1 slots ---
-#   available_slots <- floor(pmax(0, nodeK - total_biomass) / w[1])
-#   
-#   Recruits <- rpois(N, lambda = available_slots * pmax(0, Pslot_col))
-#   Recruits <- pmin(Recruits, available_slots)
-#   
-#   n[1, ] <- n[1, ] + Recruits
-#   total_biomass <- total_biomass + Recruits * w[1]
-#   
-#   ## --- STEP 5: External recruitment (SDD + LDD) ---
-#   ExternalSeeds <- Pout
-#   
-#   Pin <- numeric(N)
-#   if (sum(ExternalSeeds) > 0 && sum(ExternalSeeds) < MaxInteger) {
-#     Pin <- colSums(sweep(sddprob, 1, ExternalSeeds, `*`))
-#   } else {
-#     Pin <- floor(colSums(sweep(sddprob, 1, ExternalSeeds, `*`)))
-#   }
-#   
-#   Qin <- numeric(N)
-#   if (is.matrix(lddprob)) {
-#     Qout <- ExternalSeeds * lddrate * (1 - nodespreadreduction * managing)
-#     if (sum(Qout) > 0 && sum(Qout) < MaxInteger) {
-#       Qin <- colSums(sweep(lddprob, 1, Qout, `*`))
-#     } else {
-#       Qin <- floor(colSums(sweep(lddprob, 1, Qout, `*`)))
-#     }
-#   }
-#   
-#   Propagulessurviving <- (Pin + Qin) * nodeenvestabprob
-#   
-#   available_slots <- floor(pmax(0, nodeK - total_biomass) / w[1])
-#   
-#   ## --- FIX 3: requested probability form ---
-#   ExternalRecruits <- rpois(
-#     N,
-#     lambda = available_slots *
-#       (1 - (1 - 1 / pmax(1, nodeK / w[1])) ^ Propagulessurviving)
-#   )
-#   
-#   ExternalRecruits <- pmin(ExternalRecruits, available_slots)
-#   
-#   n[1, ] <- n[1, ] + ExternalRecruits
-#   total_biomass <- total_biomass + ExternalRecruits * w[1]
-#   
-#   return(t(n))
-# }
-# 
-# transition.matrix.crowded.seedbank <- function(
-#     nodetransition = NodeTransition,
-#     weights = Weights,
-#     sddprob = SDDprob,
-#     nodeenvestabprob = NodeEnvEstabProb,
-#     n0 = N0,
-#     lddprob = LDDprob,
-#     lddrate = LDDrate,
-#     k_is_0 = K_is_0,              # legacy, intentionally unused
-#     nodeK = NodeK,
-#     node.seedbankK = SeedbankK,   # seedbank carrying capacity
-#     nodepropaguleestablishment = NodePropaguleEstablishment,
-#     nodespreadreduction = NodeSpreadReduction,
-#     managing = Managing,
-#     MaxInteger = MaxInteger
-# ) {
-#   
-#   n_pops <- nrow(n0)
-#   S <- ncol(n0)
-#   w <- if (is.null(weights)) rep(1, S) else weights
-#   
-#   # population matrix: stages × populations
-#   n <- t(n0)
-#   
-#   ## --- STEP 0: Seedbank survival (A[1,1]) ---
-#   seed_surv_prob <- if (is.list(nodetransition)) {
-#     vapply(nodetransition, function(Ap) Ap[1,1], numeric(1))
-#   } else {
-#     rep(nodetransition[1,1], n_pops)
-#   }
-#   cat("Seedbank survival check:\n")
-#   print(n[1, ])
-#   print(seed_surv_prob)
-#   
-#   n[1, ] <- rbinom(n_pops, size = pmax(0, n[1, ]), prob = pmin(1, seed_surv_prob))
-#   
-#   ## --- STEP 1: Propagule production ---
-#   if (is.list(nodetransition)) {
-#     fec_means <- vapply(
-#       seq_len(n_pops),
-#       function(p) sum(nodetransition[[p]][1, -1] %*% n[-1, p]),
-#       numeric(1)
-#     )
-#   } else {
-#     fec_means <- as.numeric(t(nodetransition[1, -1]) %*% n[-1, ])
-#   }
-#   #fec_means[is.na(fec_means)] <- 0
-#   Propagules <- ifelse(fec_means > 0, rpois(n_pops, fec_means), 0)
-#   
-#   ## --- STEP 2: Terminal stage survival ---
-#   nodetransition_list <- if (is.list(nodetransition))
-#     nodetransition else replicate(n_pops, nodetransition, simplify = FALSE)
-#   
-#   surv_prob_S <- vapply(nodetransition_list, function(Ap) Ap[S, S], numeric(1))
-#   #surv_prob_S[is.na(surv_prob_S)] <- 0
-#   n[S, ] <- rbinom(n_pops, size = pmax(0, n[S, ]), prob = pmin(1, surv_prob_S))
-#   
-#   ## --- STEP 3: Within-node transitions ---
-#   
-#   # --- Initialize total biomass (plants only) ---
-#   total_biomass <- colSums(n[-1, , drop = FALSE] * w[-1])
-#   
-#   for (j in (S - 1):1) {
-#     
-#     N_prev <- n[j, ]
-#     
-#     # Extract the transition probabilities for this stage
-#     trans_mat <- vapply(
-#       nodetransition_list,
-#       function(Ap) Ap[j:S, j],
-#       numeric(S - j + 1)
-#     )
-#     trans_mat[is.na(trans_mat)] <- 0
-#     
-#     # --- STEP 3A: Separate stasis from advancement ---
-#     A_jj <- trans_mat[1, ]                     # stasis probability
-#     if (nrow(trans_mat) > 1) {
-#       A_adv <- trans_mat[-1, , drop = FALSE]   # advancement probabilities
-#     } else {
-#       A_adv <- matrix(0, nrow = 0, ncol = n_pops)
-#     }
-#     
-#     # Total survival probability
-#     surv_prob <- pmin(A_jj + colSums(A_adv), 1)
-#     N_surv <- rbinom(n_pops, size = pmax(0, N_prev), prob = surv_prob)
-#     
-#     # Number of survivors that attempt to advance
-#     adv_prob <- ifelse(surv_prob > 0, colSums(A_adv) / surv_prob, 0)
-#     N_adv <- rbinom(n_pops, size = N_surv, prob = adv_prob)
-#     
-#     # Remaining survivors stay in stage j
-#     n[j, ] <- N_prev - N_adv
-#     
-#     # --- STEP 3B: Allocate advancing individuals to stages with priority ---
-#     if (length(N_adv) > 0 && nrow(A_adv) > 0) {
-#       
-#       dest_prob <- sweep(
-#         A_adv, 2, colSums(A_adv),
-#         FUN = function(x, s) ifelse(s > 0, x / s, 0)
-#       )
-#       
-#       moves <- matrix(0, nrow = nrow(A_adv), ncol = n_pops)
-#       
-#       nz <- which(N_adv > 0)
-#       if (length(nz) > 0) {
-#         for (p in nz) {
-#           
-#           # Priority: allocate to older stages first
-#           draw <- rmultinom(1, size = N_adv[p], prob = dest_prob[, p])
-#           dest_stages <- which(draw > 0)
-#           dest_stages <- sort(dest_stages, decreasing = TRUE)
-#           
-#           for (k in dest_stages) {
-#             stage_id <- j + k
-#             
-#             # Compute available slots (biomass-limited for plants)
-#             if (stage_id >= 2) {
-#               free_cap <- max(0, nodeK[p] - total_biomass[p])
-#               slots <- floor(free_cap / w[stage_id])
-#             } else {
-#               slots <- Inf  # seedbank unconstrained
-#             }
-#             
-#             allocated <- min(draw[k], slots)
-#             moves[k, p] <- allocated
-#             draw[k] <- draw[k] - allocated
-#             total_biomass[p] <- total_biomass[p] + allocated * w[stage_id]
-#           }
-#         }
-#       }
-#       
-#       # Update n for advanced stages
-#       for (k in 1:nrow(A_adv)) {
-#         n[j + k, ] <- n[j + k, ] + moves[k, ]
-#       }
-#     }
-#   }
-#   
-#   
-#   
-#   ## --- STEP 4: Self-recruitment ---
-#   RetainedSeeds <- pmax(0, Propagules * (1 - lddrate) * diag(sddprob))
-#   #RetainedSeeds[is.na(RetainedSeeds)] <- 0
-#   n[1, ] <- pmin(node.seedbankK, pmax(0, n[1, ] + RetainedSeeds))
-#   
-#   ## --- STEP 5: External recruitment ---
-#   ExternalSeeds <- pmax(0, Propagules * (1 - lddrate) * (1 - diag(sddprob)))
-#   #ExternalSeeds[is.na(ExternalSeeds)] <- 0
-#   
-#   Pin <- colSums(sweep(sddprob, 1, ExternalSeeds, `*`))
-#   #Pin[is.na(Pin)] <- 0
-#   
-#   Qin <- numeric(n_pops)
-#   if (is.matrix(lddprob)) {
-#     Qout <- ExternalSeeds * lddrate * (1 - nodespreadreduction * managing)
-#     Qout[is.na(Qout)] <- 0
-#     Qin <- colSums(sweep(lddprob, 1, Qout, `*`))
-#     #Qin[is.na(Qin)] <- 0
-#   }
-#   
-#   Propagulessurviving <- (Pin + Qin) * nodeenvestabprob
-#   n[1, ] <- floor(pmin(node.seedbankK, pmax(0, n[1, ] + Propagulessurviving)))
-#   
-#   
-#   
-#   ## --- STEP 6: Germination ---
-#   available_slots <- floor(pmax(0, nodeK - total_biomass) / w[2])
-#   #available_slots[is.na(available_slots)] <- 0
-#   
-#   cat("DEBUG pre-germination\n")
-#   print(n[1, ])
-#   print(available_slots)
-#   print(total_biomass)
-#   print(w[2])
-#   
-#   
-#   germ_prob <- pmin(1, 1 - exp(-nodepropaguleestablishment * nodeenvestabprob * n[1, ]))
-#   #germ_prob[is.na(germ_prob)] <- 0
-#   
-#   n[1, ] <- pmax(0, n[1, ])
-#   Germinants <- rbinom(n_pops, size = pmin(n[1, ], available_slots), prob = germ_prob)
-#   
-#   n[1, ] <- n[1, ] - Germinants
-#   n[2, ] <- n[2, ] + Germinants
-#   total_biomass <- total_biomass + Germinants * w[2]
-#   
-#   return(t(n))
-# }
 
-
-
-
-
-INApestMetaTransitionMatrix = function(
+INApestMetaTransitionMatrixParallel = function(
 ModelName, #Name for storing results to file 
 Nperm,                  #Number of permutations per parameter combination
 Ntimesteps,                 #Simulation duration timesteps can be any length of time
@@ -1041,15 +682,15 @@ InitBioP = NA,		#Proportion of nodes infested at start of simulations
 InvasionRisk = NA,           #Vector of probabilities of invasion from external sources
 InitialInfo = NA,        #Vector or of nodes with information at start of simulations
 InitInfoP = NA,		#Proportion of nodes with information at start of simulations
-ExternalInfoProb = 0.0,           #Vector of probabilities of communication from external sources
+ExternalInfoProb = 0.001,           #Vector of probabilities of communication from external sources
 EnvEstabProb = 1,           #Environmentally determined establishment probability. Can be single value, vector (nodes) or matrix (nodes x timesteps)
-K,		       #Population carrying capacity - vector (nodes) or matrix (nodes x timesteps)
+K,		       #Population carrying capacity - vector (nodes)
 SeedbankK,        # Seedbank carrying capacity - vector (nodes) or matrix (nodes x timesteps)
 PropaguleEstablishment, #Propagules establishment probability
 IncursionStartPop=NA,      #option to set population size for new incursions
-SDDprob,                   #Natural dispersal probability matrix, or 3D array (nodes x nodes x timesteps)
+SDDprob,                   #Natural disperal probability between each pair of nodes
 SEAM = 0,			#Option to provide socioeconomic adjacency matrix for information spread
-LDDprob = NA,         #Option to provide long distance (human-mediated) dispersal matrix or 3D array (nodes x nodes x timesteps) instead of distance-independent dispesal rate
+LDDprob = NA,         #Option to provide long distance (human-mediated) dispersal matrix instead of distance-independent dispesal rate
 			      #e.g. could be weighted by law of human visitation or data on stock movements
 LDDrate = 0,         #Proportion of available propagules entering LDD
 DispersalDensityFactor = 0,
@@ -1064,15 +705,6 @@ DoPlots = TRUE	     #Option to omit printing of line graphs.Default is to print.
 ###1) Make detection prob a function of population size. Could be based on individual detection prob so that DetectionProb = 1-(1-DPindividual)^N)
 ###   DPindividual could vary between nodes
 ###2) Allow provision of natural mortality rate to permit extinction of local populations (may happen in climates where R0 is very low?)
-  
-###Max integer for propagule dispersal using rmultinom
-MaxInteger <- .Machine$integer.max  
-  
-###Allow SDD and LDD connectivity to vary through time
-if(length(dim(SDDprob)) == 3 && (dim(SDDprob)[1] != dim(SDDprob)[2] || dim(SDDprob)[3] != Ntimesteps))
-  stop("SDDprob 3D array must have dimensions nodes x nodes x Ntimesteps")
-if(length(dim(LDDprob)) == 3 && (dim(LDDprob)[1] != nrow(SDDprob) || dim(LDDprob)[2] != nrow(SDDprob) || dim(LDDprob)[3] != Ntimesteps))
-  stop("LDDprob 3D array must have dimensions nodes x nodes x Ntimesteps")
 
 # pre-evaluate some variables for efficiency
 if(is.matrix(K) == FALSE)
@@ -1089,18 +721,18 @@ if(is.matrix(K) == TRUE)
   inv_K <- 1 / sum(K[,1])
   NodeK = K[,1] 
 }    
-
-# --- Seedbank carrying capacity ---
+  
+  # --- Seedbank carrying capacity ---
 if (is.matrix(SeedbankK) == FALSE)
-{
-  NodeSeedbankK <- SeedbankK
-}
-
+  {
+    NodeSeedbankK <- SeedbankK
+  }
+  
 if (is.matrix(SeedbankK) == TRUE)
-{
-  NodeSeedbankK <- SeedbankK[, 1]
-}
-
+  {
+    NodeSeedbankK <- SeedbankK[, 1]
+  }
+  
   
 if(is.matrix(PropaguleEstablishment) == FALSE)
   NodePropaguleEstablishment = PropaguleEstablishment
@@ -1184,459 +816,357 @@ if (is.null(MortalitySD)) {
 ###Start of simulation
 ###########################################################
     
-for (perm in 1:Nperm) 
-{ 
-###Assign initial infestations according either to "InitialInvasion" binary vector OR
-###"InvasionRisk" probabilities and/or initial proportion of nodes infested ("InitBioP") OR
-###just "InitBioP" if neither "InitialInvasion" or "InvasionRisk" supplied by user
-n_nodes <- nrow(SDDprob)
-InitBio <- matrix(0, n_nodes, Nstages)
+## ---- Parallel permutation loop (replace the serial for-loop) ----
+library(parallel)
 
-if (is.matrix(InitialPopulation) &&
-    nrow(InitialPopulation) == n_nodes &&
-    ncol(InitialPopulation) == Nstages) {
-  
-  InitBio <- InitialPopulation
-  
-} else {
-  
-  risk <- if (is.matrix(InvasionRisk) && nrow(InvasionRisk) == n_nodes)
-    InvasionRisk[,1] else if (length(InvasionRisk) == n_nodes) InvasionRisk else NULL
-  
-  if (!is.na(InitBioP)) {
-    Infested <- sample.int(n_nodes, ceiling(n_nodes * InitBioP), prob = risk)
-  } else if (!is.null(risk)) {
-    Infested <- which(rbinom(n_nodes, 1, risk) == 1)
-  } else {
-    Infested <- integer(0)
-  }
-  
-  InitBio[Infested,1] <- if (is.na(IncursionStartPop)) 1 else IncursionStartPop
-}
+# number of worker cores to use (adjust if needed)
+n_cores <- max(1, detectCores() - 1)
+cl <- makeCluster(n_cores)
+# ensure cluster is stopped on function exit / error
+#on.exit(stopCluster(cl), add = TRUE)
 
-# --- Ensure initial population (weighted) does not exceed carrying capacity ---
+## Export variables and functions needed by workers.
+## Add/remove names here to match what your worker block references.
+vars_to_export <- c(
+  "Ntimesteps", "Nstages", "InitialPopulation", "InitBioP", "InvasionRisk",
+  "IncursionStartPop", "SDDprob", "EnvEstabProb", "Transition", "LocalDynamics",
+  "K", "SeedbankK","PropaguleEstablishment", "SEAM", "ExternalInfoProb", "OngoingExternalInvasion",
+  "OngoingExternalInfo", "DetectionProb", "DetectionSD", "ManageProb", "ManageSD",
+  "MortalityProb", "MortalitySD", "SpreadReduction", "SpreadReductionSD",
+  "Weights", "NodeK", "NodeSeedbankK","LDDprob", "LDDrate", "NodePropaguleEstablishment", 
+  "DispersalDensityFactor","BlockedTransitionMortality"
+  )
 
-if (exists("Weights") && length(Weights) == Nstages) {
-  # Calculate weighted population per node
-  weighted_pop <- InitBio %*% Weights  # (n_nodes x 1)
+clusterExport(cl, vars_to_export, envir = environment())
+
+## If LocalDynamics is a function in the calling env, also export it (already in list).
+## If your function depends on packages, load them on each worker:
+clusterEvalQ(cl, {
+  # load packages used inside worker, e.g. none here but if you use e.g. 'Matrix' add library(Matrix)
+  NULL
+})
+
+# Run permutations in parallel
+perm_results <- parLapply(cl, seq_len(Nperm), function(i_perm) {
+  # worker environment
+  set.seed(12345 + i_perm)  # reproducible per-perm RNG
   
-  # Identify nodes exceeding K
-  overcap <- which(weighted_pop > NodeK)
+  ###Max integer for propagule dispersal using rmultinom
+  MaxInteger <- .Machine$integer.max  
+  # Local containers for this permutation
+  n_nodes <- nrow(SDDprob)
+  PopulationResults_local      <- matrix(0, nrow = n_nodes, ncol = Ntimesteps)
+  PopulationStageResults_local <- array(0, dim = c(n_nodes, Nstages, Ntimesteps))
+  InvasionResults_local        <- matrix(0, nrow = n_nodes, ncol = Ntimesteps)
+  DetectedResults_local        <- matrix(0, nrow = n_nodes, ncol = Ntimesteps)
+  ManagingResults_local        <- matrix(0, nrow = n_nodes, ncol = Ntimesteps)
   
-  if (length(overcap) > 0) {
-    # Scale down all stage values proportionally
-    scale_factor <- NodeK[overcap] / weighted_pop[overcap]
-    InitBio[overcap, ] <- InitBio[overcap, , drop = FALSE] * scale_factor
-  }
+  ## ---------- BEGIN exactly your block (minimal edits) ----------
+  # Assign initial infestations
+  n_nodes <- nrow(SDDprob)
+  InitBio <- matrix(0, n_nodes, Nstages)
   
-} else {
-  # Fallback: simple elementwise comparison (if Weights missing)
-  for (i in seq_len(nrow(InitBio))) {
-    if (any(InitBio[i, ] > NodeK[i])) {
-      # Clip all stages proportionally to match K
-      total_pop <- sum(InitBio[i, ])
-      if (total_pop > 0) {
-        InitBio[i, ] <- InitBio[i, ] * (NodeK[i] / total_pop)
-      }
-    }
-  }
-}
-
-# Ensure all stage populations are integers
-InitBio <- floor(InitBio)
-
-# initialise the population
-N <- InitBio
-if(sum(N) == 0 && OngoingExternalInvasion == F)
-  warning("No initial populations and no future external invasions")
-
-###Select nodes with information at start of simulation  according either to "InitialInfo" binary vector OR
-###"ExternalInfoProb" probabilities and/or initial proportion of nodes with information ("InitInfoP") OR
-###just "InitInfoP" if neither "InitialInfo" or "ExternalInfoProb" supplied by user.
-###If no initial info variables provided, no nodes have info at start of simulations
-# Robust InitInfo setup
-n_nodes <- nrow(SDDprob)  # number of nodes
-InitInfo <- rep(0, n_nodes)  # default: no nodes initially informed
-
-# Only proceed if any initial info or probabilities are provided
-if(!all(is.na(InitialInfo)) || !is.na(InitInfoP) || !all(is.na(ExternalInfoProb))) {
-  
-  # If InitialInfo is valid length, just use it
-  if(length(InitialInfo) == n_nodes) {
-    InitInfo <- InitialInfo
+  if (is.matrix(InitialPopulation) &&
+      nrow(InitialPopulation) == n_nodes &&
+      ncol(InitialPopulation) == Nstages) {
+    
+    InitBio <- InitialPopulation
     
   } else {
-    # Ensure InitInfoP is numeric and in [0,1]
-    if(is.na(InitInfoP)) InitInfoP <- 0
     
-    # Ensure ExternalInfoProb is numeric of length n_nodes
-    if(is.na(sum(ExternalInfoProb))) ExternalInfoProb <- rep(1, n_nodes)
-    if(length(ExternalInfoProb) != n_nodes) ExternalInfoProb <- rep(1, n_nodes)
+    risk <- if (is.matrix(InvasionRisk) && nrow(InvasionRisk) == n_nodes)
+      InvasionRisk[,1] else if (length(InvasionRisk) == n_nodes) InvasionRisk else NULL
     
-    # Determine number of nodes to sample
-    n_sample <- ceiling(n_nodes * InitInfoP)
+    if (!is.na(InitBioP)) {
+      Infested <- sample.int(n_nodes, ceiling(n_nodes * InitBioP), prob = risk)
+    } else if (!is.null(risk)) {
+      Infested <- which(rbinom(n_nodes, 1, risk) == 1)
+    } else {
+      Infested <- integer(0)
+    }
     
-    # Only sample if n_sample > 0
-    if(n_sample > 0) {
-      Info <- sample(1:n_nodes, size = n_sample, prob = ExternalInfoProb)
-      InitInfo[Info] <- 1
+    InitBio[Infested,1] <- if (is.na(IncursionStartPop)) 1 else IncursionStartPop
+  }
+  
+  # --- Ensure initial population (weighted) does not exceed carrying capacity ---
+  
+  if (exists("Weights") && length(Weights) == Nstages) {
+    # Calculate weighted population per node
+    weighted_pop <- InitBio %*% Weights  # (n_nodes x 1)
+    
+    # Identify nodes exceeding K
+    overcap <- which(weighted_pop > NodeK)
+    
+    if (length(overcap) > 0) {
+      # Scale down all stage values proportionally
+      scale_factor <- NodeK[overcap] / weighted_pop[overcap]
+      InitBio[overcap, ] <- InitBio[overcap, , drop = FALSE] * scale_factor
+    }
+    
+  } else {
+    # Fallback: simple elementwise comparison (if Weights missing)
+    for (i in seq_len(nrow(InitBio))) {
+      if (any(InitBio[i, ] > NodeK[i])) {
+        # Clip all stages proportionally to match K
+        total_pop <- sum(InitBio[i, ])
+        if (total_pop > 0) {
+          InitBio[i, ] <- InitBio[i, ] * (NodeK[i] / total_pop)
+        }
+      }
     }
   }
-}
-
-
-
-
-
-# --- Determine dimensions ---
-n_nodes <- nrow(SDDprob)
-
-###Randomly assign detection probabilities
-# --- Case 1: Single value or vector (stages only) ---
-if (!is.array(DetectionProb) && (length(DetectionProb) == 1 || length(DetectionProb) == Nstages)) {
   
-  NodeDetectionProb <- array(NA, dim = c(n_nodes, Nstages, Ntimesteps))
+  InitBio <- floor(InitBio)   # integers
+  N <- InitBio
+  if (sum(N) == 0 && OngoingExternalInvasion == FALSE) {
+    warning("No initial populations and no future external invasions")
+  }
   
-  for (s in 1:Nstages) {
+  # Robust InitInfo setup
+  n_nodes <- nrow(SDDprob)
+  InitInfo <- rep(0, n_nodes)
+  if (!all(is.na(InitialInfo)) || !is.na(InitInfoP) || !all(is.na(ExternalInfoProb))) {
+    if (length(InitialInfo) == n_nodes) {
+      InitInfo <- InitialInfo
+    } else {
+      if (is.na(InitInfoP)) InitInfoP <- 0
+      if (is.na(sum(ExternalInfoProb))) ExternalInfoProb <- rep(1, n_nodes)
+      if (length(ExternalInfoProb) != n_nodes) ExternalInfoProb <- rep(1, n_nodes)
+      n_sample <- ceiling(n_nodes * InitInfoP)
+      if (n_sample > 0) {
+        Info <- sample(1:n_nodes, size = n_sample, prob = ExternalInfoProb)
+        InitInfo[Info] <- 1
+      }
+    }
+  }
+  
+  # --- Determine dimensions and pre-sample detection/mortality arrays (as in your code) ---
+  # Build NodeDetectionProb array (n_nodes x Nstages x Ntimesteps)
+  ###Randomly assign detection probabilities
+  # --- Case 1: Single value or vector (stages only) ---
+  if (!is.array(DetectionProb) && (length(DetectionProb) == 1 || length(DetectionProb) == Nstages)) {
+    
+    NodeDetectionProb <- array(NA, dim = c(n_nodes, Nstages, Ntimesteps))
+    
+    for (s in 1:Nstages) {
+      for (t in 1:Ntimesteps) {
+        NodeDetectionProb[, s, t] <- pmax(0, pmin(1,
+                                                  rnorm(n_nodes,
+                                                        mean = if (length(DetectionProb) == 1) DetectionProb else DetectionProb[s],
+                                                        sd   = if (is.matrix(DetectionSD)) DetectionSD[, s]   # <--- per node & stage
+                                                        else if (length(DetectionSD) == 1) DetectionSD
+                                                        else DetectionSD[s]
+                                                  )
+        ))
+      }
+    }
+  } else if (is.matrix(DetectionProb) && all(dim(DetectionProb) == c(n_nodes, Nstages))) {
+    NodeDetectionProb <- array(NA, dim = c(n_nodes, Nstages, Ntimesteps))
     for (t in 1:Ntimesteps) {
-      NodeDetectionProb[, s, t] <- pmax(0, pmin(1,
-                                                rnorm(n_nodes,
-                                                      mean = if (length(DetectionProb) == 1) DetectionProb else DetectionProb[s],
-                                                      sd   = if (is.matrix(DetectionSD)) DetectionSD[, s]   # <--- per node & stage
-                                                      else if (length(DetectionSD) == 1) DetectionSD
-                                                      else DetectionSD[s]
-                                                )
+      NodeDetectionProb[, , t] <- pmax(0, pmin(1,
+                                               matrix(
+                                                 rnorm(n_nodes * Nstages, mean = as.vector(DetectionProb), sd = as.vector(DetectionSD)),
+                                                 nrow = n_nodes, ncol = Nstages
+                                               )
       ))
     }
-  }
-}
-
-
-# --- Case 2: Matrix (nodes × stages) ---
-if (is.matrix(DetectionProb) && all(dim(DetectionProb) == c(n_nodes, Nstages))) {
-  
-  NodeDetectionProb <- array(NA, dim = c(n_nodes, Nstages, Ntimesteps))
-  
-  for (t in 1:Ntimesteps) {
-    NodeDetectionProb[, , t] <- pmax(0, pmin(1,
-                                             matrix(
-                                               rnorm(n_nodes * Nstages,
-                                                     mean = as.vector(DetectionProb),
-                                                     sd   = as.vector(DetectionSD)),
-                                               nrow = n_nodes, ncol = Nstages)
-    ))
-  }
-}
-
-# --- Case 3: 3D array (nodes × stages × timesteps) ---
-if (length(dim(DetectionProb)) == 3 && all(dim(DetectionProb)[1:2] == c(n_nodes, Nstages))) {
-  
-  NodeDetectionProb <- array(NA, dim = dim(DetectionProb))
-  
-  for (t in 1:Ntimesteps) {
-    NodeDetectionProb[, , t] <- pmax(0, pmin(1,
-                                             matrix(
-                                               rnorm(n_nodes * Nstages,
-                                                     mean = as.vector(DetectionProb[, , t]),
-                                                     sd   = as.vector(DetectionSD)),
-                                               nrow = n_nodes, ncol = Nstages)
-    ))
-  }
-}
-
-
-
-###Randomly assign probability of mangement adoption upon detection of infestation
-###If ManageProb given as single value or vector (nodes)
-if(is.matrix(ManageProb)==FALSE &&(length(ManageProb) == 1 ||length(ManageProb) == nrow(SDDprob) ))
-      {
-      NodeManageProb = rnorm(ManageProb,ManageSD,n = nrow(SDDprob))
-      NodeManageProb[NodeManageProb<0] = 0
-      NodeManageProb[NodeManageProb>1] = 1
-      }
-
-###Randomly assign spread reduction factor when management adopted
-###If SpreadReduction given as single value or vector (nodes)
-if(is.matrix(SpreadReduction)==FALSE &&(length(SpreadReduction) == 1 ||length(SpreadReduction) == nrow(SDDprob) ))
-      {
-      NodeSpreadReduction = rnorm(SpreadReduction,SpreadReductionSD,n = nrow(SDDprob))
-      NodeSpreadReduction[NodeSpreadReduction<0] = 0
-      NodeSpreadReduction[NodeSpreadReduction>1] = 1
-      }
-
-###Randomly assign mortality probability when management applied
-# --- Determine dimensions ---
-n_nodes <- nrow(SDDprob)
-
-# --- Case 1: Single value or vector (stages only) ---
-if (!is.array(MortalityProb) && (length(MortalityProb) == 1 || length(MortalityProb) == Nstages)) {
-  
-  NodeMortalityProb <- array(NA, dim = c(n_nodes, Nstages, Ntimesteps))
-  
-  for (s in 1:Nstages) {
+  } else if (length(dim(DetectionProb)) == 3 && all(dim(DetectionProb)[1:2] == c(n_nodes, Nstages))) {
+    NodeDetectionProb <- array(NA, dim = dim(DetectionProb))
     for (t in 1:Ntimesteps) {
-      NodeMortalityProb[, s, t] <- pmax(0, pmin(1,
-                                                rnorm(n_nodes,
-                                                      mean = if (length(MortalityProb) == 1) MortalityProb else MortalityProb[s],
-                                                      sd   = if (is.matrix(MortalitySD)) MortalitySD[, s]   # <--- per node & stage
-                                                      else if (length(MortalitySD) == 1) MortalitySD
-                                                      else MortalitySD[s]
-                                                )
+      NodeDetectionProb[, , t] <- pmax(0, pmin(1,
+                                               matrix(
+                                                 rnorm(n_nodes * Nstages, mean = as.vector(DetectionProb[, , t]), sd = as.vector(DetectionSD)),
+                                                 nrow = n_nodes, ncol = Nstages
+                                               )
       ))
     }
+  } else {
+    stop("Unsupported DetectionProb shape in worker")
   }
-}
-
-
-# --- Case 2: Matrix (nodes × stages) ---
-if (is.matrix(MortalityProb) && all(dim(MortalityProb) == c(n_nodes, Nstages))) {
   
-  NodeMortalityProb <- array(NA, dim = c(n_nodes, Nstages, Ntimesteps))
-  
-  for (t in 1:Ntimesteps) {
-    NodeMortalityProb[, , t] <- pmax(0, pmin(1,
-                                             matrix(
-                                               rnorm(n_nodes * Nstages,
-                                                     mean = as.vector(MortalityProb),
-                                                     sd   = as.vector(MortalitySD)),
-                                               nrow = n_nodes, ncol = Nstages)
-    ))
-  }
-}
-
-# --- Case 3: 3D array (nodes × stages × timesteps) ---
-if (length(dim(MortalityProb)) == 3 && all(dim(MortalityProb)[1:2] == c(n_nodes, Nstages))) {
-  
-  NodeMortalityProb <- array(NA, dim = dim(MortalityProb))
-  
-  for (t in 1:Ntimesteps) {
-    NodeMortalityProb[, , t] <- pmax(0, pmin(1,
-                                             matrix(
-                                               rnorm(n_nodes * Nstages,
-                                                     mean = as.vector(MortalityProb[, , t]),
-                                                     sd   = as.vector(MortalitySD)),
-                                               nrow = n_nodes, ncol = Nstages)
-    ))
-  }
-}
-
-
-
-
-
-
-###Populate invasion status vector ahead of timestep loop
-Invaded <- ifelse(rowSums(InitBio) > 0, 1, 0)
-
-###Probability of info at start of simulation depends on
-###Presence of pest and detection probability
-###Select nodes that have detected infestation 
-
-
-
-
-# Calculate probability of detection per node
-prob_detect <- 1 - apply((1 - NodeDetectionProb[,,1])^InitBio, 1, prod)
-
-# Draw initial detection (0/1) per node
-InitDetection <- rbinom(n = nrow(InitBio), size = 1, prob = prob_detect)
-
-
-###Add detections to nodes which already have info (e.g. pre-emptive control and hygiene measures)
-InitInfo[InitInfo == 0] = InitDetection[InitInfo == 0]
-
-###Populate information status vector ahead of timestep loop
-HaveInfo = InitInfo
-
-
-  # run simulation
-  for (timestep in 1:Ntimesteps) 
-    { 
-    ###Print progress
-    cat("\r", "Realisation ", perm, "Timestep ", timestep, "...")
- 
-    ###Allow for variation in dispersal connectivity through time
-    NodeSDDprob = SDDprob
-    if(length(dim(SDDprob)) == 3)
-      NodeSDDprob = SDDprob[,,timestep]
-    NodeLDDprob = LDDprob
-    if(length(dim(LDDprob)) == 3)
-      NodeLDDprob = LDDprob[,,timestep]
-
-    ###Allow for variation in recruit establishment through time
-    ###e.g.  climate change predictions
-    ###Note: could be done outside loop, but would take heaps of memory to store 
-    if(is.matrix(EnvEstabProb) == T)
-      NodeEnvEstabProb <- EnvEstabProb[,timestep]
+  # NodeMortalityProb: analogous logic (kept concise - follow same pattern)
+  if (!is.array(MortalityProb) && (length(MortalityProb) == 1 || length(MortalityProb) == Nstages)) {
     
+    NodeMortalityProb <- array(NA, dim = c(n_nodes, Nstages, Ntimesteps))
+    
+    for (s in 1:Nstages) {
+      for (t in 1:Ntimesteps) {
+        NodeMortalityProb[, s, t] <- pmax(0, pmin(1,
+                                                  rnorm(n_nodes,
+                                                        mean = if (length(MortalityProb) == 1) MortalityProb else MortalityProb[s],
+                                                        sd   = if (is.matrix(MortalitySD)) MortalitySD[, s]   # <--- per node & stage
+                                                        else if (length(MortalitySD) == 1) MortalitySD
+                                                        else MortalitySD[s]
+                                                  )
+        ))
+      }
+    }
+  } else if (is.matrix(MortalityProb) && all(dim(MortalityProb) == c(n_nodes, Nstages))) {
+    NodeMortalityProb <- array(NA, dim = c(n_nodes, Nstages, Ntimesteps))
+    for (t in 1:Ntimesteps) {
+      NodeMortalityProb[, , t] <- pmax(0, pmin(1,
+                                               matrix(
+                                                 rnorm(n_nodes * Nstages, mean = as.vector(MortalityProb), sd = as.vector(MortalitySD)),
+                                                 nrow = n_nodes, ncol = Nstages
+                                               )
+      ))
+    }
+  } else if (length(dim(MortalityProb)) == 3 && all(dim(MortalityProb)[1:2] == c(n_nodes, Nstages))) {
+    NodeMortalityProb <- array(NA, dim = dim(MortalityProb))
+    for (t in 1:Ntimesteps) {
+      NodeMortalityProb[, , t] <- pmax(0, pmin(1,
+                                               matrix(
+                                                 rnorm(n_nodes * Nstages, mean = as.vector(MortalityProb[, , t]), sd = as.vector(MortalitySD)),
+                                                 nrow = n_nodes, ncol = Nstages
+                                               )
+      ))
+    }
+  } else {
+    stop("Unsupported MortalityProb shape in worker")
+  }
+  
+  # Populate initial invaded and detection
+  Invaded <- ifelse(rowSums(InitBio) > 0, 1, 0)
+  
+  # Calculate probability of detection per node at timestep 1 and draw InitDetection
+  prob_detect <- 1 - apply((1 - NodeDetectionProb[, , 1])^InitBio, 1, prod)
+  InitDetection <- rbinom(n = nrow(InitBio), size = 1, prob = prob_detect)
+  InitInfo[InitInfo == 0] <- InitDetection[InitInfo == 0]
+  HaveInfo <- InitInfo
+  
+  # ---------- Now run timesteps (use i_perm in prints) ----------
+  for (timestep in 1:Ntimesteps) {
+    # minimal progress print (safe inside worker)
+    cat(sprintf("Worker %d: timestep %d\n", i_perm, timestep))
+    
+    # update NodeEnvEstabProb, NodeTransition, NodeK, NodePropaguleEstablishment if matrices/arrays
+    if (is.matrix(EnvEstabProb) == TRUE) NodeEnvEstabProb <- EnvEstabProb[, timestep]
     if (is.array(Transition) && length(dim(Transition)) == 3) {
-      NodeTransition <- Transition[,,timestep]
-      } else if (is.list(Transition)) {
-        NodeTransition <- Transition
-      } else {
+      NodeTransition <- Transition[, , timestep]
+    } else if (is.list(Transition)) {
       NodeTransition <- Transition
-      }
-    
-    
-    ###If carrying capacity provided as matrix assign values for relevant timestep
-    if(is.matrix(K) == TRUE)
-      {
-      K_is_0 <- K[,timestep]<=0
-      inv_K <- 1 / sum(K[,timestep])
-      NodeK = K[,timestep] 
-      }  
+    } else {
+      NodeTransition <- Transition
+    }
+    if (is.matrix(K) == TRUE) NodeK <- K[, timestep]
     
     ###If seedbank carrying capacity provided as matrix assign values for relevant timestep
-    if (is.matrix(SeedbankK) == TRUE)
-      {
-      NodeSeedbankK <- SeedbankK[, timestep]
+    if (is.matrix(SeedbankK) == TRUE) NodeSeedbankK <- SeedbankK[, timestep]
+    
+    
+    # ManageProb / SpreadReduction per timestep if provided as matrices
+    if (is.matrix(ManageProb) == TRUE && nrow(ManageProb) == nrow(SDDprob) && ncol(ManageProb) == Ntimesteps) {
+      NodeManageProb <- pmin(1, pmax(0, rnorm(n = nrow(SDDprob), mean = ManageProb[, timestep], sd = ManageSD)))
+    } else {
+      NodeManageProb <- pmin(1, pmax(0, rnorm(n = nrow(SDDprob), mean = ManageProb, sd = ManageSD)))
+    }
+    if (is.matrix(SpreadReduction) == TRUE && nrow(SpreadReduction) == nrow(SDDprob) && ncol(SpreadReduction) == Ntimesteps) {
+      NodeSpreadReduction <- pmin(1, pmax(0, rnorm(n = nrow(SDDprob), mean = SpreadReduction[, timestep], sd = SpreadReductionSD)))
+    } else {
+      NodeSpreadReduction <- pmin(1, pmax(0, rnorm(n = nrow(SDDprob), mean = SpreadReduction, sd = SpreadReductionSD)))
+    }
+    
+    # Assign management (only where HaveInfo)
+    Managing <- rbinom(n = nrow(SDDprob), size = 1, prob = NodeManageProb * HaveInfo)
+    Managing <- Managing * HaveInfo
+    Detected <- Invaded * HaveInfo
+    
+    # Apply management mortality by stage (use NodeMortalityProb[,,timestep])
+    N0 <- matrix(NA, nrow = nrow(N), ncol = ncol(N))
+    for (s in 1:Nstages) {
+      N0[, s] <- rbinom(n = nrow(N), size = N[, s], prob = 1 - (NodeMortalityProb[, s, timestep] * Managing))
+    }
+    N <- N0
+    if (sum(N0) > 0) {
+      N <- LocalDynamics(nodetransition = NodeTransition, weights = Weights, sddprob = SDDprob,
+                         nodeenvestabprob = NodeEnvEstabProb, n0 = N0, lddprob = LDDprob,
+                         lddrate = LDDrate,  nodeK = NodeK, node.seedbankK = NodeSeedbankK,
+                         nodepropaguleestablishment = NodePropaguleEstablishment,
+                         nodespreadreduction = NodeSpreadReduction, managing = Managing,
+                         MaxInteger=MaxInteger,BlockedTransitionMortality = BlockedTransitionMortality,
+                         DispersalDensityFactor=DispersalDensityFactor)
+    }
+    
+    # Info spread via SEAM
+    if (is.matrix(SEAM) == TRUE) {
+      RandSEAM[] <- rbinom(n = nrow(SDDprob)^2, size = 1, prob = SEAM * Detected)
+      InfoTransferred <- ifelse(colSums(RandSEAM) > 0, 1, 0)
+      HaveInfo[HaveInfo == 0] <- InfoTransferred[HaveInfo == 0]
+    }
+    
+    # External invasion
+    if (OngoingExternalInvasion == TRUE) {
+      if (is.matrix(InvasionRisk) == FALSE) {
+        ExternalInvasion <- rbinom(1:nrow(SDDprob), size = 1, prob = InvasionRisk)
+      } else {
+        ExternalInvasion <- rbinom(1:nrow(SDDprob), size = 1, prob = InvasionRisk[, timestep])
       }
-    
-    
-    if(is.matrix(PropaguleEstablishment) == TRUE)
-      NodePropaguleEstablishment = PropaguleEstablishment[,timestep]
-
+      Invaded[Invaded == 0] <- ExternalInvasion[Invaded == 0]
+      if (is.na(IncursionStartPop) == TRUE) N[, 1] <- N[, 1] + ExternalInvasion
+      else N[, 1] <- N[, 1] + ExternalInvasion * IncursionStartPop
       
-  
-  ###Randomly assign probability of mangement adoption upon detection of infestation
-  ###If ManageProb given as matrix (nodes x timesteps)
-  if(is.matrix(ManageProb)==TRUE && nrow(ManageProb) == nrow(SDDprob) && ncol(ManageProb) == Ntimesteps)
-   	{	
-   	NodeManageProb = rnorm(ManageProb[,timestep],ManageSD,n = nrow(SDDprob))
-   	NodeManageProb[NodeManageProb<0] = 0
-   	NodeManageProb[NodeManageProb>1] = 1
-   	}
-
-  ###Randomly assign spread reduction factor when management adopted
-  ###If SpreadReduction given as matrix (nodes x timesteps)
-  if(is.matrix(SpreadReduction)==TRUE && nrow(SpreadReduction) == nrow(SDDprob) && ncol(SpreadReduction) == Ntimesteps)
-   	{	
-   	NodeSpreadReduction = rnorm(SpreadReduction[,timestep],ManageSD,n = nrow(SDDprob))
-   	NodeSpreadReduction[NodeSpreadReduction<0] = 0
-   	NodeSpreadReduction[NodeSpreadReduction>1] = 1
-   	}
-  
-  ###Assign management status to nodes   
-  ###Management is only applied to nodes which have information
-  ###i.e. where pest has been detected or following communication of information
-  ###from neighbouring infested farms 
-  Managing = rbinom(1:nrow(SDDprob),size = 1,prob = NodeManageProb*HaveInfo)
-  
-  ###Management is only applied to nodes which have information
-  ###i.e. where pest has been detected or following communication of information
-  ###from neighbouring infested farms 
-  Managing = Managing*HaveInfo
-  
-  ###Identify nodes with known extant infestations 
-  Detected = Invaded*HaveInfo
-  
-  ###Apply management
-  # N: current population matrix (nodes x stages)
-  # Managing: vector of management adoption per node (0/1) for current timestep
-  # NodeMortalityProb: array (nodes x stages x timesteps)
-  # timestep: current timestep index
-  
-  # Apply management-driven mortality
-  N0 <- matrix(NA, nrow = nrow(N), ncol = ncol(N))
-  for (s in 1:Nstages) {
-    N0[, s] <- rbinom(n = nrow(N), size = N[, s], prob = 1 - (NodeMortalityProb[, s,timestep] * Managing))
-  }
-  
-  # Update population matrix
-  if (sum(N0) <= 0) {
-    N <- N0
-  } else if (sum(N0) > 0) {
-    N <- N0
-  }
-  
-  if(sum(N0)>0 ) 
-  {
       
-  N <- LocalDynamics(nodetransition = NodeTransition,weights = Weights,sddprob = NodeSDDprob, nodeenvestabprob = NodeEnvEstabProb,n0=N0,
-                     lddprob = NodeLDDprob, lddrate = LDDrate, nodeK = NodeK, 
-                     node.seedbankK = NodeSeedbankK,nodepropaguleestablishment = NodePropaguleEstablishment,
-                     nodespreadreduction = NodeSpreadReduction,managing = Managing,
-                     MaxInteger=MaxInteger,BlockedTransitionMortality = BlockedTransitionMortality,
-                     DispersalDensityFactor = DispersalDensityFactor)
-  } 
- ###Update info vector for any info spread (if SEAM supplied)
- ###Note once nodes obtain info they always have info (only zero values updated)
- if(is.matrix(SEAM) == T)
-  {
-  RandSEAM[] <- rbinom(n=nrow(SDDprob)^2, size=1, prob = SEAM*Detected)
-  InfoTransferred = ifelse(colSums(RandSEAM)>0,1,0)
-  HaveInfo[HaveInfo == 0] = InfoTransferred[HaveInfo == 0]
-  }
- 
- 
- ###Add invasion resulting from colonisation from external sources
- if(OngoingExternalInvasion == T)
-  {
-  if(is.matrix(InvasionRisk) == F)
-   ExternalInvasion = rbinom(1:nrow(SDDprob),size = 1,prob = InvasionRisk)
-  if(is.matrix(InvasionRisk) == T)
-   ExternalInvasion = rbinom(1:nrow(SDDprob),size = 1,prob = InvasionRisk[,timestep])
-  Invaded[Invaded == 0] = ExternalInvasion[Invaded==0]
-  if(is.na(IncursionStartPop) == T) 
-	  N[,1] = N[,1]+ExternalInvasion
-  if(is.na(IncursionStartPop) == F) 
-	  N[,1] = N[,1]+ExternalInvasion*IncursionStartPop
- 
-  }
+    }
+    N <- floor(N)
+    # External info
+    if (OngoingExternalInfo == TRUE) {
+      if (is.matrix(ExternalInfoProb) == FALSE) ExternalInfo <- rbinom(1:nrow(SDDprob), size = 1, prob = ExternalInfoProb)
+      else ExternalInfo <- rbinom(1:nrow(SDDprob), size = 1, prob = ExternalInfoProb[, timestep])
+      HaveInfo[HaveInfo == 0] <- ExternalInfo[HaveInfo == 0]
+    }
+    
+    # Update invaded vector
+    Invaded <- ifelse(rowSums(N) > 0, 1, 0)
+    
+    # Record results for this timestep into local containers
+    ManagingResults_local[, timestep] <- Managing
+    InvasionResults_local[, timestep] <- Invaded
+    weighted_population <- if (is.matrix(Weights)) {
+      rowSums(N[, 2:Nstages, drop = FALSE] *
+                Weights[, 2:Nstages, drop = FALSE])
+    } else {
+      as.numeric(N[, 2:Nstages, drop = FALSE] %*% Weights[2:Nstages])
+    }
+    PopulationResults_local[, timestep] <- weighted_population
+    PopulationStageResults_local[, , timestep] <- N
+    
+    # detection: compute per-stage detection probs at current N and NodeDetectionProb[,,timestep]
+    DetectionProbPerStage <- 1 - (1 - NodeDetectionProb[, , timestep])^N  # nodes x stages
+    ProbDetectNode <- 1 - apply(1 - DetectionProbPerStage, 1, prod)      # nodes
+    NewHaveInfo <- rbinom(n = nrow(SDDprob), size = 1, prob = ProbDetectNode)
+    HaveInfo[HaveInfo == 0] <- NewHaveInfo[HaveInfo == 0]
+    DetectedResults_local[, timestep] <- HaveInfo * Invaded
+  } # end timesteps
   
-  # Ensure all stage populations are integers
-  N <- floor(N)
- 
-###Add nodes with information resulting from external sources
- if(OngoingExternalInfo == T)
-  {
-  if(is.matrix(ExternalInfoProb) == F)
-    ExternalInfo = rbinom(1:nrow(SDDprob),size = 1,prob = ExternalInfoProb)
-  if(is.matrix(ExternalInfoProb) == T)
-    ExternalInfo = rbinom(1:nrow(SDDprob),size = 1,prob = ExternalInfoProb[,timestep])
-  HaveInfo[HaveInfo == 0] = ExternalInfo[HaveInfo==0]
-  }
+  ## ---------- END your block ----------
   
- ###Update infestation vector
- Invaded = ifelse(rowSums(N)>0,1,0)
- 
- ###Record nodes adopting management
- ManagingResults[,timestep,perm] = Managing
-  
- ###Record infested nodes
- InvasionResults[,timestep,perm] = Invaded
+  # Return local results for this permutation
+  list(
+    PopulationResults = PopulationResults_local,
+    PopulationStageResults = PopulationStageResults_local,
+    InvasionResults = InvasionResults_local,
+    DetectedResults = DetectedResults_local,
+    ManagingResults = ManagingResults_local
+  )
+}) # end parLapply
 
- ###Record populations
-weighted_population <- if (is.matrix(Weights)) {
-  rowSums(N[, 2:Nstages, drop = FALSE] *
-            Weights[, 2:Nstages, drop = FALSE])
-} else {
-  as.numeric(N[, 2:Nstages, drop = FALSE] %*% Weights[2:Nstages])
+# combine the returned per-perm results into master arrays
+for (i in seq_along(perm_results)) {
+  PopulationResults[,, i]       <- perm_results[[i]]$PopulationResults
+  PopulationStageResults[,,, i] <- perm_results[[i]]$PopulationStageResults
+  InvasionResults[,, i]         <- perm_results[[i]]$InvasionResults
+  DetectedResults[,, i]         <- perm_results[[i]]$DetectedResults
+  ManagingResults[,, i]         <- perm_results[[i]]$ManagingResults
 }
-PopulationResults[, timestep, perm] <- weighted_population
- 
- ###Record stage populations
- PopulationStageResults[,,timestep,perm] = N
 
- ###Select new nodes where infestation detected
- # Probability of detection per node per stage
- DetectionProbPerStage <- 1 - (1 - NodeDetectionProb[,,t])^N  # element-wise OK: both nodes x stages
- 
- # Combine stages to get probability of detecting at least one stage
- ProbDetectNode <- 1 - apply(1 - DetectionProbPerStage, 1, prod)  # multiply across stages
- 
- # Sample new detections per node
- NewHaveInfo <- rbinom(n = nrow(SDDprob), size = 1, prob = ProbDetectNode)
- 
- 
- ###Add newly detected infestations to info vector
- ###Note once nodes obtain info they always have info (only zero values updated)
- HaveInfo[HaveInfo==0] = NewHaveInfo[HaveInfo==0]  
- 
- ###Record detection status
- DetectedResults[,timestep,perm] = HaveInfo*Invaded 
- }
+# stopCluster will be called by on.exit when function ends or errors
+# --- Shut down parallel cluster ---
+if (exists("cl")) {
+  parallel::stopCluster(cl)
+  rm(cl)
+  cat("Parallel cluster stopped and removed from memory.\n")
 }
+
 ###########################################################
 ###End of Simulation
 ###########################################################

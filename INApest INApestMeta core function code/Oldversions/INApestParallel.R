@@ -50,9 +50,9 @@ InitInfoP = NA,		#Proportion of nodes with information at start of simulations
 ExternalInfoProb = NA,           #Vector of probabilities of communication from external sources
 EnvEstabProb = 1,           #Environmentally determined establishment probability. Can be single value, vector (nodes) or matrix (nodes x timesteps)
 Survival = 1,           # local population survival probability. Set to 1 for no environmental limitation on survival. Can be single number, vector (nodes) or matrix (nodes x timesteps)
-SDDprob,                   #Short-distance (self-mediated) disperal probability matrix, or 3D array (nodes x nodes x timesteps)
+SDDprob,                   #Short-distance (self-mediated) disperal probability between each pair of nodes
 SEAM = 0,			#Option to provide socioeconomic adjacency matrix for information spread
-LDDprob = 0,         #Option to provide long-distance (human-mediated) dispersal probability matrix, or 3D array (nodes x nodes x timesteps)
+LDDprob = 0,         #Option to provide long-distance (human-mediated) dispersal probability matrix
 			      #e.g. could be weighted by law of human visitation or data on stock movements
 OngoingExternalInvasion = F,   ##Option to include ongoing invasion from external sources
 OngoingExternalInfo = F,   ##Option to include ongoing communication from external sources
@@ -64,12 +64,6 @@ DoPlots = TRUE	     #Option to omit printing of line graphs. Default is to print
 ###1) Allow for increased/decreased management adoption if neighbours, or contacts in the social network are managing
 ###2) Might also be interesting to allow for other aspects of management response to vary depending on information held by neighbours
 ####e.g. detection probability might increase if neighbours area managing
-
-###Allow SDD and LDD connectivity to vary through time
-if(length(dim(SDDprob)) == 3 && (dim(SDDprob)[1] != dim(SDDprob)[2] || dim(SDDprob)[3] != Ntimesteps))
-  stop("SDDprob 3D array must have dimensions nodes x nodes x Ntimesteps")
-if(length(dim(LDDprob)) == 3 && (dim(LDDprob)[1] != nrow(SDDprob) || dim(LDDprob)[2] != nrow(SDDprob) || dim(LDDprob)[3] != Ntimesteps))
-  stop("LDDprob 3D array must have dimensions nodes x nodes x Ntimesteps")
 
 ###Changes for final report
 ###1) Change local extinction to survival
@@ -93,15 +87,9 @@ ManagingResults = InvasionResults
 
 ###If LDD matrix provided combine long and short distance dispersal probability 
 ###into a single dispersal probability matrix 
-NodeSDDprob = SDDprob
-if(length(dim(SDDprob)) == 3)
-  NodeSDDprob = SDDprob[,,1]
-NodeLDDprob = LDDprob
-if(length(dim(LDDprob)) == 3)
-  NodeLDDprob = LDDprob[,,1]
-DispProb = NodeSDDprob
-if(is.matrix(NodeLDDprob) == T)
-  DispProb =1-(1-NodeSDDprob)*(1-NodeLDDprob)
+DispProb = SDDprob
+if(is.matrix(LDDprob) == T)
+  DispProb =1-(1-SDDprob)*(1-LDDprob)
     
 
 ###Weight dispersal by environmental establishment probability
@@ -162,34 +150,42 @@ DetectedResultsLoop <- InvasionResultsLoop
 ###just "InitBioP" if neither "InitialInvasion" or "InvasionRisk" supplied by user
 InitBio = rep(0,times = nrow(SDDprob))
 
-###Assign initial infestations using binary vector
-if(length(InitialInvasion) == nrow(SDDprob))
-	InitBio = InitialInvasion
-
 ###Binary vector of initial infestation status not provided?
 if(length(InitialInvasion) != nrow(SDDprob))
 {
-###Use first timestep if invasion risk supplied as a matrix
-risk = NULL
-if(is.matrix(InvasionRisk) == T && nrow(InvasionRisk) == nrow(SDDprob))
-  risk = InvasionRisk[,1]
-if(is.matrix(InvasionRisk) == F && length(InvasionRisk) == nrow(SDDprob))
-  risk = InvasionRisk
-
-###If initial infestation proportion provided, select the desired number of infested nodes
-if(is.na(InitBioP) == F)
-  Infested = sample(1:nrow(SDDprob),size = ceiling(nrow(SDDprob)*InitBioP),prob = risk)
-###If initial infestation proportion not provided, use invasion risk probabilities where supplied
-if(is.na(InitBioP) == T && is.null(risk) == F)
-  {
-  Infested = rbinom(1:nrow(SDDprob),size = 1,prob = risk)
-  Infested = which(Infested == 1)
-  }
-###If no initial invasion inputs supplied, start with no infested nodes
-if(is.na(InitBioP) == T && is.null(risk) == T)
-  Infested = integer(0)
+###Vector of invasion risk probabilities used to select initial ifestations 
+if(length(InvasionRisk) == nrow(SDDprob))
+        {
+ 	###If initial infestation proportion provided, use wieghted randomisation to select the desired number of infested nodes
+        if(is.na(InitBioP) == F)
+	  Infested = sample(1:nrow(SDDprob),size = ceiling(nrow(SDDprob)*InitBioP),prob = InvasionRisk)
+	###If initial infestation proportion not provided, use random binomial process to definie initial infestation status
+        if(is.na(InitBioP) == T)
+          {
+	  Infested = rbinom(1:nrow(SDDprob),size = 1,prob = InvasionRisk)
+          Infested = which(Infested == 1)
+	  } 
+	}
+###Invasion risk probabilities either not provided or provided as matrix (nodes x timesteps)
+ if(length(InvasionRisk) != nrow(SDDprob))
+        {
+ 	  ###If initial infestation proportion provided with no invasion risk probability vector
+        ###use unweighted randomisation to select infested nodes
+        if(is.matrix(InvasionRisk) == F)
+	    Infested = sample(1:nrow(SDDprob),size = ceiling(nrow(SDDprob)*InitBioP))
+       ###If invasion risk supplied as matrix, use first column to randomly select initial infestations via random binomial process
+       if(is.matrix(InvasionRisk) == T)
+          {
+          Infested = rbinom(1:nrow(SDDprob),size = 1,prob = InvasionRisk[,1])
+          Infested = which(Infested == 1)
+	    }
+	}
 InitBio[Infested] = 1
 }
+
+###Assign initial infestations using binary vector
+if(length(InitialInvasion) == nrow(SDDprob))
+	InitBio = InitialInvasion
 
 ###Select nodes with information at start of simulation  according either to "InitialInfo" binary vector OR
 ###"ExternalInfoProb" probabilities and/or initial proportion of nodes with information ("InitInfoP") OR
@@ -295,20 +291,6 @@ for(timestep in 1:Ntimesteps)
   ###Print progress
   #cat("\r", "Realisation ", perm, "Timestep ", timestep, "...")
   
-    ###Allow for variation in dispersal connectivity through time
-    if(length(dim(SDDprob)) == 3)
-      NodeSDDprob = SDDprob[,,timestep]
-    if(length(dim(LDDprob)) == 3)
-      NodeLDDprob = LDDprob[,,timestep]
-    if(length(dim(SDDprob)) == 3 || length(dim(LDDprob)) == 3)
-      {
-      DispProb = NodeSDDprob
-      if(is.matrix(NodeLDDprob) == T)
-        DispProb = 1-(1-NodeSDDprob)*(1-NodeLDDprob)
-      if(is.matrix(EnvEstabProb) == F)
-        BPAM = sweep(DispProb,2,EnvEstabProb,`*`)
-      }
-
   ###Allow for variation in establishment through time
   ###e.g.  climate change predictions
   ###Note: could be done outside loop, but would take heaps of memory to store 
