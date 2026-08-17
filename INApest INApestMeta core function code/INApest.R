@@ -41,6 +41,8 @@ InvasionRisk = NA,           #Vector (nodes) or matrix (nodes x timesteps) of in
 InitialInfo = NA,        #Vector or of nodes with information at start of simulations
 InitInfoP = NA,		#Proportion of nodes with information at start of simulations
 ExternalInfoProb = NA,           #Vector of probabilities of communication from external sources
+InfoRetentionProb = 1,       #Probability that existing information is retained between timesteps. Can be single number, vector (nodes) or matrix (nodes x timesteps)
+InfoPersistenceSteps = NA,    #Number of timesteps information persists after last known local presence. Can be single number, vector (nodes) or matrix (nodes x timesteps); NA uses InfoRetentionProb
 EnvEstabProb = 1,           #Environmentally determined establishment probability. Can be single value, vector (nodes) or matrix (nodes x timesteps)
 Survival = 1,           # local population survival probability. Set to 1 for no environmental limitation on survival. Can be single number, vector (nodes) or matrix (nodes x timesteps)
 SDDprob,                   #Short-distance (self-mediated) disperal probability matrix, or 3D array (nodes x nodes x timesteps)
@@ -64,6 +66,25 @@ if(length(dim(SDDprob)) == 3 && (dim(SDDprob)[1] != dim(SDDprob)[2] || dim(SDDpr
   stop("SDDprob 3D array must have dimensions nodes x nodes x Ntimesteps")
 if(length(dim(LDDprob)) == 3 && (dim(LDDprob)[1] != nrow(SDDprob) || dim(LDDprob)[2] != nrow(SDDprob) || dim(LDDprob)[3] != Ntimesteps))
   stop("LDDprob 3D array must have dimensions nodes x nodes x Ntimesteps")
+
+###Allow information retention to vary by node and through time
+if(is.matrix(InfoRetentionProb) == T && (nrow(InfoRetentionProb) != nrow(SDDprob) || ncol(InfoRetentionProb) != Ntimesteps))
+  stop("InfoRetentionProb matrix must have dimensions nodes x Ntimesteps")
+if(is.matrix(InfoRetentionProb) == F && !(length(InfoRetentionProb) == 1 || length(InfoRetentionProb) == nrow(SDDprob)))
+  stop("InfoRetentionProb must be a single value, vector of length nodes, or matrix nodes x Ntimesteps")
+if(any(is.na(InfoRetentionProb)) || any(InfoRetentionProb < 0) || any(InfoRetentionProb > 1))
+  stop("InfoRetentionProb values must be between 0 and 1")
+
+###Allow programmed information persistence after last known local presence to vary by node and through time
+if(is.matrix(InfoPersistenceSteps) == T && (nrow(InfoPersistenceSteps) != nrow(SDDprob) || ncol(InfoPersistenceSteps) != Ntimesteps))
+  stop("InfoPersistenceSteps matrix must have dimensions nodes x Ntimesteps")
+if(is.matrix(InfoPersistenceSteps) == F && !(length(InfoPersistenceSteps) == 1 || length(InfoPersistenceSteps) == nrow(SDDprob)))
+  stop("InfoPersistenceSteps must be a single value, vector of length nodes, or matrix nodes x Ntimesteps")
+if(any(!is.na(InfoPersistenceSteps) & (!is.finite(InfoPersistenceSteps) | InfoPersistenceSteps < 0 | InfoPersistenceSteps != floor(InfoPersistenceSteps))))
+  stop("InfoPersistenceSteps values must be non-negative whole numbers or NA")
+UseInfoPersistence = any(!is.na(InfoPersistenceSteps))
+if(UseInfoPersistence == T && any(InfoRetentionProb < 1))
+  warning("Both InfoPersistenceSteps and InfoRetentionProb specify information loss. Programmed stopping takes priority where InfoPersistenceSteps is not NA; InfoRetentionProb is only used where InfoPersistenceSteps is NA.",call. = F)
 
 ###Declare array tracking infestation status 
 ###of individual nodes in each timestep of each realisation
@@ -97,6 +118,8 @@ if(is.matrix(NodeLDDprob) == T)
 ###Weight dispersal by environmental establishment probability
 if(is.matrix(EnvEstabProb) == F)
   BPAM = sweep(DispProb,2,EnvEstabProb,`*`)
+if(is.matrix(EnvEstabProb) == T)
+  BPAM = sweep(DispProb,2,EnvEstabProb[,1],`*`)
 
 
 ###SEAM is needed to run INA but zero info transfer between nodes is assumed unless SEAM provided
@@ -259,6 +282,15 @@ InitInfo[InitInfo == 0] = InitDetection[InitInfo == 0]
 Invaded = InitBio 
 HaveInfo = InitInfo
 
+###Track the most recent timestep with known local presence
+LastKnownPresence = rep(NA,nrow(SDDprob))
+if(UseInfoPersistence == T)
+  {
+  InitialKnownPresence = which(HaveInfo == 1 & Invaded == 1)
+  if(length(InitialKnownPresence) > 0)
+    LastKnownPresence[InitialKnownPresence] = 0
+  }
+
 ###Loop through timesteps
 ###This allows allocation of info to farmers or managers based on detection of infestation
 ###Non-infested nodes don't manage unless they receive information from nodes with known extant infestations
@@ -337,7 +369,16 @@ for(timestep in 1:Ntimesteps)
   ###Management is only applied to nodes which have information
   ###i.e. where pest has been detected or following communication of information
   ###from neighbouring infested farms 
-  Managing = rbinom(1:nrow(SDDprob),size = 1,prob = NodeManageProb*HaveInfo)
+  ###Record known local presence before management
+###If an informed node is infested, local presence is known in this timestep
+if(UseInfoPersistence == T)
+  {
+  KnownPresence = which(HaveInfo == 1 & Invaded == 1)
+  if(length(KnownPresence) > 0)
+    LastKnownPresence[KnownPresence] = timestep
+  }
+
+Managing = rbinom(1:nrow(SDDprob),size = 1,prob = NodeManageProb*HaveInfo)
   
   ###Remove populations dying out naturally and/or from management
   Invaded <- Invaded*rbinom(n=nrow(SDDprob),size = 1,prob = NodeSurvival*(1-NodeEradicationProb*Managing))
@@ -352,8 +393,33 @@ for(timestep in 1:Ntimesteps)
   NewInvasion = ifelse(colSums(RandBPAM)>0,1,0)
   Invaded[Invaded == 0] = NewInvasion[Invaded == 0]
   
-  ###Update info vector for any info spread (if SEAM supplied)
-  ###Note once nodes obtain info they always have info (only zero values updated)
+  ###Apply programmed stopping after last known local presence
+NodeInfoPersistenceSteps = InfoPersistenceSteps
+if(is.matrix(InfoPersistenceSteps) == T)
+  NodeInfoPersistenceSteps = InfoPersistenceSteps[,timestep]
+if(length(NodeInfoPersistenceSteps) == 1)
+  NodeInfoPersistenceSteps = rep(NodeInfoPersistenceSteps,nrow(SDDprob))
+ProgrammedInfoNodes = which(HaveInfo == 1 & !is.na(NodeInfoPersistenceSteps))
+if(length(ProgrammedInfoNodes) > 0)
+  {
+  TimeSinceKnownPresence = timestep-LastKnownPresence
+  InfoStopNodes = ProgrammedInfoNodes[is.na(LastKnownPresence[ProgrammedInfoNodes]) | TimeSinceKnownPresence[ProgrammedInfoNodes] >= NodeInfoPersistenceSteps[ProgrammedInfoNodes]]
+  if(length(InfoStopNodes) > 0)
+    HaveInfo[InfoStopNodes] = 0
+  }
+
+###Allow information to decay after management and spread where no programmed stop is supplied
+NodeInfoRetentionProb = InfoRetentionProb
+if(is.matrix(InfoRetentionProb) == T)
+  NodeInfoRetentionProb = InfoRetentionProb[,timestep]
+if(length(NodeInfoRetentionProb) == 1)
+  NodeInfoRetentionProb = rep(NodeInfoRetentionProb,nrow(SDDprob))
+InfoDecayNodes = which(HaveInfo == 1 & is.na(NodeInfoPersistenceSteps) & NodeInfoRetentionProb < 1)
+if(length(InfoDecayNodes) > 0)
+  HaveInfo[InfoDecayNodes] = rbinom(n = length(InfoDecayNodes),size = 1,prob = NodeInfoRetentionProb[InfoDecayNodes])
+
+###Update info vector for any info spread (if SEAM supplied)
+  ###Only zero values updated here so information can refresh nodes that lost information
   if(is.matrix(SEAM) == T)
     {
     RandSEAM[] <- rbinom(n=nrow(SDDprob)^2, size=1, prob = SEAM*Detected)
@@ -391,8 +457,16 @@ for(timestep in 1:Ntimesteps)
  ###Select new nodes where infestation detected
  NewHaveInfo =  rbinom(1:nrow(SDDprob),size = 1,prob = Invaded*NodeDetectionProb)
  
+ ###Record newly detected infestations as known local presence
+ if(UseInfoPersistence == T)
+   {
+   KnownPresence = which(NewHaveInfo == 1)
+   if(length(KnownPresence) > 0)
+     LastKnownPresence[KnownPresence] = timestep
+   }
+ 
  ###Add newly detected infestations to info vector
- ###Note once nodes obtain info they always have info (only zero values updated)
+ ###Only zero values updated here so information can refresh nodes that lost information
  HaveInfo[HaveInfo==0] = NewHaveInfo[HaveInfo==0]  
  
  ###Record detection status
@@ -427,7 +501,7 @@ saveRDS(DetectedResults, paste0(FileNameStem,"DetectedLargeOut.rds"))
 InvasionProb = matrix(ncol = Ntimesteps, nrow = nrow(SDDprob))
 for(timestep in 1:Ntimesteps)
 {
-TimestepData = InvasionResults[,timestep,]
+TimestepData = matrix(InvasionResults[,timestep,,drop=FALSE],nrow=nrow(SDDprob),ncol=Nperm)
 InvasionProb[,timestep] = rowSums(TimestepData)/Nperm
 }
 saveRDS(InvasionProb, paste0(FileNameStem,"InvasionProb.rds"))
