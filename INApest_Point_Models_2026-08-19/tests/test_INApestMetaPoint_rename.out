@@ -1,0 +1,44 @@
+
+R version 4.6.0 (2026-04-24) -- "Because it was There"
+Copyright (C) 2026 The R Foundation for Statistical Computing
+Platform: wasm32-unknown-emscripten (32-bit)
+
+R is free software and comes with ABSOLUTELY NO WARRANTY.
+You are welcome to redistribute it under certain conditions.
+Type 'license()' or 'licence()' for distribution details.
+
+R is a collaborative project with many contributors.
+Type 'contributors()' for more information and
+'citation()' on how to cite R or R packages in publications.
+
+Type 'demo()' for some demos, 'help()' for on-line help, or
+'help.start()' for an HTML browser interface to help.
+Type 'q()' to quit R.
+
+> setwd('/mnt-data')
+> source('INApestMetaPoint.R')
+> stopifnot(exists('INApestMetaPoint', mode='function'))
+> stopifnot(exists('INApestPoint', mode='function'))
+> stopifnot(identical(INApestPoint, INApestMetaPoint))
+> fit <- INApestMetaPoint(
++   Nperm=1, Ntimesteps=2,
++   InitialPoints=data.frame(x=0,y=0),
++   Survival=1, PropaguleProduction=0,
++   SDDkernel=INApestPointKernelFixed(0),
++   DetectionProb=0, DetectionSD=0,
++   ManageProb=0, ManageSD=0,
++   MortalityProb=0, MortalitySD=0,
++   FecundityReduction=0, FecundityReductionSD=0,
++   SpreadReduction=0, SpreadReductionSD=0,
++   DoProgress=FALSE, Seed=1
++ )
+> stopifnot(inherits(fit, 'INApestMetaPoint'))
+> stopifnot(inherits(fit, 'INApestPoint'))
+> cat('INApestMetaPoint canonical rename + legacy alias test passed.\n')
+INApestMetaPoint canonical rename + legacy alias test passed.
+> source('INApestMetaPointParallel.R')
+> stopifnot(exists('INApestMetaPointParallel', mode='function'))
+> stopifnot(exists('INApestPointParallel', mode='function'))
+> cat('INApestMetaPointParallel canonical rename + legacy alias source test passed.\n')
+INApestMetaPointParallel canonical rename + legacy alias source test passed.
+> 

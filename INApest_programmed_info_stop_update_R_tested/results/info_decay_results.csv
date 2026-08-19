@@ -1,0 +1,9 @@
+"Function","NoDecay_t1","NoDecay_t2","NoDecay_t3","Scalar05_t1","Scalar05_t2","Scalar05_t3","NodeVector_t1","NodeVector_t2","NodeVector_t3","NodeTime_t1","NodeTime_t2","NodeTime_t3","Refresh_t1","Refresh_t2","Refresh_t3","BackwardCompatible","InvalidLengthRejected"
+"INApest",900,900,900,900,452.5,233,900,450,450,900,900,0,900,1,1,TRUE,TRUE
+"INApestParallel",900,900,900,900,452.5,233,900,450,450,900,900,0,900,1,1,TRUE,TRUE
+"INApestParallelINAscene",900,900,900,900,452.5,233,900,450,450,900,900,0,900,1,1,TRUE,TRUE
+"INApestMetaParallel",900,900,900,900,452.5,233,900,450,450,900,900,0,900,1,1,TRUE,TRUE
+"INApestMetaMultipleLandUse",1800,1800,1800,1800,905,466,1800,900,900,1800,1800,0,1800,2,2,TRUE,TRUE
+"INApestMetaParallelMultipleLandUse",1800,1800,1800,1800,905,466,1800,900,900,1800,1800,0,1800,2,2,TRUE,TRUE
+"INApestMetaTransitionMatrix",900,900,900,900,452.5,233,900,450,450,900,900,0,900,1,1,TRUE,TRUE
+"INApestMetaTransitionMatrixParallel",900,900,900,900,455,226,900,450,450,900,900,0,900,1,1,TRUE,TRUE

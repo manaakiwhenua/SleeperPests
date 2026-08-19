@@ -1,0 +1,962 @@
+--- a/INApestParallel.R
++++ b/INApestParallel.R
+@@ -21,13 +21,11 @@
+ ###########################################################################
+ 
+ #######################################################################
+-###This version implements parallel processing in foreach for the permutation loop.
++###This version implements parallel processing with a PSOCK cluster and parallel::parLapply for the permutation loop.
+ ###Also manually implements steps formerly performed by INAscene
+ #######################################################################
+ 
+ ###Load the required packages 
+-library(abind)
+-library(doParallel)
+ 
+ 
+ INApestParallel = function(
+@@ -158,24 +156,18 @@
+ ###########################################################
+ 
+ #########################################################
+-###Use parallel processing in foreach loop to increase processing speed
++###Use PSOCK parallel processing to increase processing speed
+ ###Combines results for invasion, managing and detection status in 4d array
+ #########################################################
+ 
+-totalCores = detectCores()
+-#Leave one core to avoid overload your computer
+-cluster <- makeCluster(totalCores[1]-1) 
+-registerDoParallel(cluster)
+-###Loop through each realisation
+-###Nodes with information (which have detected infestation) at start of simulations
+-###vary across realisations 
+-
+-###Define a function for combining results of each permutation
+-acomb <- function(...) abind(..., along=4)
+-
+-###Need to include required packages in the .packages arguement of the foreach call
+-PermOut <- foreach(1:Nperm, .combine = 'acomb',.packages=c("abind")) %dopar% 
+-{
++detected_cores <- parallel::detectCores()
++if (is.na(detected_cores)) detected_cores <- 2L
++n_cores <- max(1L, min(Nperm, detected_cores - 1L))
++
++###Run one stochastic realisation. Function arguments and local helpers are
++###captured in this closure, avoiding fragile manual worker export lists.
++PermutationWorker <- function(i_perm)
++  {
+ InvasionResultsLoop <- array(dim = c(nrow(SDDprob),Ntimesteps))
+ ManagingResultsLoop <- InvasionResultsLoop
+ DetectedResultsLoop <- InvasionResultsLoop
+@@ -496,12 +488,27 @@
+  ###Record detection status
+  DetectedResultsLoop[,timestep] = HaveInfo*Invaded
+ }
+-abind(InvasionResultsLoop,ManagingResultsLoop,DetectedResultsLoop,along = 3)
++simplify2array(list(InvasionResultsLoop, ManagingResultsLoop, DetectedResultsLoop), higher = TRUE)
+ }
+-stopCluster(cluster)
++
++###Use a common PSOCK/parLapply architecture across parallel INApest variants.
++###Static scheduling and L'Ecuyer-CMRG worker streams support reproducible
++###parallel simulations when the caller fixes the R seed.
++if(n_cores == 1L)
++  {
++  PermutationResults <- lapply(seq_len(Nperm), PermutationWorker)
++  } else {
++  cluster <- parallel::makeCluster(n_cores, type = "PSOCK")
++  on.exit(if(inherits(cluster, "cluster")) parallel::stopCluster(cluster), add = TRUE)
++  parallel::clusterSetRNGStream(cluster)
++  PermutationResults <- parallel::parLapply(cluster, seq_len(Nperm), PermutationWorker)
++  parallel::stopCluster(cluster)
++  cluster <- NULL
++  }
++PermOut <- simplify2array(PermutationResults, higher = TRUE)
+ 
+ ###Extract results for invasion, managing and dectection status into separate 3d arrays
+-###foreach returns the simulation array without a permutation dimension when Nperm = 1
++###Ensure a permutation dimension is retained when Nperm = 1
+ if(length(dim(PermOut)) == 3)
+   dim(PermOut) = c(dim(PermOut),1)
+ InvasionResults <- array(PermOut[,,1,,drop=FALSE],dim = c(nrow(SDDprob),Ntimesteps,Nperm))
+--- a/INApestParallelInAScene.R
++++ b/INApestParallelInAScene.R
+@@ -21,14 +21,12 @@
+ ###########################################################################
+ 
+ #######################################################################
+-###This implements parallel processing in foreach for the permutation loop.
++###This implements parallel processing with a PSOCK cluster and parallel::parLapply for the permutation loop.
+ ###See file "ParallelSetup.r" for notes on steps for setting up parallel processing
+ #######################################################################
+ 
+ ###Load the required packages 
+-library(abind)
+ library(INA)
+-library(doParallel)
+ 
+ 
+ INApestParallelINAscene = function(
+@@ -161,24 +159,18 @@
+ ###########################################################
+ 
+ #########################################################
+-###Use parallel processing in foreach loop to increase processing speed
++###Use PSOCK parallel processing to increase processing speed
+ ###Combines results for invasion, managing and detection status in 4d array
+ #########################################################
+ 
+-totalCores = detectCores()
+-#Leave one core to avoid overload your computer
+-cluster <- makeCluster(totalCores[1]-1) 
+-registerDoParallel(cluster)
+-###Loop through each realisation
+-###Nodes with information (which have detected infestation) at start of simulations
+-###vary across realisations 
+-
+-###Define a function for combining results of each permutation
+-acomb <- function(...) abind(..., along=4)
+-
+-###Need to include required packages in the .packages arguement of the foreach call
+-PermOut <- foreach(1:Nperm, .combine = 'acomb',.packages=c("abind","INA")) %dopar% 
+-{
++detected_cores <- parallel::detectCores()
++if (is.na(detected_cores)) detected_cores <- 2L
++n_cores <- max(1L, min(Nperm, detected_cores - 1L))
++
++###Run one stochastic realisation. Function arguments and local helpers are
++###captured in this closure, avoiding fragile manual worker export lists.
++PermutationWorker <- function(i_perm)
++  {
+ InvasionResultsLoop <- array(dim = c(nrow(SDDprob),Ntimesteps))
+ ManagingResultsLoop <- InvasionResultsLoop
+ DetectedResultsLoop <- InvasionResultsLoop
+@@ -426,7 +418,7 @@
+   
+   HaveInfoBeforeSpread = HaveInfo
+   INAsceneLarge <-
+-  INAscene(
++  INA::INAscene(
+     nreals = 1,
+     ntimesteps = 1,
+     doplot = F,
+@@ -573,12 +565,27 @@
+  ###Record detection status
+  DetectedResultsLoop[,timestep] = HaveInfo*Invaded
+ }
+-abind(InvasionResultsLoop,ManagingResultsLoop,DetectedResultsLoop,along = 3)
++simplify2array(list(InvasionResultsLoop, ManagingResultsLoop, DetectedResultsLoop), higher = TRUE)
+ }
+-stopCluster(cluster)
++
++###Use a common PSOCK/parLapply architecture across parallel INApest variants.
++###Static scheduling and L'Ecuyer-CMRG worker streams support reproducible
++###parallel simulations when the caller fixes the R seed.
++if(n_cores == 1L)
++  {
++  PermutationResults <- lapply(seq_len(Nperm), PermutationWorker)
++  } else {
++  cluster <- parallel::makeCluster(n_cores, type = "PSOCK")
++  on.exit(if(inherits(cluster, "cluster")) parallel::stopCluster(cluster), add = TRUE)
++  parallel::clusterSetRNGStream(cluster)
++  PermutationResults <- parallel::parLapply(cluster, seq_len(Nperm), PermutationWorker)
++  parallel::stopCluster(cluster)
++  cluster <- NULL
++  }
++PermOut <- simplify2array(PermutationResults, higher = TRUE)
+ 
+ ###Extract results for invasion, managing and dectection status into separate 3d arrays
+-###foreach returns the simulation array without a permutation dimension when Nperm = 1
++###Ensure a permutation dimension is retained when Nperm = 1
+ if(length(dim(PermOut)) == 3)
+   dim(PermOut) = c(dim(PermOut),1)
+ InvasionResults <- array(PermOut[,,1,,drop=FALSE],dim = c(nrow(SDDprob),Ntimesteps,Nperm))
+--- a/INApestMetaParallel.r
++++ b/INApestMetaParallel.r
+@@ -21,12 +21,10 @@
+ ###########################################################################
+ 
+ #######################################################################
+-###This version implements parallel processing in foreach for the permutation loop.
++###This version implements parallel processing with a PSOCK cluster and parallel::parLapply for the permutation loop.
+ ###See file "ParallelSetup.r" for notes on steps for setting up parallel processing
+ #######################################################################
+ 
+-library(abind)
+-library(doParallel)
+ 
+ 
+ INApestMetaParallel = function(
+@@ -39,6 +37,7 @@
+ ManageSD = NULL, #Option to provide standard deviation for management probability. Can be single number or vector (nodes)
+ MortalityProb,           #Mortality probability under management
+ MortalitySD = NULL, #Option to provide standard deviation for mortality probability. Can be single number or vector (nodes)
++FecundityReduction = 0, #Proportional reduction in per-capita fecundity under management: scalar, vector (nodes), or matrix (nodes x timesteps)
+ SpreadReduction,        #Reduction in dispersal probability when management adopted. Must be between 0 (no spread reduction) and 1 (complete prevention of spread). Can be single value or vector length nrow(SDDprob)
+ SpreadReductionSD = NULL, #Option to provide standard deviation for spread reduction. Can be single number or vector (nodes)
+ InitialPopulation = NA,        #Vector of population sizes at start of simulations
+@@ -77,6 +76,15 @@
+   stop("SDDprob 3D array must have dimensions nodes x nodes x Ntimesteps")
+ if(length(dim(LDDprob)) == 3 && (dim(LDDprob)[1] != nrow(SDDprob) || dim(LDDprob)[2] != nrow(SDDprob) || dim(LDDprob)[3] != Ntimesteps))
+   stop("LDDprob 3D array must have dimensions nodes x nodes x Ntimesteps")
++###Allow management-induced fecundity reduction to vary by node and through time
++if(is.matrix(FecundityReduction)) {
++  if(nrow(FecundityReduction) != nrow(SDDprob) || ncol(FecundityReduction) != Ntimesteps)
++    stop("FecundityReduction matrix must have dimensions nodes x Ntimesteps")
++} else if(!(length(FecundityReduction) == 1 || length(FecundityReduction) == nrow(SDDprob))) {
++  stop("FecundityReduction must be a single value, vector of length nodes, or matrix nodes x Ntimesteps")
++}
++if(any(!is.finite(FecundityReduction)) || any(FecundityReduction < 0) || any(FecundityReduction > 1))
++  stop("FecundityReduction values must be between 0 and 1")
+ 
+ ###Allow information retention to vary by node and through time
+ if(is.matrix(InfoRetentionProb) == T && (nrow(InfoRetentionProb) != nrow(SDDprob) || ncol(InfoRetentionProb) != Ntimesteps))
+@@ -140,19 +148,13 @@
+ ###Start of simulation
+ ###########################################################
+     
+-totalCores = detectCores()
+-#Leave one core to avoid overload your computer
+-cluster <- makeCluster(totalCores[1]-1) 
+-registerDoParallel(cluster)
+-###Loop through each realisation
+-###Nodes with information (which have detected infestation) at start of simulations
+-###vary across realisations 
+-
+-###Define a function for combining results of each permutation
+-acomb <- function(...) abind(..., along=4)
+-
+-###Need to include required packages in the .packages arguement of the foreach call
+-PermOut <- foreach(1:Nperm, .combine = 'acomb',.packages=c("abind")) %dopar% 
++detected_cores <- parallel::detectCores()
++if (is.na(detected_cores)) detected_cores <- 2L
++n_cores <- max(1L, min(Nperm, detected_cores - 1L))
++
++###Run one stochastic realisation. Function arguments and local helpers are
++###captured in this closure, avoiding fragile manual worker export lists.
++PermutationWorker <- function(i_perm)
+   {
+   ###Max integer for propagule dispersal using rmultinom
+   MaxInteger <- .Machine$integer.max  
+@@ -164,6 +166,9 @@
+   NodeLDDprob = LDDprob
+   if(length(dim(LDDprob)) == 3)
+     NodeLDDprob = LDDprob[,,1]
++  NodeFecundityReduction <- if(is.matrix(FecundityReduction)) FecundityReduction[,1] else FecundityReduction
++  if(length(NodeFecundityReduction) == 1)
++    NodeFecundityReduction <- rep(NodeFecundityReduction, nrow(SDDprob))
+   
+   InvasionResultsLoop <- array(dim = c(nrow(SDDprob),Ntimesteps))
+   PopulationResultsLoop <- InvasionResultsLoop
+@@ -331,6 +336,8 @@
+     NodeSDDprob = SDDprob[,,timestep]
+   if(length(dim(LDDprob)) == 3)
+     NodeLDDprob = LDDprob[,,timestep]
++  if(is.matrix(FecundityReduction))
++    NodeFecundityReduction <- FecundityReduction[,timestep]
+ 
+   ###Allow for variation in establishment through time
+   ###e.g.  climate change predictions
+@@ -439,7 +446,8 @@
+   if(sum(N0)>0 ) 
+   {
+     
+-  Propagules <- rpois(nrow(SDDprob), NodePropaguleProduction * N0)# propagules are produced
++  EffectiveReproductivePopulation <- N0 * (1-NodeFecundityReduction*Managing)
++  Propagules <- rpois(nrow(SDDprob), NodePropaguleProduction * EffectiveReproductivePopulation)# propagules are produced after management effects on fecundity
+   
+   ###natural dispersal
+   ###adjust propagule spread for environmentally determined establishment probability
+@@ -562,15 +570,30 @@
+  ###Record detection status
+  DetectedResultsLoop[,timestep] = HaveInfo*Invaded 
+  }
+- abind(InvasionResultsLoop,PopulationResultsLoop,ManagingResultsLoop,DetectedResultsLoop,along = 3)
++ simplify2array(list(InvasionResultsLoop, PopulationResultsLoop, ManagingResultsLoop, DetectedResultsLoop), higher = TRUE)
+ }
+-stopCluster(cluster)
++
++###Use a common PSOCK/parLapply architecture across parallel INApest variants.
++###Static scheduling and L'Ecuyer-CMRG worker streams support reproducible
++###parallel simulations when the caller fixes the R seed.
++if(n_cores == 1L)
++  {
++  PermutationResults <- lapply(seq_len(Nperm), PermutationWorker)
++  } else {
++  cluster <- parallel::makeCluster(n_cores, type = "PSOCK")
++  on.exit(if(inherits(cluster, "cluster")) parallel::stopCluster(cluster), add = TRUE)
++  parallel::clusterSetRNGStream(cluster)
++  PermutationResults <- parallel::parLapply(cluster, seq_len(Nperm), PermutationWorker)
++  parallel::stopCluster(cluster)
++  cluster <- NULL
++  }
++PermOut <- simplify2array(PermutationResults, higher = TRUE)
+ ###########################################################
+ ###End of Simulation
+ ###########################################################
+ 
+ ###Extract results for invasion, managing and dectection status into separate 3d arrays
+-###foreach returns the simulation array without a permutation dimension when Nperm = 1
++###Ensure a permutation dimension is retained when Nperm = 1
+ if(length(dim(PermOut)) == 3)
+   dim(PermOut) = c(dim(PermOut),1)
+ InvasionResults <- array(PermOut[,,1,,drop=FALSE],dim = c(nrow(SDDprob),Ntimesteps,Nperm))
+@@ -838,7 +861,6 @@
+ lines(Quantiles[,1],Yvals[,3],lwd = 3,col = 2)
+ dev.off()
+ }
+-closeAllConnections()
+ }
+ 
+ 
+--- a/INApestMetaMultipleLandUse.r
++++ b/INApestMetaMultipleLandUse.r
+@@ -39,9 +39,10 @@
+ 
+ local.dynamicsLU = function(sddprob = SDDprob, nodepropaguleproduction = NodePropaguleProduction,nodeenvestabprob = NodeEnvEstabProb,n=N0,
+ lddprob = LDDprob, lddrate = LDDrate,k_is_0 = K_is_0, nodeK = NodeK,nodepropaguleestablishment = NodePropaguleEstablishment,
+-nodespreadreduction = NodeSpreadReduction,managing = Managing)
++nodespreadreduction = NodeSpreadReduction,nodefecundityreduction = NodeFecundityReduction,managing = Managing)
+ {
+-Propagules <- rpois(nrow(sddprob), nodepropaguleproduction * rowSums(n))# propagules are produced
++FecundityContrib <- n * (1-nodefecundityreduction*managing)
++Propagules <- rpois(nrow(sddprob), nodepropaguleproduction * rowSums(FecundityContrib))# propagules are produced after management effects on fecundity
+       ###self-mediated spread
+       Pin = 0
+       Qin = 0
+@@ -52,7 +53,7 @@
+       ###human-mediated spread
+       if (is.matrix(lddprob)==T) 
+        {
+-       Pn = n/rowSums(n)
++       Pn = FecundityContrib/rowSums(FecundityContrib)
+        Pn[is.na(Pn)==TRUE] = 0
+        Qout  = rowSums(Propagules*lddrate*Pn *(1-nodespreadreduction*managing))       
+        if(sum(Qout)>0)  
+@@ -81,6 +82,7 @@
+ ManageSD = NULL, #Option to provide standard deviation for management probability can be single number or vector (nodes)
+ MortalityProb,           #Annual mortality probability under management
+ MortalitySD = NULL, #Option to provide standard deviation for management probability can be single number or vector (nodes)
++FecundityReduction = 0, #Proportional reduction in per-capita fecundity under management: scalar, vector (land uses), matrix (nodes x land uses), or array (nodes x land uses x timesteps)
+ SpreadReduction,        #Reduction in dispersal probability when management adopted. Must be between 0 (no spread reduction) and 1 (complete prevention of spread). Can be single value or vector length nrow(SDDprob)
+ SpreadReductionSD = NULL, #Option to provide standard deviation for management probability can be single number or vector (nodes)
+ InitialPopulation = NA,        #Vector or matrix (nodes x timesteps) of population sizes at start of simulations
+@@ -120,6 +122,33 @@
+   if(length(dim(LDDprob)) == 3 && (dim(LDDprob)[1] != nrow(SDDprob) || dim(LDDprob)[2] != nrow(SDDprob) || dim(LDDprob)[3] != Ntimesteps))
+     stop("LDDprob 3D array must have dimensions nodes x nodes x Ntimesteps")
+ 
++###Allow management-induced fecundity reduction to vary by land use, node and time
++FecundityReductionDims <- dim(FecundityReduction)
++if(is.null(FecundityReductionDims)) {
++  if(!(length(FecundityReduction) == 1 || length(FecundityReduction) == Nlanduses))
++    stop("FecundityReduction must be scalar, length Nlanduses, nodes x land uses, or nodes x land uses x Ntimesteps")
++} else if(length(FecundityReductionDims) == 2) {
++  if(!all(FecundityReductionDims == c(nrow(SDDprob), Nlanduses)))
++    stop("FecundityReduction matrix must have dimensions nodes x land uses")
++} else if(length(FecundityReductionDims) == 3) {
++  if(!all(FecundityReductionDims == c(nrow(SDDprob), Nlanduses, Ntimesteps)))
++    stop("FecundityReduction array must have dimensions nodes x land uses x Ntimesteps")
++} else {
++  stop("FecundityReduction must be scalar, length Nlanduses, nodes x land uses, or nodes x land uses x Ntimesteps")
++}
++if(any(!is.finite(FecundityReduction)) || any(FecundityReduction < 0) || any(FecundityReduction > 1))
++  stop("FecundityReduction values must be between 0 and 1")
++
++ResolveFecundityReductionLU <- function(timestep) {
++  if(is.null(dim(FecundityReduction))) {
++    if(length(FecundityReduction) == 1)
++      return(matrix(FecundityReduction, nrow = nrow(SDDprob), ncol = Nlanduses))
++    return(matrix(rep(FecundityReduction, each = nrow(SDDprob)), nrow = nrow(SDDprob), ncol = Nlanduses))
++  }
++  if(length(dim(FecundityReduction)) == 2) return(FecundityReduction)
++  FecundityReduction[,,timestep]
++}
++
+ ###Allow information retention to vary by node and through time
+ if(is.matrix(InfoRetentionProb) == T && (nrow(InfoRetentionProb) != nrow(SDDprob) || ncol(InfoRetentionProb) != Ntimesteps))
+   stop("InfoRetentionProb matrix must have dimensions nodes x Ntimesteps")
+@@ -404,6 +433,7 @@
+       NodeSDDprob = SDDprob[,,timestep]
+     if(length(dim(LDDprob)) == 3)
+       NodeLDDprob = LDDprob[,,timestep]
++    NodeFecundityReduction <- ResolveFecundityReductionLU(timestep)
+ 
+     ###Allow for variation in establishment through time
+     ###e.g.  climate change predictions
+@@ -520,9 +550,16 @@
+   if(sum(N0)>0 ) 
+     {
+       
+-    N <- LocalDynamics(sddprob = NodeSDDprob, nodepropaguleproduction = NodePropaguleProduction,nodeenvestabprob = NodeEnvEstabProb,n=N0,
+-                     lddprob = NodeLDDprob, lddrate = LDDrate,k_is_0 = K_is_0, nodeK = NodeK,nodepropaguleestablishment = NodePropaguleEstablishment,
+-                     nodespreadreduction = NodeSpreadReduction,managing = Managing)
++    LocalDynamicsArgs <- list(sddprob = NodeSDDprob, nodepropaguleproduction = NodePropaguleProduction, nodeenvestabprob = NodeEnvEstabProb, n = N0,
++                              lddprob = NodeLDDprob, lddrate = LDDrate, k_is_0 = K_is_0, nodeK = NodeK, nodepropaguleestablishment = NodePropaguleEstablishment,
++                              nodespreadreduction = NodeSpreadReduction, managing = Managing)
++    LocalDynamicsFormals <- names(formals(LocalDynamics))
++    LocalDynamicsAcceptsFecundityReduction <- "nodefecundityreduction" %in% LocalDynamicsFormals || "..." %in% LocalDynamicsFormals
++    if(LocalDynamicsAcceptsFecundityReduction)
++      LocalDynamicsArgs$nodefecundityreduction <- NodeFecundityReduction
++    else if(any(NodeFecundityReduction * Managing > 0))
++      stop("Custom LocalDynamics must accept a 'nodefecundityreduction' argument (or ...) when FecundityReduction is active")
++    N <- do.call(LocalDynamics, LocalDynamicsArgs)
+     } 
+  ###Apply programmed stopping after last known local presence
+ NodeInfoPersistenceSteps = InfoPersistenceSteps
+--- a/INApestMetaParallelMultipleLandUse.r
++++ b/INApestMetaParallelMultipleLandUse.r
+@@ -21,14 +21,12 @@
+ ###########################################################################
+ 
+ #######################################################################
+-###This version implements parallel processing in foreach for the permutation loop.
++###This version implements parallel processing with a PSOCK cluster and parallel::parLapply for the permutation loop.
+ ###See file "ParallelSetup.r" for notes on steps for setting up parallel processing
+ ###Allows for multiple land uses within a location, each with different management parameters 
+ ###and carrying capacity
+ #######################################################################
+ 
+-library(abind)
+-library(doParallel)
+ 
+ 
+ INApestMetaParallelMultipleLandUse = function(
+@@ -42,6 +40,7 @@
+ ManageSD = NULL, #Option to provide standard deviation for management probability can be single number or vector (nodes)
+ MortalityProb,           ##Vector of probabilities per land use, matrix (nodes x land uses) or 3d array (land uses x nodes x timesteps). Must be between 0 and 1.
+ MortalitySD = NULL, #Option to provide standard deviation for management probability can be single number or vector (nodes)
++FecundityReduction = 0, #Proportional reduction in per-capita fecundity under management: scalar, vector (land uses), matrix (nodes x land uses), or array (nodes x land uses x timesteps)
+ SpreadReduction,        ##Vector of probabilities per land use, matrix (nodes x land uses) or 3d array (land uses x nodes x timesteps). Must be between 0 and 1.
+ SpreadReductionSD = NULL, #Option to provide standard deviation for management probability can be single number or vector (nodes)
+ InitialPopulation = NA,        #Matrix (nodes x land uses) of population sizes at start of simulations
+@@ -81,6 +80,33 @@
+ if(length(dim(LDDprob)) == 3 && (dim(LDDprob)[1] != nrow(SDDprob) || dim(LDDprob)[2] != nrow(SDDprob) || dim(LDDprob)[3] != Ntimesteps))
+   stop("LDDprob 3D array must have dimensions nodes x nodes x Ntimesteps")
+ 
++###Allow management-induced fecundity reduction to vary by land use, node and time
++FecundityReductionDims <- dim(FecundityReduction)
++if(is.null(FecundityReductionDims)) {
++  if(!(length(FecundityReduction) == 1 || length(FecundityReduction) == Nlanduses))
++    stop("FecundityReduction must be scalar, length Nlanduses, nodes x land uses, or nodes x land uses x Ntimesteps")
++} else if(length(FecundityReductionDims) == 2) {
++  if(!all(FecundityReductionDims == c(nrow(SDDprob), Nlanduses)))
++    stop("FecundityReduction matrix must have dimensions nodes x land uses")
++} else if(length(FecundityReductionDims) == 3) {
++  if(!all(FecundityReductionDims == c(nrow(SDDprob), Nlanduses, Ntimesteps)))
++    stop("FecundityReduction array must have dimensions nodes x land uses x Ntimesteps")
++} else {
++  stop("FecundityReduction must be scalar, length Nlanduses, nodes x land uses, or nodes x land uses x Ntimesteps")
++}
++if(any(!is.finite(FecundityReduction)) || any(FecundityReduction < 0) || any(FecundityReduction > 1))
++  stop("FecundityReduction values must be between 0 and 1")
++
++ResolveFecundityReductionLU <- function(timestep) {
++  if(is.null(dim(FecundityReduction))) {
++    if(length(FecundityReduction) == 1)
++      return(matrix(FecundityReduction, nrow = nrow(SDDprob), ncol = Nlanduses))
++    return(matrix(rep(FecundityReduction, each = nrow(SDDprob)), nrow = nrow(SDDprob), ncol = Nlanduses))
++  }
++  if(length(dim(FecundityReduction)) == 2) return(FecundityReduction)
++  FecundityReduction[,,timestep]
++}
++
+ ###Allow information retention to vary by node and through time
+ if(is.matrix(InfoRetentionProb) == T && (nrow(InfoRetentionProb) != nrow(SDDprob) || ncol(InfoRetentionProb) != Ntimesteps))
+   stop("InfoRetentionProb matrix must have dimensions nodes x Ntimesteps")
+@@ -152,19 +178,13 @@
+ ###Start of simulation
+ ###########################################################
+     
+-totalCores = detectCores()
+-#Leave one core to avoid overload your computer
+-cluster <- makeCluster(totalCores[1]-1) 
+-registerDoParallel(cluster)
+-###Loop through each realisation
+-###Nodes with information (which have detected infestation) at start of simulations
+-###vary across realisations 
+-
+-###Define a function for combining results of each permutation
+-acomb <- function(...) abind(..., along=5)
+-
+-###Need to include required packages in the .packages arguement of the foreach call
+-PermOut <- foreach(1:Nperm, .combine = 'acomb',.packages=c("abind")) %dopar% 
++detected_cores <- parallel::detectCores()
++if (is.na(detected_cores)) detected_cores <- 2L
++n_cores <- max(1L, min(Nperm, detected_cores - 1L))
++
++###Run one stochastic realisation. Function arguments and local helpers are
++###captured in this closure, avoiding fragile manual worker export lists.
++PermutationWorker <- function(i_perm)
+   {
+   ###Set initial dispersal connectivity
+   NodeSDDprob = SDDprob
+@@ -370,6 +390,7 @@
+     NodeSDDprob = SDDprob[,,timestep]
+   if(length(dim(LDDprob)) == 3)
+     NodeLDDprob = LDDprob[,,timestep]
++  NodeFecundityReduction <- ResolveFecundityReductionLU(timestep)
+ 
+   ###Allow for variation in establishment through time
+   ###e.g.  climate change predictions
+@@ -485,7 +506,8 @@
+     # natural dispersal 
+   if(sum(N0)>0 ) 
+   {
+-  Propagules <- rpois(nrow(SDDprob), NodePropaguleProduction * rowSums(N0))# propagules are produced
++  FecundityContrib <- N0 * (1-NodeFecundityReduction*Managing)
++  Propagules <- rpois(nrow(SDDprob), NodePropaguleProduction * rowSums(FecundityContrib))# propagules are produced after management effects on fecundity
+   ###natural dispersal
+   ###adjust propagule spread for environmentally determined establishment probability
+   ###in receiving nodes
+@@ -498,7 +520,7 @@
+   if (is.matrix(NodeLDDprob)==T) 
+     {
+     ###Do this to share LDD propagules between landuses (for application of spread reduction)
+-    PN0 = N0/rowSums(N0)
++    PN0 = FecundityContrib/rowSums(FecundityContrib)
+     PN0[is.na(PN0)==TRUE] = 0
+     Qout  = rowSums(Propagules*LDDrate*PN0 *(1-NodeSpreadReduction*Managing))       
+     if(sum(Qout)>0)  
+@@ -618,15 +640,30 @@
+  ###Record detection status
+  DetectedResultsLoop[,,timestep] = HaveInfo*Invaded 
+  }
+- abind(InvasionResultsLoop,PopulationResultsLoop,ManagingResultsLoop,DetectedResultsLoop,along = 4)
++ simplify2array(list(InvasionResultsLoop, PopulationResultsLoop, ManagingResultsLoop, DetectedResultsLoop), higher = TRUE)
+ }
+-stopCluster(cluster)
++
++###Use a common PSOCK/parLapply architecture across parallel INApest variants.
++###Static scheduling and L'Ecuyer-CMRG worker streams support reproducible
++###parallel simulations when the caller fixes the R seed.
++if(n_cores == 1L)
++  {
++  PermutationResults <- lapply(seq_len(Nperm), PermutationWorker)
++  } else {
++  cluster <- parallel::makeCluster(n_cores, type = "PSOCK")
++  on.exit(if(inherits(cluster, "cluster")) parallel::stopCluster(cluster), add = TRUE)
++  parallel::clusterSetRNGStream(cluster)
++  PermutationResults <- parallel::parLapply(cluster, seq_len(Nperm), PermutationWorker)
++  parallel::stopCluster(cluster)
++  cluster <- NULL
++  }
++PermOut <- simplify2array(PermutationResults, higher = TRUE)
+ ###########################################################
+ ###End of Simulation
+ ###########################################################
+ 
+ ###Extract results for invasion, managing and dectection status into separate 4d arrays
+-###foreach returns the simulation array without a permutation dimension when Nperm = 1
++###Ensure a permutation dimension is retained when Nperm = 1
+ if(length(dim(PermOut)) == 4)
+   dim(PermOut) = c(dim(PermOut),1)
+ InvasionResults <- array(PermOut[,,,1,,drop=FALSE],dim = c(nrow(SDDprob),Nlanduses,Ntimesteps,Nperm))
+--- a/INApestMetaTransitionMatrix.r
++++ b/INApestMetaTransitionMatrix.r
+@@ -40,6 +40,7 @@
+     node.seedbankK = NodeSeedbankK,
+     nodepropaguleestablishment = NodePropaguleEstablishment,
+     nodespreadreduction = NodeSpreadReduction,
++    nodefecundityreduction = NodeFecundityReduction,
+     managing = Managing,
+     MaxInteger = MaxInteger,
+     ApplyFootprintToTransitions = FALSE,
+@@ -49,6 +50,25 @@
+   n_pops <- nrow(n0)
+   S <- ncol(n0)
+   n <- t(n0)
++
++  if(is.null(dim(nodefecundityreduction))) {
++    if(length(nodefecundityreduction) > 1 && n_pops == S && length(nodefecundityreduction) == n_pops)
++      stop("nodefecundityreduction vector is ambiguous because n_pops equals S; supply an n_pops x S matrix")
++    if(length(nodefecundityreduction) == 1) {
++      nodefecundityreduction <- matrix(nodefecundityreduction, nrow = n_pops, ncol = S)
++    } else if(length(nodefecundityreduction) == n_pops) {
++      nodefecundityreduction <- matrix(rep(nodefecundityreduction, S), nrow = n_pops, ncol = S)
++    } else if(length(nodefecundityreduction) == S) {
++      nodefecundityreduction <- matrix(rep(nodefecundityreduction, each = n_pops), nrow = n_pops, ncol = S)
++    } else {
++      stop("nodefecundityreduction must be scalar, length n_pops, length S, or an n_pops x S matrix")
++    }
++  } else if(!identical(dim(nodefecundityreduction), c(n_pops, S))) {
++    stop("nodefecundityreduction matrix must have dimensions n_pops x S")
++  }
++  if(any(!is.finite(nodefecundityreduction)) || any(nodefecundityreduction < 0) || any(nodefecundityreduction > 1))
++    stop("nodefecundityreduction values must be between 0 and 1")
++  EffectiveFecundityMultiplier <- 1 - nodefecundityreduction * managing
+   
+   # Stage weights may be supplied in the original form as one value per
+   # stage, or as an n_pops x S matrix for node-specific stage weights.
+@@ -165,7 +185,8 @@
+       numeric(1)
+     )
+     
+-    fec_means <- colSums(fecundity * n[-1, , drop = FALSE])
++    EffectiveFecundity <- fecundity * t(EffectiveFecundityMultiplier[, 2:S, drop = FALSE])
++    fec_means <- colSums(EffectiveFecundity * n[-1, , drop = FALSE])
+     mother_counts <- colSums(
+       n[-1, , drop = FALSE] * (fecundity > 0)
+     )
+@@ -176,9 +197,9 @@
+     stasis_probabilities <- diag(nodetransition)[1:(S - 1)]
+     terminal_survival_prob <- nodetransition[S, S]
+     
+-    fec_means <- as.numeric(
+-      fecundity %*% n[-1, , drop = FALSE]
+-    )
++    EffectiveFecundity <- matrix(rep(fecundity, n_pops), nrow = S - 1L, ncol = n_pops) *
++      t(EffectiveFecundityMultiplier[, 2:S, drop = FALSE])
++    fec_means <- colSums(EffectiveFecundity * n[-1, , drop = FALSE])
+     
+     reproductive_stages <- which(fecundity > 0) + 1L
+     mother_counts <- if (length(reproductive_stages)) {
+@@ -1034,6 +1055,7 @@
+ MortalityProb,           ##Vector of Per-individual mortality probability for each stage, or matrix of probabilities per stage per node (e.g. farm) 
+                          #or 3D array of probabilities per stage per node per year (must be between 0 and 1)
+ MortalitySD = NULL, #Option to provide standard deviation for mortality probability. Can be single number or vector (nodes)
++FecundityReduction = 0, #Proportional reduction in fecundity under management: scalar; vector (nodes or stages); matrix (nodes x timesteps); or array (nodes x stages x timesteps)
+ SpreadReduction,        #Reduction in dispersal probability when management adopted. Must be between 0 (no spread reduction) and 1 (complete prevention of spread). Can be single value or vector length nrow(SDDprob)
+ SpreadReductionSD = NULL, #Option to provide standard deviation for spread reduction probability can be single number or vector (nodes)
+ InitialPopulation = NA,        #matrix (nodes x stages) of population sizes at start of simulations
+@@ -1161,6 +1183,40 @@
+      RandSEAM <- matrix(NA,nrow = nrow(SDDprob),ncol=nrow(SDDprob))
+      }
+ 
++###Validate management-induced fecundity reduction
++n_nodes <- nrow(SDDprob)
++FecundityReductionDims <- dim(FecundityReduction)
++if(is.null(FecundityReductionDims)) {
++  valid_lengths <- unique(c(1L, n_nodes, Nstages))
++  if(!(length(FecundityReduction) %in% valid_lengths))
++    stop("FecundityReduction must be scalar, length nodes, length Nstages, nodes x Ntimesteps, or nodes x Nstages x Ntimesteps")
++  if(length(FecundityReduction) > 1 && n_nodes == Nstages && length(FecundityReduction) == n_nodes)
++    stop("FecundityReduction vector is ambiguous because number of nodes equals Nstages; use a nodes x Ntimesteps matrix for node-specific values or a nodes x Nstages x Ntimesteps array for stage-specific values")
++} else if(length(FecundityReductionDims) == 2) {
++  if(!all(FecundityReductionDims == c(n_nodes, Ntimesteps)))
++    stop("FecundityReduction matrix must have dimensions nodes x Ntimesteps")
++} else if(length(FecundityReductionDims) == 3) {
++  if(!all(FecundityReductionDims == c(n_nodes, Nstages, Ntimesteps)))
++    stop("FecundityReduction array must have dimensions nodes x Nstages x Ntimesteps")
++} else {
++  stop("FecundityReduction must be scalar, length nodes, length Nstages, nodes x Ntimesteps, or nodes x Nstages x Ntimesteps")
++}
++if(any(!is.finite(FecundityReduction)) || any(FecundityReduction < 0) || any(FecundityReduction > 1))
++  stop("FecundityReduction values must be between 0 and 1")
++
++ResolveFecundityReductionTM <- function(timestep) {
++  if(is.null(dim(FecundityReduction))) {
++    if(length(FecundityReduction) == 1)
++      return(matrix(FecundityReduction, nrow = n_nodes, ncol = Nstages))
++    if(length(FecundityReduction) == n_nodes)
++      return(matrix(rep(FecundityReduction, Nstages), nrow = n_nodes, ncol = Nstages))
++    return(matrix(rep(FecundityReduction, each = n_nodes), nrow = n_nodes, ncol = Nstages))
++  }
++  if(length(dim(FecundityReduction)) == 2)
++    return(matrix(rep(FecundityReduction[,timestep], Nstages), nrow = n_nodes, ncol = Nstages))
++  FecundityReduction[,,timestep]
++}
++
+ ###Assign standard deviation value to management in no value provided
+ if(is.null(ManageSD) == T)
+ 	ManageSD = mean(ManageProb)/10
+@@ -1492,6 +1548,7 @@
+     NodeLDDprob = LDDprob
+     if(length(dim(LDDprob)) == 3)
+       NodeLDDprob = LDDprob[,,timestep]
++    NodeFecundityReduction <- ResolveFecundityReductionTM(timestep)
+ 
+     ###Allow for variation in recruit establishment through time
+     ###e.g.  climate change predictions
+@@ -1590,12 +1647,20 @@
+   if(sum(N0)>0 ) 
+   {
+       
+-  N <- LocalDynamics(nodetransition = NodeTransition,weights = Weights,sddprob = NodeSDDprob, nodeenvestabprob = NodeEnvEstabProb,n0=N0,
+-                     lddprob = NodeLDDprob, lddrate = LDDrate, nodeK = NodeK, 
+-                     node.seedbankK = NodeSeedbankK,nodepropaguleestablishment = NodePropaguleEstablishment,
+-                     nodespreadreduction = NodeSpreadReduction,managing = Managing,
+-                     MaxInteger=MaxInteger,BlockedTransitionMortality = BlockedTransitionMortality,
+-                     DispersalDensityFactor = DispersalDensityFactor)
++  LocalDynamicsArgs <- list(nodetransition = NodeTransition, weights = Weights, sddprob = NodeSDDprob,
++                            nodeenvestabprob = NodeEnvEstabProb, n0 = N0, lddprob = NodeLDDprob,
++                            lddrate = LDDrate, nodeK = NodeK, node.seedbankK = NodeSeedbankK,
++                            nodepropaguleestablishment = NodePropaguleEstablishment,
++                            nodespreadreduction = NodeSpreadReduction, managing = Managing,
++                            MaxInteger = MaxInteger, BlockedTransitionMortality = BlockedTransitionMortality,
++                            DispersalDensityFactor = DispersalDensityFactor)
++  LocalDynamicsFormals <- names(formals(LocalDynamics))
++  LocalDynamicsAcceptsFecundityReduction <- "nodefecundityreduction" %in% LocalDynamicsFormals || "..." %in% LocalDynamicsFormals
++  if(LocalDynamicsAcceptsFecundityReduction)
++    LocalDynamicsArgs$nodefecundityreduction <- NodeFecundityReduction
++  else if(any(NodeFecundityReduction * Managing > 0))
++    stop("Custom LocalDynamics must accept a 'nodefecundityreduction' argument (or ...) when FecundityReduction is active")
++  N <- do.call(LocalDynamics, LocalDynamicsArgs)
+   } 
+  ###Apply programmed stopping after last known local presence
+ NodeInfoPersistenceSteps = InfoPersistenceSteps
+--- a/INApestMetaTransitionMatrixParallel.r
++++ b/INApestMetaTransitionMatrixParallel.r
+@@ -40,6 +40,7 @@
+     node.seedbankK = NodeSeedbankK,
+     nodepropaguleestablishment = NodePropaguleEstablishment,
+     nodespreadreduction = NodeSpreadReduction,
++    nodefecundityreduction = NodeFecundityReduction,
+     managing = Managing,
+     MaxInteger = MaxInteger,
+     ApplyFootprintToTransitions = FALSE,
+@@ -49,6 +50,25 @@
+   n_pops <- nrow(n0)
+   S <- ncol(n0)
+   n <- t(n0)
++
++  if(is.null(dim(nodefecundityreduction))) {
++    if(length(nodefecundityreduction) > 1 && n_pops == S && length(nodefecundityreduction) == n_pops)
++      stop("nodefecundityreduction vector is ambiguous because n_pops equals S; supply an n_pops x S matrix")
++    if(length(nodefecundityreduction) == 1) {
++      nodefecundityreduction <- matrix(nodefecundityreduction, nrow = n_pops, ncol = S)
++    } else if(length(nodefecundityreduction) == n_pops) {
++      nodefecundityreduction <- matrix(rep(nodefecundityreduction, S), nrow = n_pops, ncol = S)
++    } else if(length(nodefecundityreduction) == S) {
++      nodefecundityreduction <- matrix(rep(nodefecundityreduction, each = n_pops), nrow = n_pops, ncol = S)
++    } else {
++      stop("nodefecundityreduction must be scalar, length n_pops, length S, or an n_pops x S matrix")
++    }
++  } else if(!identical(dim(nodefecundityreduction), c(n_pops, S))) {
++    stop("nodefecundityreduction matrix must have dimensions n_pops x S")
++  }
++  if(any(!is.finite(nodefecundityreduction)) || any(nodefecundityreduction < 0) || any(nodefecundityreduction > 1))
++    stop("nodefecundityreduction values must be between 0 and 1")
++  EffectiveFecundityMultiplier <- 1 - nodefecundityreduction * managing
+   
+   # Stage weights may be supplied in the original form as one value per
+   # stage, or as an n_pops x S matrix for node-specific stage weights.
+@@ -165,7 +185,8 @@
+       numeric(1)
+     )
+     
+-    fec_means <- colSums(fecundity * n[-1, , drop = FALSE])
++    EffectiveFecundity <- fecundity * t(EffectiveFecundityMultiplier[, 2:S, drop = FALSE])
++    fec_means <- colSums(EffectiveFecundity * n[-1, , drop = FALSE])
+     mother_counts <- colSums(
+       n[-1, , drop = FALSE] * (fecundity > 0)
+     )
+@@ -176,9 +197,9 @@
+     stasis_probabilities <- diag(nodetransition)[1:(S - 1)]
+     terminal_survival_prob <- nodetransition[S, S]
+     
+-    fec_means <- as.numeric(
+-      fecundity %*% n[-1, , drop = FALSE]
+-    )
++    EffectiveFecundity <- matrix(rep(fecundity, n_pops), nrow = S - 1L, ncol = n_pops) *
++      t(EffectiveFecundityMultiplier[, 2:S, drop = FALSE])
++    fec_means <- colSums(EffectiveFecundity * n[-1, , drop = FALSE])
+     
+     reproductive_stages <- which(fecundity > 0) + 1L
+     mother_counts <- if (length(reproductive_stages)) {
+@@ -675,6 +696,7 @@
+ MortalityProb,           ##Vector of Per-individual mortality probability for each stage, or matrix of probabilities per stage per node (e.g. farm) 
+                          #or 3D array of probabilities per stage per node per year (must be between 0 and 1)
+ MortalitySD = NULL, #Option to provide standard deviation for mortality probability. Can be single number or vector (nodes)
++FecundityReduction = 0, #Proportional reduction in fecundity under management: scalar; vector (nodes or stages); matrix (nodes x timesteps); or array (nodes x stages x timesteps)
+ SpreadReduction,        #Reduction in dispersal probability when management adopted. Must be between 0 (no spread reduction) and 1 (complete prevention of spread). Can be single value or vector length nrow(SDDprob)
+ SpreadReductionSD = NULL, #Option to provide standard deviation for spread reduction probability can be single number or vector (nodes)
+ InitialPopulation = NA,        #matrix (nodes x stages) of population sizes at start of simulations
+@@ -799,6 +821,40 @@
+      RandSEAM <- matrix(NA,nrow = nrow(SDDprob),ncol=nrow(SDDprob))
+      }
+ 
++###Validate management-induced fecundity reduction
++n_nodes <- nrow(SDDprob)
++FecundityReductionDims <- dim(FecundityReduction)
++if(is.null(FecundityReductionDims)) {
++  valid_lengths <- unique(c(1L, n_nodes, Nstages))
++  if(!(length(FecundityReduction) %in% valid_lengths))
++    stop("FecundityReduction must be scalar, length nodes, length Nstages, nodes x Ntimesteps, or nodes x Nstages x Ntimesteps")
++  if(length(FecundityReduction) > 1 && n_nodes == Nstages && length(FecundityReduction) == n_nodes)
++    stop("FecundityReduction vector is ambiguous because number of nodes equals Nstages; use a nodes x Ntimesteps matrix for node-specific values or a nodes x Nstages x Ntimesteps array for stage-specific values")
++} else if(length(FecundityReductionDims) == 2) {
++  if(!all(FecundityReductionDims == c(n_nodes, Ntimesteps)))
++    stop("FecundityReduction matrix must have dimensions nodes x Ntimesteps")
++} else if(length(FecundityReductionDims) == 3) {
++  if(!all(FecundityReductionDims == c(n_nodes, Nstages, Ntimesteps)))
++    stop("FecundityReduction array must have dimensions nodes x Nstages x Ntimesteps")
++} else {
++  stop("FecundityReduction must be scalar, length nodes, length Nstages, nodes x Ntimesteps, or nodes x Nstages x Ntimesteps")
++}
++if(any(!is.finite(FecundityReduction)) || any(FecundityReduction < 0) || any(FecundityReduction > 1))
++  stop("FecundityReduction values must be between 0 and 1")
++
++ResolveFecundityReductionTM <- function(timestep) {
++  if(is.null(dim(FecundityReduction))) {
++    if(length(FecundityReduction) == 1)
++      return(matrix(FecundityReduction, nrow = n_nodes, ncol = Nstages))
++    if(length(FecundityReduction) == n_nodes)
++      return(matrix(rep(FecundityReduction, Nstages), nrow = n_nodes, ncol = Nstages))
++    return(matrix(rep(FecundityReduction, each = n_nodes), nrow = n_nodes, ncol = Nstages))
++  }
++  if(length(dim(FecundityReduction)) == 2)
++    return(matrix(rep(FecundityReduction[,timestep], Nstages), nrow = n_nodes, ncol = Nstages))
++  FecundityReduction[,,timestep]
++}
++
+ ###Assign standard deviation value to management in no value provided
+ if(is.null(ManageSD) == T)
+ 	ManageSD = mean(ManageProb)/10
+@@ -843,40 +899,14 @@
+ ###Start of simulation
+ ###########################################################
+     
+-## ---- Parallel permutation loop (replace the serial for-loop) ----
+-library(parallel)
+-
+-# number of worker cores to use (adjust if needed)
+-n_cores <- max(1, detectCores() - 1)
+-cl <- makeCluster(n_cores)
+-# ensure cluster is stopped on function exit / error
+-#on.exit(stopCluster(cl), add = TRUE)
+-
+-## Export variables and functions needed by workers.
+-## Add/remove names here to match what your worker block references.
+-vars_to_export <- c(
+-  "Ntimesteps", "Nstages", "InitialPopulation", "InitBioP", "InvasionRisk",
+-  "IncursionStartPop", "SDDprob", "EnvEstabProb", "Transition", "LocalDynamics",
+-  "K", "SeedbankK","PropaguleEstablishment", "SEAM", "ExternalInfoProb", "InfoRetentionProb", "InfoPersistenceSteps", "UseInfoPersistence", "OngoingExternalInvasion",
+-  "OngoingExternalInfo", "DetectionProb", "DetectionSD", "ManageProb", "ManageSD",
+-  "MortalityProb", "MortalitySD", "SpreadReduction", "SpreadReductionSD",
+-  "Weights", "NodeK", "NodeSeedbankK","LDDprob", "LDDrate", "NodePropaguleEstablishment", 
+-  "DispersalDensityFactor","BlockedTransitionMortality"
+-  )
+-
+-clusterExport(cl, vars_to_export, envir = environment())
+-
+-## If LocalDynamics is a function in the calling env, also export it (already in list).
+-## If your function depends on packages, load them on each worker:
+-clusterEvalQ(cl, {
+-  # load packages used inside worker, e.g. none here but if you use e.g. 'Matrix' add library(Matrix)
+-  NULL
+-})
+-
+-# Run permutations in parallel
+-perm_results <- parLapply(cl, seq_len(Nperm), function(i_perm) {
+-  # worker environment
+-  set.seed(12345 + i_perm)  # reproducible per-perm RNG
++## ---- Parallel permutation loop ----
++detected_cores <- parallel::detectCores()
++if (is.na(detected_cores)) detected_cores <- 2L
++n_cores <- max(1L, min(Nperm, detected_cores - 1L))
++
++###Run one stochastic realisation. Function arguments and LocalDynamics are
++###captured in this closure, so new parameters do not require a clusterExport list.
++PermutationWorker <- function(i_perm) {
+   
+   ###Max integer for propagule dispersal using rmultinom
+   MaxInteger <- .Machine$integer.max  
+@@ -1078,6 +1108,7 @@
+     if (length(dim(SDDprob)) == 3) NodeSDDprob <- SDDprob[, , timestep]
+     NodeLDDprob <- LDDprob
+     if (length(dim(LDDprob)) == 3) NodeLDDprob <- LDDprob[, , timestep]
++    NodeFecundityReduction <- ResolveFecundityReductionTM(timestep)
+ 
+     # update NodeEnvEstabProb, NodeTransition, NodeK, NodePropaguleEstablishment if matrices/arrays
+     if (is.matrix(EnvEstabProb) == TRUE) NodeEnvEstabProb <- EnvEstabProb[, timestep]
+@@ -1124,13 +1155,20 @@
+     }
+     N <- N0
+     if (sum(N0) > 0) {
+-      N <- LocalDynamics(nodetransition = NodeTransition, weights = Weights, sddprob = NodeSDDprob,
+-                         nodeenvestabprob = NodeEnvEstabProb, n0 = N0, lddprob = NodeLDDprob,
+-                         lddrate = LDDrate,  nodeK = NodeK, node.seedbankK = NodeSeedbankK,
+-                         nodepropaguleestablishment = NodePropaguleEstablishment,
+-                         nodespreadreduction = NodeSpreadReduction, managing = Managing,
+-                         MaxInteger=MaxInteger,BlockedTransitionMortality = BlockedTransitionMortality,
+-                         DispersalDensityFactor=DispersalDensityFactor)
++      LocalDynamicsArgs <- list(nodetransition = NodeTransition, weights = Weights, sddprob = NodeSDDprob,
++                                nodeenvestabprob = NodeEnvEstabProb, n0 = N0, lddprob = NodeLDDprob,
++                                lddrate = LDDrate, nodeK = NodeK, node.seedbankK = NodeSeedbankK,
++                                nodepropaguleestablishment = NodePropaguleEstablishment,
++                                nodespreadreduction = NodeSpreadReduction, managing = Managing,
++                                MaxInteger = MaxInteger, BlockedTransitionMortality = BlockedTransitionMortality,
++                                DispersalDensityFactor = DispersalDensityFactor)
++      LocalDynamicsFormals <- names(formals(LocalDynamics))
++      LocalDynamicsAcceptsFecundityReduction <- "nodefecundityreduction" %in% LocalDynamicsFormals || "..." %in% LocalDynamicsFormals
++      if(LocalDynamicsAcceptsFecundityReduction)
++        LocalDynamicsArgs$nodefecundityreduction <- NodeFecundityReduction
++      else if(any(NodeFecundityReduction * Managing > 0))
++        stop("Custom LocalDynamics must accept a 'nodefecundityreduction' argument (or ...) when FecundityReduction is active")
++      N <- do.call(LocalDynamics, LocalDynamicsArgs)
+     }
+     
+     # Apply programmed stopping after last known local presence
+@@ -1219,7 +1257,18 @@
+     DetectedResults = DetectedResults_local,
+     ManagingResults = ManagingResults_local
+   )
+-}) # end parLapply
++ }
++
++if (n_cores == 1L) {
++  perm_results <- lapply(seq_len(Nperm), PermutationWorker)
++} else {
++  cl <- parallel::makeCluster(n_cores, type = "PSOCK")
++  on.exit(if (inherits(cl, "cluster")) parallel::stopCluster(cl), add = TRUE)
++  parallel::clusterSetRNGStream(cl)
++  perm_results <- parallel::parLapply(cl, seq_len(Nperm), PermutationWorker)
++  parallel::stopCluster(cl)
++  cl <- NULL
++}
+ 
+ # combine the returned per-perm results into master arrays
+ for (i in seq_along(perm_results)) {
+@@ -1230,13 +1279,6 @@
+   ManagingResults[,, i]         <- perm_results[[i]]$ManagingResults
+ }
+ 
+-# stopCluster will be called by on.exit when function ends or errors
+-# --- Shut down parallel cluster ---
+-if (exists("cl")) {
+-  parallel::stopCluster(cl)
+-  rm(cl)
+-  cat("Parallel cluster stopped and removed from memory.\n")
+-}
+ 
+ ###########################################################
+ ###End of Simulation
+--- a/ParallelSetup.r
++++ b/ParallelSetup.r
+@@ -1,21 +1,17 @@
+-rm(list = ls())
+-
+ ######################################################
+-###Important: 
+-###1) make sure using latest version of R or 
+-###   devtools might not install
+-###2) install all packages used in foreach loop to the default
+-###   R library location. "Workers" in the cluster do not recognise custom paths. 
++### Parallel setup for INApest
++###
++### The current parallel INApest functions use the base R `parallel`
++### package with PSOCK clusters and parallel::parLapply(). `parallel`
++### ships with R, so doParallel/foreach and abind are no longer required
++### for the core parallel functions.
++###
++### INApestParallelInAScene additionally requires the INA package.
+ ######################################################
+ 
+-######################################
+-###Install required packages for 
+-###for running INApest in parallel
+-######################################
+-install.packages("doParallel")
+-install.packages("abind")
+-install.packages("devtools")
+-install.packages("igraph")
+-install.packages("tidyverse")
+-devtools::install_github("GarrettLab/INA")
+-
++### Optional dependency for INApestParallelInAScene
++if (!requireNamespace("INA", quietly = TRUE)) {
++  if (!requireNamespace("devtools", quietly = TRUE))
++    install.packages("devtools")
++  devtools::install_github("GarrettLab/INA")
++}

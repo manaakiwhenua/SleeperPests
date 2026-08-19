@@ -1,0 +1,219 @@
+###############################################################################
+### Regression tests: spatial modifiers for management parameters
+###############################################################################
+
+source('/mnt-data/INApestMetaPoint.R')
+
+k0 <- INApestPointKernelFixed(0)
+
+# Generic grid: left cell has zero management coverage, right cell full coverage.
+g01 <- INApestSpatialGrid(
+  values = matrix(c(0, 1), nrow = 1, byrow = TRUE),
+  xmin = 0, xmax = 2, ymin = 0, ymax = 1
+)
+stopifnot(inherits(g01, 'INApestSpatialGrid'))
+stopifnot(inherits(INApestHabitatGrid(matrix(1,1,1),0,1,0,1), 'INApestSpatialGrid'))
+stopifnot(identical(.ipp_spatial_value(c(0.5,1.5), c(0.5,0.5), g01, 1), c(0,1)))
+stopifnot(identical(.ipp_spatial_value(c(0.5,1.5), c(0.5,0.5), function(x,y,timestep) as.numeric(x >= 1), 1), c(0,1)))
+err <- try(INApestSpatialGrid(matrix(1.1, 1, 1), 0, 1, 0, 1), silent = TRUE)
+stopifnot(inherits(err, 'try-error'))
+
+# A spatial zero is exact even when SD is very large.
+pts0 <- data.frame(x = rep(0.5, 100), y = rep(0.5, 100))
+p0 <- .ipp_probability_spatial(0.8, 1, g01, pts0, 1, 1, 1, 'DetectionProb')
+stopifnot(all(p0 == 0))
+
+# DetectionSpatial: only right-hand point can be detected.
+fit_det <- INApestMetaPoint(
+  Nperm = 1, Ntimesteps = 1,
+  InitialPoints = data.frame(x = c(0.5,1.5), y = c(0.5,0.5)),
+  Survival = 1, PropaguleProduction = 0, PropaguleEstablishment = 1,
+  SDDkernel = k0,
+  DetectionProb = 1, DetectionSD = 0, DetectionSpatial = g01,
+  ManageProb = 0, ManageSD = 0,
+  MortalityProb = 0, MortalitySD = 0,
+  FecundityReduction = 0, FecundityReductionSD = 0,
+  SpreadReduction = 0, SpreadReductionSD = 0,
+  Seed = 1, DoProgress = FALSE
+)
+stopifnot(identical(as.logical(fit_det$FinalPoints$detected), c(FALSE, TRUE)))
+
+# ManageSpatial: both points have information, but only right adopts management.
+fit_manage <- INApestMetaPoint(
+  Nperm = 1, Ntimesteps = 1,
+  InitialPoints = data.frame(x = c(0.5,1.5), y = c(0.5,0.5)), InitialInfo = c(TRUE,TRUE),
+  Survival = 1, PropaguleProduction = 0, PropaguleEstablishment = 1,
+  SDDkernel = k0,
+  DetectionProb = 0, DetectionSD = 0,
+  ManageProb = 1, ManageSD = 0, ManageSpatial = g01,
+  MortalityProb = 0, MortalitySD = 0,
+  FecundityReduction = 0, FecundityReductionSD = 0,
+  SpreadReduction = 0, SpreadReductionSD = 0,
+  Seed = 2, DoProgress = FALSE
+)
+stopifnot(identical(as.logical(fit_manage$FinalPoints$managing), c(FALSE, TRUE)))
+stopifnot(fit_manage$Summary$n_managing[1] == 1)
+
+# MortalitySpatial: management is adopted everywhere; only right can be killed.
+fit_mort <- INApestMetaPoint(
+  Nperm = 1, Ntimesteps = 1,
+  InitialPoints = data.frame(x = c(0.5,1.5), y = c(0.5,0.5)), InitialInfo = c(TRUE,TRUE),
+  Survival = 1, PropaguleProduction = 0, PropaguleEstablishment = 1,
+  SDDkernel = k0,
+  DetectionProb = 0, DetectionSD = 0,
+  ManageProb = 1, ManageSD = 0,
+  MortalityProb = 1, MortalitySD = 0, MortalitySpatial = g01,
+  FecundityReduction = 0, FecundityReductionSD = 0,
+  SpreadReduction = 0, SpreadReductionSD = 0,
+  Seed = 3, DoProgress = FALSE
+)
+stopifnot(nrow(fit_mort$FinalPoints) == 1, abs(fit_mort$FinalPoints$x[1] - 0.5) < 1e-12)
+stopifnot(fit_mort$Summary$n_management_deaths[1] == 1)
+
+# FecundityReductionSpatial: full reduction on right only. All recruits must
+# therefore descend from left-hand parents.
+n_each <- 30L
+init_f <- data.frame(
+  x = c(rep(0.5,n_each), rep(1.5,n_each)),
+  y = rep(0.5, 2*n_each)
+)
+fit_fec <- INApestMetaPoint(
+  Nperm = 1, Ntimesteps = 1,
+  InitialPoints = init_f, InitialInfo = rep(TRUE, 2*n_each),
+  Survival = 1, PropaguleProduction = 5, PropaguleEstablishment = 1,
+  SDDkernel = k0,
+  DetectionProb = 0, DetectionSD = 0,
+  ManageProb = 1, ManageSD = 0,
+  MortalityProb = 0, MortalitySD = 0,
+  FecundityReduction = 1, FecundityReductionSD = 0,
+  FecundityReductionSpatial = g01,
+  SpreadReduction = 0, SpreadReductionSD = 0,
+  Seed = 4, DoProgress = FALSE
+)
+ev_fec <- fit_fec$EventLog[fit_fec$EventLog$event == 'establishment', , drop = FALSE]
+stopifnot(nrow(ev_fec) > 0, all(ev_fec$parent_id <= n_each))
+
+# SpreadReductionSpatial: with reduction applied to all spread, right-hand
+# parents produce propagules but all of their outgoing propagules are suppressed.
+fit_spread <- INApestMetaPoint(
+  Nperm = 1, Ntimesteps = 1,
+  InitialPoints = init_f, InitialInfo = rep(TRUE, 2*n_each),
+  Survival = 1, PropaguleProduction = 5, PropaguleEstablishment = 1,
+  SDDkernel = k0,
+  DetectionProb = 0, DetectionSD = 0,
+  ManageProb = 1, ManageSD = 0,
+  MortalityProb = 0, MortalitySD = 0,
+  FecundityReduction = 0, FecundityReductionSD = 0,
+  SpreadReduction = 1, SpreadReductionSD = 0,
+  SpreadReductionSpatial = g01, SpreadReductionAppliesTo = 'all',
+  Seed = 5, DoProgress = FALSE
+)
+ev_spread <- fit_spread$EventLog[fit_spread$EventLog$event == 'establishment', , drop = FALSE]
+stopifnot(nrow(ev_spread) > 0, all(ev_spread$parent_id <= n_each))
+
+# Time-varying management grid: no detection in t1, full detection in t2.
+a <- array(c(0,1), dim = c(1,1,2))
+g_time <- INApestSpatialGrid(a, 0, 1, 0, 1)
+fit_time <- INApestMetaPoint(
+  Nperm = 1, Ntimesteps = 2,
+  InitialPoints = data.frame(x=0.5,y=0.5),
+  Survival = 1, PropaguleProduction = 0, PropaguleEstablishment = 1,
+  SDDkernel = k0,
+  DetectionProb = 1, DetectionSD = 0, DetectionSpatial = g_time,
+  ManageProb = 0, ManageSD = 0,
+  MortalityProb = 0, MortalitySD = 0,
+  FecundityReduction = 0, FecundityReductionSD = 0,
+  SpreadReduction = 0, SpreadReductionSD = 0,
+  Seed = 6, DoProgress = FALSE
+)
+ev_time <- fit_time$EventLog[fit_time$EventLog$event == 'detection', , drop = FALSE]
+stopifnot(nrow(ev_time) == 1, ev_time$timestep[1] == 2)
+
+cat('INApestPoint management-spatial tests passed.\n')
+
+###############################################################################
+### Transition-matrix engine
+###############################################################################
+source('/mnt-data/INApestPointTransitionMatrix.R')
+k0 <- INApestPointKernelFixed(0)
+g01 <- INApestSpatialGrid(matrix(c(0,1), nrow=1), 0,2,0,1)
+
+# Stage-aware spatial helper: zero coverage remains exactly zero despite SD.
+pts_tm0 <- data.frame(x=rep(0.5,20), y=rep(0.5,20), stage=rep(c(1L,2L),10))
+p_tm0 <- .ipptm_probability_spatial(c(0.8,0.6), 1, g01, pts_tm0, 1, 1, 1, 2, 'DetectionProb')
+stopifnot(all(p_tm0 == 0))
+
+A_hold <- diag(2)
+# Detection combines stage schedule and spatial multiplier: only covered stage 1 detects.
+fit_tm_det <- INApestPointTransitionMatrix(
+  Nperm=1, Ntimesteps=1, Nstages=2, Transition=A_hold,
+  InitialPoints=data.frame(x=c(0.5,1.5,1.5), y=c(0.5,0.5,0.5), stage=c(1L,1L,2L)),
+  SDDkernel=k0,
+  DetectionProb=c(1,0), DetectionSD=0, DetectionSpatial=g01,
+  ManageProb=0, ManageSD=0, MortalityProb=0, MortalitySD=0,
+  FecundityReduction=0, FecundityReductionSD=0,
+  SpreadReduction=0, SpreadReductionSD=0,
+  Seed=11, DoProgress=FALSE
+)
+stopifnot(identical(as.logical(fit_tm_det$FinalPoints$detected), c(FALSE,TRUE,FALSE)))
+
+# ManageSpatial in transition engine.
+fit_tm_manage <- INApestPointTransitionMatrix(
+  Nperm=1, Ntimesteps=1, Nstages=2, Transition=A_hold,
+  InitialPoints=data.frame(x=c(0.5,1.5), y=c(0.5,0.5), stage=c(1L,1L)), InitialInfo=c(TRUE,TRUE),
+  SDDkernel=k0,
+  DetectionProb=0, DetectionSD=0,
+  ManageProb=1, ManageSD=0, ManageSpatial=g01,
+  MortalityProb=0, MortalitySD=0,
+  FecundityReduction=0, FecundityReductionSD=0,
+  SpreadReduction=0, SpreadReductionSD=0,
+  Seed=12, DoProgress=FALSE
+)
+stopifnot(identical(as.logical(fit_tm_manage$FinalPoints$managing), c(FALSE,TRUE)))
+
+# MortalitySpatial with stage-aware mortality.
+fit_tm_mort <- INApestPointTransitionMatrix(
+  Nperm=1, Ntimesteps=1, Nstages=2, Transition=A_hold,
+  InitialPoints=data.frame(x=c(0.5,1.5), y=c(0.5,0.5), stage=c(2L,2L)), InitialInfo=c(TRUE,TRUE),
+  SDDkernel=k0,
+  DetectionProb=0, DetectionSD=0,
+  ManageProb=1, ManageSD=0,
+  MortalityProb=c(0,1), MortalitySD=0, MortalitySpatial=g01,
+  FecundityReduction=0, FecundityReductionSD=0,
+  SpreadReduction=0, SpreadReductionSD=0,
+  Seed=13, DoProgress=FALSE
+)
+stopifnot(nrow(fit_tm_mort$FinalPoints) == 1, abs(fit_tm_mort$FinalPoints$x[1]-0.5)<1e-12)
+
+# Reproductive stage 2 has fecundity 5 and survives.
+A_fec <- matrix(c(1,5,0,1), nrow=2, byrow=TRUE)
+init_tm_f <- data.frame(x=c(rep(0.5,n_each),rep(1.5,n_each)), y=rep(0.5,2*n_each), stage=2L)
+fit_tm_fec <- INApestPointTransitionMatrix(
+  Nperm=1, Ntimesteps=1, Nstages=2, Transition=A_fec,
+  InitialPoints=init_tm_f, InitialInfo=rep(TRUE,2*n_each),
+  SDDkernel=k0, PropaguleEstablishment=1,
+  DetectionProb=0, DetectionSD=0,
+  ManageProb=1, ManageSD=0, MortalityProb=0, MortalitySD=0,
+  FecundityReduction=1, FecundityReductionSD=0, FecundityReductionSpatial=g01,
+  SpreadReduction=0, SpreadReductionSD=0,
+  Seed=14, DoProgress=FALSE
+)
+ev_tm_fec <- fit_tm_fec$EventLog[fit_tm_fec$EventLog$event == 'establishment', , drop=FALSE]
+stopifnot(nrow(ev_tm_fec)>0, all(ev_tm_fec$parent_id <= n_each))
+
+fit_tm_spread <- INApestPointTransitionMatrix(
+  Nperm=1, Ntimesteps=1, Nstages=2, Transition=A_fec,
+  InitialPoints=init_tm_f, InitialInfo=rep(TRUE,2*n_each),
+  SDDkernel=k0, PropaguleEstablishment=1,
+  DetectionProb=0, DetectionSD=0,
+  ManageProb=1, ManageSD=0, MortalityProb=0, MortalitySD=0,
+  FecundityReduction=0, FecundityReductionSD=0,
+  SpreadReduction=1, SpreadReductionSD=0, SpreadReductionSpatial=g01,
+  SpreadReductionAppliesTo='all',
+  Seed=15, DoProgress=FALSE
+)
+ev_tm_spread <- fit_tm_spread$EventLog[fit_tm_spread$EventLog$event == 'establishment', , drop=FALSE]
+stopifnot(nrow(ev_tm_spread)>0, all(ev_tm_spread$parent_id <= n_each))
+
+cat('INApestPointTransitionMatrix management-spatial tests passed.\n')
+cat('ALL MANAGEMENT SPATIAL MODIFIER TESTS PASSED\n')

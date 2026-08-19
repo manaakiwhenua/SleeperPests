@@ -1,0 +1,1 @@
+{'type': 'character', 'names': None, 'values': ['R version 4.6.0 (2026-04-24)']}

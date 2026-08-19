@@ -1,0 +1,610 @@
+--- /mnt/data/INApest_programmed_analytical_work/analytical/INApestAnalytical_before_programmed.R	2026-08-13 22:37:03.261424083 +0000
++++ /mnt/data/INApest_programmed_analytical_work/analytical/INApestAnalytical.R	2026-08-13 22:48:59.879886104 +0000
+@@ -1739,6 +1739,214 @@
+   c(base_state * (1 - info_by_type), base_state * info_by_type)
+ }
+ 
++.ina_programmed_layout <- function(base_types, max_age) {
++  max_age <- max(1L, as.integer(max_age))
++  blocks <- max_age + 3L
++  list(
++    base_types = base_types,
++    max_age = max_age,
++    blocks = blocks,
++    U = seq_len(base_types),
++    X = base_types + seq_len(base_types),
++    H = lapply(seq_len(max_age), function(a) (1L + a) * base_types + seq_len(base_types)),
++    Overflow = (max_age + 2L) * base_types + seq_len(base_types),
++    size = blocks * base_types
++  )
++}
++
++.ina_programmed_global_max_age <- function(InfoPersistenceSteps) {
++  x <- as.numeric(InfoPersistenceSteps)
++  finite <- x[!is.na(x)]
++  if (!length(finite)) return(NULL)
++  if (any(!is.finite(finite) | finite < 0 | finite != floor(finite)))
++    stop("InfoPersistenceSteps values must be non-negative whole numbers or NA")
++  max(1L, as.integer(max(finite)))
++}
++
++.ina_programmed_initial_state <- function(base_state, InitialInfo,
++                                          InitialDetectionProb,
++                                          type_node, layout,
++                                          binary_known_presence = FALSE) {
++  B <- length(base_state)
++  n <- max(type_node)
++  p0 <- .ina_recycle(InitialInfo, n, "InitialInfo")
++  pd <- .ina_recycle(InitialDetectionProb, n, "InitialDetectionProb")
++  p0 <- pmin(1, pmax(0, p0)); pd <- pmin(1, pmax(0, pd))
++  out <- numeric(layout$size)
++  for (b in seq_len(B)) {
++    i <- type_node[b]
++    if (binary_known_presence) {
++      ph <- p0[i] + (1 - p0[i]) * pd[i]
++      pu <- 1 - ph
++      px <- 0
++    } else {
++      ph <- pd[i]
++      px <- p0[i] * (1 - pd[i])
++      pu <- (1 - p0[i]) * (1 - pd[i])
++    }
++    out[layout$U[b]] <- base_state[b] * pu
++    out[layout$X[b]] <- base_state[b] * px
++    out[layout$H[[1L]][b]] <- base_state[b] * ph
++  }
++  out
++}
++
++.ina_programmed_expand_vector <- function(v, layout) {
++  B <- layout$base_types
++  if (length(v) != 2L * B)
++    stop("Programmed-information vector expansion requires a 2B uninformed/informed vector")
++  out <- numeric(layout$size)
++  out[layout$U] <- v[seq_len(B)]
++  informed <- v[B + seq_len(B)]
++  out[layout$X] <- informed
++  for (h in layout$H) out[h] <- informed
++  out[layout$Overflow] <- informed
++  out
++}
++
++# Expand the ordinary uninformed/informed low-density operator into explicit
++# time-since-last-local-evidence states.  The state at the start of a timestep
++# is U (uninformed), X (informed without a currently valid local-evidence
++# clock), H1...Hmax (1...Hmax timesteps since local evidence), or Overflow
++# (>Hmax timesteps since local evidence).  Management is applied to every
++# informed state before the programmed stop is evaluated, matching the
++# simulation ordering.  A local detection resets the next-timestep state to H1.
++# For binary INApest, an informed extant infestation is itself known local
++# presence, so surviving same-node lineages reset to H1 every timestep.
++.ina_programmed_information_operator <- function(G_unmanaged, G_managed,
++                                                  type_node,
++                                                  DetectionProbByType,
++                                                  SEAM = NULL,
++                                                  InfoRetentionProb = 1,
++                                                  InfoPersistenceSteps = NA,
++                                                  layout,
++                                                  binary_known_presence = FALSE) {
++  G0 <- as.matrix(G_unmanaged); GH <- as.matrix(G_managed)
++  if (!all(dim(G0) == dim(GH)) || nrow(G0) != ncol(G0))
++    stop("G_unmanaged and G_managed must be square matrices of equal dimension")
++  B <- nrow(G0)
++  if (length(type_node) != B) stop("type_node must identify the node for every base type")
++  n <- max(type_node)
++  d <- as.numeric(DetectionProbByType)
++  if (length(d) == 1L) d <- rep(d, B)
++  if (length(d) != B) stop("DetectionProbByType must be scalar or length equal to base types")
++  d <- pmin(1, pmax(0, d))
++  ir <- .ina_recycle(InfoRetentionProb, n, "InfoRetentionProb")
++  K <- .ina_recycle(InfoPersistenceSteps, n, "InfoPersistenceSteps")
++  finite <- K[!is.na(K)]
++  if (length(finite) && any(!is.finite(finite) | finite < 0 | finite != floor(finite)))
++    stop("InfoPersistenceSteps values must be non-negative whole numbers or NA")
++  if (is.null(SEAM) || length(SEAM) == 1L) C <- matrix(0, n, n) else C <- as.matrix(SEAM)
++  if (!all(dim(C) == c(n, n))) stop("SEAM must be nodes x nodes")
++  diag(C) <- 0
++
++  G <- matrix(0, layout$size, layout$size)
++  Hblock <- function(age, b) layout$H[[age]][b]
++
++  add_new_destination <- function(dst, src_col, weight, informed_source, src_node) {
++    if (weight == 0) return(invisible(NULL))
++    jnode <- type_node[dst]
++    pdet <- d[dst]
++    if (informed_source && jnode != src_node) {
++      pseam <- C[src_node, jnode]
++      G[Hblock(1L, dst), src_col] <<- G[Hblock(1L, dst), src_col] + weight * pdet
++      G[layout$X[dst], src_col] <<- G[layout$X[dst], src_col] + weight * (1 - pdet) * pseam
++      G[layout$U[dst], src_col] <<- G[layout$U[dst], src_col] + weight * (1 - pdet) * (1 - pseam)
++    } else {
++      G[Hblock(1L, dst), src_col] <<- G[Hblock(1L, dst), src_col] + weight * pdet
++      G[layout$U[dst], src_col] <<- G[layout$U[dst], src_col] + weight * (1 - pdet)
++    }
++    invisible(NULL)
++  }
++
++  add_same_node_informed <- function(dst, src_col, weight, source_kind, source_age, node) {
++    if (weight == 0) return(invisible(NULL))
++    if (binary_known_presence) {
++      G[Hblock(1L, dst), src_col] <<- G[Hblock(1L, dst), src_col] + weight
++      return(invisible(NULL))
++    }
++    pdet <- d[dst]
++    G[Hblock(1L, dst), src_col] <<- G[Hblock(1L, dst), src_col] + weight * pdet
++    rem <- weight * (1 - pdet)
++    if (rem == 0) return(invisible(NULL))
++
++    if (identical(source_kind, "X")) {
++      if (is.na(K[node])) {
++        G[layout$X[dst], src_col] <<- G[layout$X[dst], src_col] + rem * ir[node]
++        G[layout$U[dst], src_col] <<- G[layout$U[dst], src_col] + rem * (1 - ir[node])
++      } else {
++        # No valid local-evidence clock: programmed stopping occurs after this
++        # timestep's management/spread unless local evidence is generated.
++        G[layout$U[dst], src_col] <<- G[layout$U[dst], src_col] + rem
++      }
++      return(invisible(NULL))
++    }
++
++    if (identical(source_kind, "Overflow")) {
++      if (is.na(K[node])) {
++        G[layout$Overflow[dst], src_col] <<- G[layout$Overflow[dst], src_col] + rem * ir[node]
++        G[layout$U[dst], src_col] <<- G[layout$U[dst], src_col] + rem * (1 - ir[node])
++      } else {
++        G[layout$U[dst], src_col] <<- G[layout$U[dst], src_col] + rem
++      }
++      return(invisible(NULL))
++    }
++
++    age <- source_age
++    if (is.na(K[node])) {
++      next_idx <- if (age < layout$max_age) Hblock(age + 1L, dst) else layout$Overflow[dst]
++      G[next_idx, src_col] <<- G[next_idx, src_col] + rem * ir[node]
++      G[layout$U[dst], src_col] <<- G[layout$U[dst], src_col] + rem * (1 - ir[node])
++    } else if (age >= K[node]) {
++      # The node was informed for management in this timestep, then the
++      # programmed window expires before the next timestep.
++      G[layout$U[dst], src_col] <<- G[layout$U[dst], src_col] + rem
++    } else {
++      next_idx <- if (age < layout$max_age) Hblock(age + 1L, dst) else layout$Overflow[dst]
++      G[next_idx, src_col] <<- G[next_idx, src_col] + rem
++    }
++    invisible(NULL)
++  }
++
++  for (src in seq_len(B)) {
++    inode <- type_node[src]
++    # Uninformed source: no management. Detection creates genuine local evidence.
++    scol <- layout$U[src]
++    nz <- which(G0[, src] != 0)
++    for (dst in nz) add_new_destination(dst, scol, G0[dst, src], FALSE, inode)
++
++    # X source: informed for this timestep but without a valid local-evidence clock.
++    scol <- layout$X[src]
++    nz <- which(GH[, src] != 0)
++    for (dst in nz) {
++      if (type_node[dst] == inode) add_same_node_informed(dst, scol, GH[dst, src], "X", NA_integer_, inode)
++      else add_new_destination(dst, scol, GH[dst, src], TRUE, inode)
++    }
++
++    # Explicit local-evidence ages.
++    for (age in seq_len(layout$max_age)) {
++      scol <- layout$H[[age]][src]
++      for (dst in nz) {
++        if (type_node[dst] == inode) add_same_node_informed(dst, scol, GH[dst, src], "H", age, inode)
++        else add_new_destination(dst, scol, GH[dst, src], TRUE, inode)
++      }
++    }
++
++    # Age older than every finite persistence value supplied anywhere.
++    scol <- layout$Overflow[src]
++    for (dst in nz) {
++      if (type_node[dst] == inode) add_same_node_informed(dst, scol, GH[dst, src], "Overflow", NA_integer_, inode)
++      else add_new_destination(dst, scol, GH[dst, src], TRUE, inode)
++    }
++  }
++  attr(G, "note") <- paste0(
++    "Finite-state time-since-local-evidence operator. Programmed stopping is exact for the represented information clock; ",
++    "same-node shared evidence from other individuals and information-only preconditioning remain low-density approximations."
++  )
++  attr(G, "programmed_information_layout") <- layout
++  G
++}
++
+ .ina_info_mode <- function(mode, ManageProb, InitialInfo, DetectionProb, SEAM,
+                            InfoRetentionProb, InfoPersistenceSteps) {
+   mode <- match.arg(mode, c("auto", "dynamic", "all_informed", "none"))
+@@ -1768,6 +1976,8 @@
+ #'
+ #' Returns low-density growth, an initial-condition-specific expected trajectory,
+ #' branching extinction, and (when export is identifiable) branching escape risk.
++#' Finite InfoPersistenceSteps values are represented with explicit time-since-local-evidence states;
++#' InfoRetentionProb continues to apply where InfoPersistenceSteps is NA.
+ #' This is a screening approximation, not a replacement for stochastic simulation.
+ INApestAnalytical <- function(
+     Model = c("INApest", "INApestMeta", "INApestMetaTransitionMatrix",
+@@ -1815,10 +2025,18 @@
+   n <- nrow(SDD0)
+   if (ncol(SDD0) != n) stop("SDDprob must be square")
+   diagnostics <- character(0)
+-
+-  if (any(!is.na(InfoPersistenceSteps))) {
++  # Validate the programmed-persistence parameterisation up front.  A finite
++  # value activates explicit time-since-local-evidence state classes; NA leaves
++  # that node/timestep on the stochastic InfoRetentionProb pathway.
++  .ina_slice_node(InfoPersistenceSteps, 1, n, Ntimesteps, "InfoPersistenceSteps")
++  persistence_max_age <- .ina_programmed_global_max_age(InfoPersistenceSteps)
++  persistence_requested <- !is.null(persistence_max_age)
++  if (persistence_requested) {
+     diagnostics <- c(diagnostics,
+-      "InfoPersistenceSteps is history-dependent. The analytical operator does not reproduce the full time-since-last-evidence clock; use stochastic simulation for exact programmed-stop behaviour.")
++      "InfoPersistenceSteps is represented with explicit time-since-last-local-evidence states. Programmed stopping takes priority over InfoRetentionProb wherever the persistence value is finite.")
++    if (any(as.numeric(InfoRetentionProb) < 1, na.rm = TRUE))
++      diagnostics <- c(diagnostics,
++        "Both InfoPersistenceSteps and InfoRetentionProb are supplied: programmed stopping has priority for finite InfoPersistenceSteps; stochastic retention applies only where InfoPersistenceSteps is NA.")
+   }
+   if (any(as.numeric(InitialState) %% 1 != 0, na.rm = TRUE)) {
+     diagnostics <- c(diagnostics,
+@@ -1829,6 +2047,11 @@
+                          DetectionProb, SEAM, InfoRetentionProb,
+                          InfoPersistenceSteps)
+   dynamic <- identical(mode, "dynamic")
++  programmed_dynamic <- dynamic && persistence_requested
++  information_state_method <- if (programmed_dynamic)
++    "explicit time-since-local-evidence states" else if (dynamic)
++    "uninformed/informed memoryless states" else mode
++  programmed_layout <- NULL
+ 
+   operators <- vector("list", Ntimesteps)
+   export_vectors <- vector("list", Ntimesteps)
+@@ -1839,12 +2062,20 @@
+   if (Model == "INApest") {
+     base_initial <- as.numeric(InitialState)
+     if (length(base_initial) != n) stop("InitialState must have length nodes for INApest")
+-    info0 <- .inapest_recycle(InitialInfo, n, "InitialInfo")
+     d1 <- .ina_slice_node(DetectionProb, 1, n, Ntimesteps, "DetectionProb")
+-    if (ApplyInitialDetection && dynamic)
+-      info0 <- info0 + (1 - info0) * .ina_initial_detection_binary(base_initial, .inapest_recycle(d1, n, "DetectionProb"))
+-    info0 <- pmin(1, pmax(0, info0))
+-    state0 <- if (dynamic) c(base_initial * (1 - info0), base_initial * info0) else base_initial
++    pdet0 <- if (ApplyInitialDetection && dynamic)
++      .ina_initial_detection_binary(base_initial, .inapest_recycle(d1, n, "DetectionProb")) else rep(0, n)
++    if (programmed_dynamic) {
++      programmed_layout <- .ina_programmed_layout(n, persistence_max_age)
++      state0 <- .ina_programmed_initial_state(base_initial, InitialInfo, pdet0,
++                                               seq_len(n), programmed_layout,
++                                               binary_known_presence = TRUE)
++    } else {
++      info0 <- .inapest_recycle(InitialInfo, n, "InitialInfo")
++      if (ApplyInitialDetection && dynamic) info0 <- info0 + (1 - info0) * pdet0
++      info0 <- pmin(1, pmax(0, info0))
++      state0 <- if (dynamic) c(base_initial * (1 - info0), base_initial * info0) else base_initial
++    }
+     type_count <- length(state0)
+ 
+     for (tt in seq_len(Ntimesteps)) {
+@@ -1857,7 +2088,14 @@
+       Kt <- .ina_slice_node(EradicationProb, tt, n, Ntimesteps, "EradicationProb")
+       Rt <- .ina_slice_node(SpreadReduction, tt, n, Ntimesteps, "SpreadReduction")
+       IRt <- .ina_slice_node(InfoRetentionProb, tt, n, Ntimesteps, "InfoRetentionProb")
+-      if (mode == "dynamic")
++      IPt <- .ina_slice_node(InfoPersistenceSteps, tt, n, Ntimesteps, "InfoPersistenceSteps")
++      if (programmed_dynamic) {
++        G0 <- inapest_exogenous_operator(SDDt, LDDt, Et, St, 0, 0, 0)
++        GH <- inapest_exogenous_operator(SDDt, LDDt, Et, St, At, Kt, Rt)
++        operators[[tt]] <- .ina_programmed_information_operator(
++          G0, GH, seq_len(n), Dt, SEAM, IRt, IPt, programmed_layout,
++          binary_known_presence = TRUE)
++      } else if (mode == "dynamic")
+         operators[[tt]] <- inapest_detection_operator(SDDt, LDDt, Et, St, Dt, At, Kt, Rt, SEAM, IRt)
+       else if (mode == "all_informed")
+         operators[[tt]] <- inapest_exogenous_operator(SDDt, LDDt, Et, St, At, Kt, Rt)
+@@ -1868,8 +2106,10 @@
+         X <- .ina_slice_export(ExportProb, tt, n, Ntimesteps, "ExportProb")
+         pout <- .inapest_recycle(OutsideEstablishmentProb, n, "OutsideEstablishmentProb")
+         Xeff <- sweep(X, 1, pout, `*`)
+-        if (mode == "dynamic") export_vectors[[tt]] <- .inapest_export_vector(Xeff, St, At, Kt, Rt, TRUE)
+-        else if (mode == "all_informed") export_vectors[[tt]] <- .inapest_export_vector(Xeff, St, At, Kt, Rt, FALSE)
++        if (mode == "dynamic") {
++          e <- .inapest_export_vector(Xeff, St, At, Kt, Rt, TRUE)
++          export_vectors[[tt]] <- if (programmed_dynamic) .ina_programmed_expand_vector(e, programmed_layout) else e
++        } else if (mode == "all_informed") export_vectors[[tt]] <- .inapest_export_vector(Xeff, St, At, Kt, Rt, FALSE)
+         else export_vectors[[tt]] <- .inapest_export_vector(Xeff, St, 0, 0, 0, FALSE)
+       }
+     }
+@@ -1879,13 +2119,20 @@
+     if (is.null(K) || is.null(PropaguleProduction)) stop("K and PropaguleProduction are required for INApestMeta")
+     base_initial <- as.numeric(InitialState)
+     if (length(base_initial) != n) stop("InitialState must have length nodes for INApestMeta")
+-    info0 <- .ina_recycle(InitialInfo, n, "InitialInfo")
+     d1 <- .ina_slice_node(DetectionProb, 1, n, Ntimesteps, "DetectionProb")
+-    if (ApplyInitialDetection && dynamic) {
+-      pdet <- .ina_initial_detection_meta(base_initial, .ina_recycle(d1, n, "DetectionProb"))
+-      info0 <- info0 + (1 - info0) * pdet
++    pdet0 <- if (ApplyInitialDetection && dynamic)
++      .ina_initial_detection_meta(base_initial, .ina_recycle(d1, n, "DetectionProb")) else rep(0, n)
++    if (programmed_dynamic) {
++      programmed_layout <- .ina_programmed_layout(n, persistence_max_age)
++      state0 <- .ina_programmed_initial_state(base_initial, InitialInfo, pdet0,
++                                               seq_len(n), programmed_layout,
++                                               binary_known_presence = FALSE)
++    } else {
++      info0 <- .ina_recycle(InitialInfo, n, "InitialInfo")
++      if (ApplyInitialDetection && dynamic) info0 <- info0 + (1 - info0) * pdet0
++      info0 <- pmin(1, pmax(0, info0))
++      state0 <- if (dynamic) c(base_initial * (1 - info0), base_initial * info0) else base_initial
+     }
+-    info0 <- pmin(1, pmax(0, info0)); state0 <- if (dynamic) c(base_initial * (1 - info0), base_initial * info0) else base_initial
+     type_count <- length(state0)
+ 
+     for (tt in seq_len(Ntimesteps)) {
+@@ -1901,7 +2148,14 @@
+       Mt <- .ina_slice_node(MortalityProb, tt, n, Ntimesteps, "MortalityProb")
+       Rt <- .ina_slice_node(SpreadReduction, tt, n, Ntimesteps, "SpreadReduction")
+       IRt <- .ina_slice_node(InfoRetentionProb, tt, n, Ntimesteps, "InfoRetentionProb")
+-      if (mode == "dynamic")
++      IPt <- .ina_slice_node(InfoPersistenceSteps, tt, n, Ntimesteps, "InfoPersistenceSteps")
++      if (programmed_dynamic) {
++        G0 <- meta_single_parent_operator(SDDt, LDDt, LDDrate, Et, St, Kt, Pt, PEt, 0, 0, 0)
++        GH <- meta_single_parent_operator(SDDt, LDDt, LDDrate, Et, St, Kt, Pt, PEt, At, Mt, Rt)
++        operators[[tt]] <- .ina_programmed_information_operator(
++          G0, GH, seq_len(n), Dt, SEAM, IRt, IPt, programmed_layout,
++          binary_known_presence = FALSE)
++      } else if (mode == "dynamic")
+         operators[[tt]] <- meta_detection_single_parent_operator(SDDt, LDDt, LDDrate, Et, St, Kt, Pt, PEt, Dt, At, Mt, Rt, SEAM, IRt)
+       else if (mode == "all_informed")
+         operators[[tt]] <- meta_single_parent_operator(SDDt, LDDt, LDDrate, Et, St, Kt, Pt, PEt, At, Mt, Rt)
+@@ -1911,13 +2165,17 @@
+       if (.ina_export_available(Model, NULL, ExportSDDprob, ExportLDDprob, AssumeResidualExport)) {
+         ESDDt <- .ina_slice_export(ExportSDDprob, tt, n, Ntimesteps, "ExportSDDprob")
+         ELDDt <- .ina_slice_export(ExportLDDprob, tt, n, Ntimesteps, "ExportLDDprob")
+-        if (mode == "dynamic") e <- meta_detection_export_vector(SDDt, LDDt, LDDrate, St, Pt, At, Mt, Rt,
+-                                                                  ESDDt, ELDDt)
+-        else if (mode == "all_informed") e <- meta_export_vector(SDDt, LDDt, LDDrate, St, Pt, At, Mt, Rt,
+-                                                                  ESDDt, ELDDt)
++        if (mode == "dynamic") {
++          e <- meta_detection_export_vector(SDDt, LDDt, LDDrate, St, Pt, At, Mt, Rt, ESDDt, ELDDt)
++          if (programmed_dynamic) e <- .ina_programmed_expand_vector(e, programmed_layout)
++        } else if (mode == "all_informed") e <- meta_export_vector(SDDt, LDDt, LDDrate, St, Pt, At, Mt, Rt, ESDDt, ELDDt)
+         else e <- meta_export_vector(SDDt, LDDt, LDDrate, St, Pt, 0, 0, 0,
+                                      ExportSDDprob = ESDDt, ExportLDDprob = ELDDt)
+-        pout <- if (dynamic) rep(.ina_recycle(OutsideEstablishmentProb, n, "OutsideEstablishmentProb"), 2) else .ina_recycle(OutsideEstablishmentProb, n, "OutsideEstablishmentProb")
++        pout_node <- .ina_recycle(OutsideEstablishmentProb, n, "OutsideEstablishmentProb")
++        if (programmed_dynamic) {
++          pout2 <- rep(pout_node, 2)
++          pout <- .ina_programmed_expand_vector(pout2, programmed_layout)
++        } else if (dynamic) pout <- rep(pout_node, 2) else pout <- pout_node
+         export_vectors[[tt]] <- e * pout
+       }
+     }
+@@ -1932,14 +2190,21 @@
+     X0 <- if (is.matrix(InitialState)) as.matrix(InitialState) else matrix(as.numeric(InitialState), nrow = n, ncol = S, byrow = TRUE)
+     if (!all(dim(X0) == c(n, S))) stop("InitialState must be nodes x stages for INApestMetaTransitionMatrix")
+     base_initial <- as.vector(t(X0))
+-    info0 <- .ina_recycle(InitialInfo, n, "InitialInfo")
+     D1 <- .ina_slice_stage(DetectionProb, 1, n, S, Ntimesteps, "DetectionProb")
+     if (length(D1) == 1L) D1m <- matrix(D1, n, S) else if (length(D1) == S) D1m <- matrix(rep(D1, each = n), n, S) else D1m <- as.matrix(D1)
+-    if (ApplyInitialDetection && dynamic) {
+-      pdet <- .ina_initial_detection_transition(X0, D1m)
+-      info0 <- info0 + (1 - info0) * pdet
++    pdet0 <- if (ApplyInitialDetection && dynamic) .ina_initial_detection_transition(X0, D1m) else rep(0, n)
++    type_node <- rep(seq_len(n), each = S)
++    if (programmed_dynamic) {
++      programmed_layout <- .ina_programmed_layout(n * S, persistence_max_age)
++      state0 <- .ina_programmed_initial_state(base_initial, InitialInfo, pdet0,
++                                               type_node, programmed_layout,
++                                               binary_known_presence = FALSE)
++    } else {
++      info0 <- .ina_recycle(InitialInfo, n, "InitialInfo")
++      if (ApplyInitialDetection && dynamic) info0 <- info0 + (1 - info0) * pdet0
++      info0 <- pmin(1, pmax(0, info0))
++      state0 <- if (dynamic) .ina_split_information(base_initial, info0, n, S) else base_initial
+     }
+-    info0 <- pmin(1, pmax(0, info0)); state0 <- if (dynamic) .ina_split_information(base_initial, info0, n, S) else base_initial
+     type_count <- length(state0)
+ 
+     if (!dynamic && length(operators) && length(dim(SDDprob)) != 3L && !is.list(Transition)) {
+@@ -1957,9 +2222,17 @@
+       Mt <- .ina_slice_stage(MortalityProb, tt, n, S, Ntimesteps, "MortalityProb")
+       Rt <- .ina_slice_node(SpreadReduction, tt, n, Ntimesteps, "SpreadReduction")
+       IRt <- .ina_slice_node(InfoRetentionProb, tt, n, Ntimesteps, "InfoRetentionProb")
++      IPt <- .ina_slice_node(InfoPersistenceSteps, tt, n, Ntimesteps, "InfoPersistenceSteps")
+       Kt <- .ina_slice_node(K, tt, n, Ntimesteps, "K")
+       SBt <- .ina_slice_node(SeedbankK, tt, n, Ntimesteps, "SeedbankK")
+-      if (mode == "dynamic")
++      if (programmed_dynamic) {
++        G0 <- transition_operator(Transition, S, SDDt, LDDt, LDDrate, Et, PEt, 0, 0, 0, DispersalDensityFactor, Kt, SBt)
++        GH <- transition_operator(Transition, S, SDDt, LDDt, LDDrate, Et, PEt, At, Mt, Rt, DispersalDensityFactor, Kt, SBt)
++        Dm <- if (length(Dt) == 1L) matrix(Dt, n, S) else if (length(Dt) == S) matrix(rep(Dt, each = n), n, S) else as.matrix(Dt)
++        operators[[tt]] <- .ina_programmed_information_operator(
++          G0, GH, type_node, as.vector(t(Dm)), SEAM, IRt, IPt, programmed_layout,
++          binary_known_presence = FALSE)
++      } else if (mode == "dynamic")
+         operators[[tt]] <- transition_detection_operator(Transition, S, SDDt, LDDt, LDDrate, Et, PEt, Dt, At, Mt, Rt, SEAM, IRt, DispersalDensityFactor, Kt, SBt)
+       else if (mode == "all_informed")
+         operators[[tt]] <- transition_operator(Transition, S, SDDt, LDDt, LDDrate, Et, PEt, At, Mt, Rt, DispersalDensityFactor, Kt, SBt)
+@@ -1969,14 +2242,18 @@
+       if (.ina_export_available(Model, NULL, ExportSDDprob, ExportLDDprob, TRUE)) {
+         ESDDt <- .ina_slice_export(ExportSDDprob, tt, n, Ntimesteps, "ExportSDDprob")
+         ELDDt <- .ina_slice_export(ExportLDDprob, tt, n, Ntimesteps, "ExportLDDprob")
+-        if (mode == "dynamic") e <- transition_detection_export_vector(Transition, S, SDDt, LDDt, LDDrate, At, Mt, Rt,
+-                                                                        DispersalDensityFactor, ESDDt, ELDDt)
+-        else if (mode == "all_informed") e <- transition_export_vector(Transition, S, SDDt, LDDt, LDDrate, At, Mt, Rt,
+-                                                                        DispersalDensityFactor, ESDDt, ELDDt)
++        if (mode == "dynamic") {
++          e <- transition_detection_export_vector(Transition, S, SDDt, LDDt, LDDrate, At, Mt, Rt,
++                                                    DispersalDensityFactor, ESDDt, ELDDt)
++          if (programmed_dynamic) e <- .ina_programmed_expand_vector(e, programmed_layout)
++        } else if (mode == "all_informed") e <- transition_export_vector(Transition, S, SDDt, LDDt, LDDrate, At, Mt, Rt,
++                                                                           DispersalDensityFactor, ESDDt, ELDDt)
+         else e <- transition_export_vector(Transition, S, SDDt, LDDt, LDDrate, 0, 0, 0,
+                                             DispersalDensityFactor, ESDDt, ELDDt)
+         pout_base <- rep(.ina_recycle(OutsideEstablishmentProb, n, "OutsideEstablishmentProb"), each = S)
+-        pout <- if (dynamic) c(pout_base, pout_base) else pout_base
++        if (programmed_dynamic) {
++          pout <- .ina_programmed_expand_vector(c(pout_base, pout_base), programmed_layout)
++        } else if (dynamic) pout <- c(pout_base, pout_base) else pout <- pout_base
+         export_vectors[[tt]] <- e * pout
+       }
+     }
+@@ -2001,14 +2278,21 @@
+     X0 <- if (is.matrix(InitialState)) as.matrix(InitialState) else matrix(as.numeric(InitialState), nrow = n, ncol = L, byrow = TRUE)
+     if (!all(dim(X0) == c(n, L))) stop("InitialState must be nodes x land uses")
+     base_initial <- as.vector(t(X0))
+-    info0 <- .ina_recycle(InitialInfo, n, "InitialInfo")
+     D1 <- .ina_slice_mlu(DetectionProb, 1, n, L, Ntimesteps, "DetectionProb")
+     if (length(D1) == 1L) D1m <- matrix(D1, n, L) else if (length(D1) == L) D1m <- matrix(rep(D1, each = n), n, L) else D1m <- as.matrix(D1)
+-    if (ApplyInitialDetection && dynamic) {
+-      pdet <- .ina_initial_detection_mlu(X0, D1m)
+-      info0 <- info0 + (1 - info0) * pdet
++    pdet0 <- if (ApplyInitialDetection && dynamic) .ina_initial_detection_mlu(X0, D1m) else rep(0, n)
++    type_node <- rep(seq_len(n), each = L)
++    if (programmed_dynamic) {
++      programmed_layout <- .ina_programmed_layout(n * L, persistence_max_age)
++      state0 <- .ina_programmed_initial_state(base_initial, InitialInfo, pdet0,
++                                               type_node, programmed_layout,
++                                               binary_known_presence = FALSE)
++    } else {
++      info0 <- .ina_recycle(InitialInfo, n, "InitialInfo")
++      if (ApplyInitialDetection && dynamic) info0 <- info0 + (1 - info0) * pdet0
++      info0 <- pmin(1, pmax(0, info0))
++      state0 <- if (dynamic) .ina_split_information(base_initial, info0, n, L) else base_initial
+     }
+-    info0 <- pmin(1, pmax(0, info0)); state0 <- if (dynamic) .ina_split_information(base_initial, info0, n, L) else base_initial
+     type_count <- length(state0)
+ 
+     for (tt in seq_len(Ntimesteps)) {
+@@ -2024,7 +2308,15 @@
+       Mt <- .ina_slice_mlu(MortalityProb, tt, n, L, Ntimesteps, "MortalityProb")
+       Rt <- .ina_slice_mlu(SpreadReduction, tt, n, L, Ntimesteps, "SpreadReduction")
+       IRt <- .ina_slice_node(InfoRetentionProb, tt, n, Ntimesteps, "InfoRetentionProb")
+-      if (mode == "dynamic")
++      IPt <- .ina_slice_node(InfoPersistenceSteps, tt, n, Ntimesteps, "InfoPersistenceSteps")
++      if (programmed_dynamic) {
++        G0 <- mlu_single_parent_operator(SDDt, LDDt, LDDrate, Et, St, Kt, Pt, PEt, 0, 0, 0, FALSE)
++        GH <- mlu_single_parent_operator(SDDt, LDDt, LDDrate, Et, St, Kt, Pt, PEt, At, Mt, Rt, FALSE)
++        Dm <- if (length(Dt) == 1L) matrix(Dt, n, L) else if (length(Dt) == L) matrix(rep(Dt, each = n), n, L) else as.matrix(Dt)
++        operators[[tt]] <- .ina_programmed_information_operator(
++          G0, GH, type_node, as.vector(t(Dm)), SEAM, IRt, IPt, programmed_layout,
++          binary_known_presence = FALSE)
++      } else if (mode == "dynamic")
+         operators[[tt]] <- mlu_detection_single_parent_operator(SDDt, LDDt, LDDrate, Et, St, Kt, Pt, PEt, Dt, At, Mt, Rt, SEAM, IRt, FALSE)
+       else if (mode == "all_informed")
+         operators[[tt]] <- mlu_single_parent_operator(SDDt, LDDt, LDDrate, Et, St, Kt, Pt, PEt, At, Mt, Rt, FALSE)
+@@ -2034,14 +2326,18 @@
+       if (.ina_export_available(Model, NULL, ExportSDDprob, ExportLDDprob, AssumeResidualExport)) {
+         ESDDt <- .ina_slice_export(ExportSDDprob, tt, n, Ntimesteps, "ExportSDDprob")
+         ELDDt <- .ina_slice_export(ExportLDDprob, tt, n, Ntimesteps, "ExportLDDprob")
+-        if (mode == "dynamic") e <- mlu_detection_export_vector(SDDt, LDDt, LDDrate, St, Kt, Pt, At, Mt, Rt, FALSE,
+-                                                                 ESDDt, ELDDt)
+-        else if (mode == "all_informed") e <- mlu_export_vector(SDDt, LDDt, LDDrate, St, Kt, Pt, At, Mt, Rt, FALSE,
+-                                                                 ESDDt, ELDDt)
++        if (mode == "dynamic") {
++          e <- mlu_detection_export_vector(SDDt, LDDt, LDDrate, St, Kt, Pt, At, Mt, Rt, FALSE,
++                                            ESDDt, ELDDt)
++          if (programmed_dynamic) e <- .ina_programmed_expand_vector(e, programmed_layout)
++        } else if (mode == "all_informed") e <- mlu_export_vector(SDDt, LDDt, LDDrate, St, Kt, Pt, At, Mt, Rt, FALSE,
++                                                                    ESDDt, ELDDt)
+         else e <- mlu_export_vector(SDDt, LDDt, LDDrate, St, Kt, Pt, 0, 0, 0, FALSE,
+                                     ESDDt, ELDDt)
+-        pout_node <- .ina_recycle(OutsideEstablishmentProb, n, "OutsideEstablishmentProb")
+-        pout <- rep(pout_node, each = L); if (dynamic) pout <- rep(pout, 2)
++        pout_base <- rep(.ina_recycle(OutsideEstablishmentProb, n, "OutsideEstablishmentProb"), each = L)
++        if (programmed_dynamic) {
++          pout <- .ina_programmed_expand_vector(c(pout_base, pout_base), programmed_layout)
++        } else if (dynamic) pout <- rep(pout_base, 2) else pout <- pout_base
+         export_vectors[[tt]] <- e * pout
+       }
+     }
+@@ -2050,7 +2346,7 @@
+   growth <- .ina_cycle_growth(operators)
+   Rstep <- growth$EquivalentPerTimestepMultiplier
+   trajectory_state <- .ina_apply_operators(operators, state0)
+-  totals <- .ina_state_total(trajectory_state, dynamic)
++  totals <- if (programmed_dynamic) colSums(trajectory_state) else .ina_state_total(trajectory_state, dynamic)
+   trajectory <- data.frame(timestep = seq_len(Ntimesteps), expected_state_total = totals)
+ 
+   # Extinction: use the most simulator-specific PGF available for static simple
+@@ -2069,7 +2365,7 @@
+                  generations = max(ExtinctionGenerations, Ntimesteps))
+     ex <- do.call(inapest_exogenous_extinction, pars); qh <- ex$history[, Ntimesteps]; qe <- ex$extinction
+     extinction_method <- "binary edge-based multitype branching PGF"
+-  } else if (static_ops && dynamic && Model == "INApest") {
++  } else if (static_ops && dynamic && Model == "INApest" && !programmed_dynamic) {
+     ex <- inapest_detection_extinction(.ina_slice_connection(SDDprob,1,n,Ntimesteps,"SDDprob"),
+                                        .ina_slice_connection(LDDprob,1,n,Ntimesteps,"LDDprob"),
+                                        .ina_slice_node(EnvEstabProb,1,n,Ntimesteps,"EnvEstabProb"),
+@@ -2124,7 +2420,9 @@
+   } else {
+     qh <- ina_poisson_branching_extinction_horizon(operators)
+     if (static_ops) qe <- ina_poisson_branching_extinction(operators[[1]], ExtinctionGenerations)$extinction
+-    extinction_method <- if (static_ops) "mean-matched multitype Poisson branching fallback" else "time-inhomogeneous mean-matched multitype Poisson branching"
++    extinction_method <- if (programmed_dynamic) {
++      if (static_ops) "age-structured mean-matched multitype branching" else "time-inhomogeneous age-structured mean-matched multitype branching"
++    } else if (static_ops) "mean-matched multitype Poisson branching fallback" else "time-inhomogeneous mean-matched multitype Poisson branching"
+   }
+   extinction_horizon <- .ina_overall_extinction(qh, state0)
+   extinction_eventual <- if (!is.null(qe)) .ina_overall_extinction(qe, state0) else NA_real_
+@@ -2146,7 +2444,7 @@
+                                      if(mode=="all_informed").ina_slice_node(SpreadReduction,1,n,Ntimesteps,"SpreadReduction") else 0,
+                                      Ntimesteps)
+       noesc <- br$no_escape; escape_method <- "binary edge-based branching no-escape recursion"
+-    } else if (static_ops && dynamic && Model == "INApest" && !is.null(ExportProb)) {
++    } else if (static_ops && dynamic && Model == "INApest" && !programmed_dynamic && !is.null(ExportProb)) {
+       X <- .ina_slice_export(ExportProb,1,n,Ntimesteps,"ExportProb"); pout <- .inapest_recycle(OutsideEstablishmentProb,n,"OutsideEstablishmentProb")
+       Xeff <- sweep(X,1,pout,`*`)
+       br <- inapest_detection_escape_branching(.ina_slice_connection(SDDprob,1,n,Ntimesteps,"SDDprob"),Xeff,
+@@ -2190,7 +2488,9 @@
+       noesc <- br$no_escape; escape_method <- "stage x node branching no-escape PGF"
+     } else {
+       noesc <- ina_poisson_branching_no_escape_horizon(operators, export_vectors)
+-      escape_method <- if (static_ops) "mean-matched multitype branching no-escape recursion" else "time-inhomogeneous mean-matched multitype branching no-escape recursion"
++      escape_method <- if (programmed_dynamic) {
++        if (static_ops) "age-structured mean-matched branching no-escape recursion" else "time-inhomogeneous age-structured mean-matched branching no-escape recursion"
++      } else if (static_ops) "mean-matched multitype branching no-escape recursion" else "time-inhomogeneous mean-matched multitype branching no-escape recursion"
+     }
+     branch_prob <- 1 - .ina_overall_no_escape(noesc,state0)
+     escape <- list(Method = escape_method,
+@@ -2208,6 +2508,8 @@
+ 
+   if (dynamic && Model != "INApest") diagnostics <- c(diagnostics,
+     "For information-limited Meta/Transition/MLU models, branching extinction/escape may use a mean-matched multitype fallback because node-level shared information induces correlations not represented by independent individual types.")
++  if (programmed_dynamic && Model != "INApest") diagnostics <- c(diagnostics,
++    "The programmed information clock itself is represented explicitly. At low density, however, a management kill that removes the focal individual cannot also leave a surviving focal lineage; information retained by that kill can precondition later immigrants and is therefore a shared-node, higher-order effect best captured by simulation or a nonlinear node-level extension.")
+   if (.ina_any_nonzero(DispersalDensityFactor)) diagnostics <- c(diagnostics,
+     "DispersalDensityFactor is linearized at the pest-free state. It can strongly alter finite-density trajectories even when the rare-state multiplier is unchanged.")
+   diagnostics <- unique(diagnostics)
+@@ -2215,13 +2517,14 @@
+   result <- list(
+     Model = Model,
+     InformationMode = mode,
++    InformationStateMethod = information_state_method,
+     Growth = list(
+       EquivalentPerTimestepMultiplier = Rstep,
+       CycleMultiplier = growth$CycleMultiplier,
+       Classification = .ina_classify_growth(Rstep),
+       IntrinsicLocalLambda = intrinsic,
+       IntrinsicLocalLambdaInterpretation = if (Model == "INApestMetaTransitionMatrix" && !is.null(intrinsic)) {
+-        if (mode == "all_informed") "managed local transition multiplier" else if (mode == "none") "unmanaged local transition multiplier" else "conditional-on-information managed local transition multiplier; landscape information limitation is represented separately in the 2NS operator"
++        if (mode == "all_informed") "managed local transition multiplier" else if (mode == "none") "unmanaged local transition multiplier" else "conditional-on-information managed local transition multiplier; landscape information limitation is represented separately in the augmented information-state operator"
+       } else NULL
+     ),
+     Trajectory = trajectory,
+@@ -2236,7 +2539,7 @@
+       "Low-density / rare-invasion screening unless otherwise stated",
+       "Expected-parameter treatment of management/detection SD rather than annual random-effect integration",
+       "Finite carrying capacity, lineage collisions and density dependence become increasingly important away from rarity",
+-      "Programmed information persistence is history-dependent and is not fully represented in the memoryless operator"
++      if (programmed_dynamic) "Programmed stopping uses explicit time-since-local-evidence states; shared-node evidence created by other individuals and information-only preconditioning remain approximations away from rarity" else "Memoryless information retention is represented with uninformed/informed states"
+     )
+   )
+   if (ReturnOperators) result$Operators <- operators
+@@ -2248,6 +2551,7 @@
+   cat("INApest analytical screening result\n")
+   cat("  Model:", x$Model, "\n")
+   cat("  Information mode:", x$InformationMode, "\n")
++  if (!is.null(x$InformationStateMethod)) cat("  Information state method:", x$InformationStateMethod, "\n")
+   cat("  Growth multiplier per timestep:", format(round(x$Growth$EquivalentPerTimestepMultiplier, 4), nsmall = 4), "\n")
+   cat("  Classification:", x$Growth$Classification, "\n")
+   if (!is.null(x$Growth$IntrinsicLocalLambda))

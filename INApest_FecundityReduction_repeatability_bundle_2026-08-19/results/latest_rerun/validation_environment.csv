@@ -1,0 +1,4 @@
+"item","value"
+"R_version","R version 4.6.0 (2026-04-24)"
+"detectCores",NA
+"true_PSOCK_executed","FALSE - WebR has no native PSOCK worker process support"

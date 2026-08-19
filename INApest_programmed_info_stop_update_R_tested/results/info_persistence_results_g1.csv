@@ -1,0 +1,5 @@
+"Function","DefaultCompatible","Steps2_t1","Steps2_t2","Steps2_t3","Steps2_t4","Steps0_t1","Steps0_t2","Steps0_t3","Steps0_t4","Node_t1","Node_t2","Node_t3","Node_t4","NodeTime_t1","NodeTime_t2","NodeTime_t3","NodeTime_t4","Priority_t1","Priority_t2","Priority_t3","Priority_t4","PriorityWarningCount","Mixed_t1","Mixed_t2","Mixed_t3","Mixed_t4","Reset_t1","Reset_t2","Reset_t3","Reset_t4","Compare_t1","Compare_t2","Compare_t3","Compare_t4","InvalidLengthRejected","NonWholeRejected"
+"INApest",TRUE,900,900,900,0,900,0,0,0,900,450,450,0,900,900,450,0,900,900,900,0,1,900,450,450,0,900,900,900,0,900,900,900,900,TRUE,TRUE
+"INApestParallel",TRUE,900,900,900,0,900,0,0,0,900,450,450,0,900,900,450,0,900,900,900,0,1,900,450,450,0,900,900,900,0,900,900,900,900,TRUE,TRUE
+"INApestParallelINAscene",TRUE,900,900,900,0,900,0,0,0,900,450,450,0,900,900,450,0,900,900,900,0,1,900,450,450,0,900,900,900,0,900,900,900,900,TRUE,TRUE
+"INApestMetaParallel",TRUE,900,900,900,0,900,0,0,0,900,450,450,0,900,900,450,0,900,900,900,0,1,900,450,450,0,900,900,900,0,900,900,0,0,TRUE,TRUE

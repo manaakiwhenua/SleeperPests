@@ -1,0 +1,4 @@
+"parameterisation","all_equal","max_abs_difference"
+"scalar",TRUE,0
+"node_vector",TRUE,0
+"node_by_timestep",TRUE,0

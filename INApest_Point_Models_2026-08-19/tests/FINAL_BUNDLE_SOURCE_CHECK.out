@@ -1,0 +1,42 @@
+
+R version 4.6.0 (2026-04-24) -- "Because it was There"
+Copyright (C) 2026 The R Foundation for Statistical Computing
+Platform: wasm32-unknown-emscripten (32-bit)
+
+R is free software and comes with ABSOLUTELY NO WARRANTY.
+You are welcome to redistribute it under certain conditions.
+Type 'license()' or 'licence()' for distribution details.
+
+R is a collaborative project with many contributors.
+Type 'contributors()' for more information and
+'citation()' on how to cite R or R packages in publications.
+
+Type 'demo()' for some demos, 'help()' for on-line help, or
+'help.start()' for an HTML browser interface to help.
+Type 'q()' to quit R.
+
+> files <- c(
++   '/mnt-data/INApest_Point_Models_2026-08-19/models/INApestMetaPoint.R',
++   '/mnt-data/INApest_Point_Models_2026-08-19/models/INApestMetaPointParallel.R',
++   '/mnt-data/INApest_Point_Models_2026-08-19/models/INApestPointTransitionMatrix.R',
++   '/mnt-data/INApest_Point_Models_2026-08-19/models/INApestPointTransitionMatrixParallel.R',
++   '/mnt-data/INApest_Point_Models_2026-08-19/QUICKSTART.R',
++   '/mnt-data/INApest_Point_Models_2026-08-19/demos/INApestPointTransitionMatrix_unmanaged_gif_nativeR.R'
++ )
+> for (f in files) {
++   parse(file=f)
++   cat('PARSE OK:', f, '\n')
++ }
+PARSE OK: /mnt-data/INApest_Point_Models_2026-08-19/models/INApestMetaPoint.R 
+PARSE OK: /mnt-data/INApest_Point_Models_2026-08-19/models/INApestMetaPointParallel.R 
+PARSE OK: /mnt-data/INApest_Point_Models_2026-08-19/models/INApestPointTransitionMatrix.R 
+PARSE OK: /mnt-data/INApest_Point_Models_2026-08-19/models/INApestPointTransitionMatrixParallel.R 
+PARSE OK: /mnt-data/INApest_Point_Models_2026-08-19/QUICKSTART.R 
+PARSE OK: /mnt-data/INApest_Point_Models_2026-08-19/demos/INApestPointTransitionMatrix_unmanaged_gif_nativeR.R 
+> source(files[1])
+> stopifnot(exists('INApestMetaPoint', mode='function'), identical(INApestPoint, INApestMetaPoint))
+> source(files[3])
+> stopifnot(exists('INApestPointTransitionMatrix', mode='function'))
+> cat('FINAL BUNDLE SOURCE CHECK PASSED\n')
+FINAL BUNDLE SOURCE CHECK PASSED
+> 

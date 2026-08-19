@@ -1,0 +1,10 @@
+Parallel wrapper status — 2026-08-19
+==========================================
+
+INApestMetaPointParallel.R and INApestPointTransitionMatrixParallel.R are thin wrappers around the tested serial engines. They use independent L'Ecuyer-CMRG RNG streams, with one serial Nperm=1 run per stream/worker and deterministic output recombination.
+
+The wrapper source/naming and stream architecture have been checked in the available R 4.6 WebAssembly runtime. That runtime cannot launch a genuine multi-process PSOCK cluster, so a true multi-worker equality test remains outstanding in native R.
+
+The included tests/INApestMetaPoint_parallel_tests.R performs a two-worker PSOCK check automatically in ordinary/native R when at least two cores are available.
+
+On Windows, use Backend = "psock". Forked processing is not available on Windows.

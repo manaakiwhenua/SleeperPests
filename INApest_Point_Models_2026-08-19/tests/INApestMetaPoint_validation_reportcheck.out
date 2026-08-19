@@ -1,0 +1,346 @@
+
+R version 4.6.0 (2026-04-24) -- "Because it was There"
+Copyright (C) 2026 The R Foundation for Statistical Computing
+Platform: wasm32-unknown-emscripten (32-bit)
+
+R is free software and comes with ABSOLUTELY NO WARRANTY.
+You are welcome to redistribute it under certain conditions.
+Type 'license()' or 'licence()' for distribution details.
+
+R is a collaborative project with many contributors.
+Type 'contributors()' for more information and
+'citation()' on how to cite R or R packages in publications.
+
+Type 'demo()' for some demos, 'help()' for on-line help, or
+'help.start()' for an HTML browser interface to help.
+Type 'q()' to quit R.
+
+> ###############################################################################
+> ### INApestMetaPoint_validation.R
+> ### Neutral demographic + dispersal regression test for INApestMetaPoint
+> ###
+> ### Validation design
+> ### -----------------
+> ### * one biological entity per point
+> ### * 3,000 independent founder lineages, all starting at (0, 0)
+> ### * no mortality, management, detection, information, habitat effects or LDD
+> ### * Poisson propagule production with lambda = 0.5 per point per timestep
+> ### * all propagules establish
+> ### * exponential radial SDD kernel with mean distance = 100 spatial units
+> ###
+> ### Because there are no interactions among points in this neutral case, the
+> ### 3,000 founder lineages are independent Monte Carlo replicates even though
+> ### they are simulated in a single INApestMetaPoint permutation.
+> ###############################################################################
+> 
+> source("/mnt-data/INApestMetaPoint.R")
+> 
+> N0 <- 3000L
+> Ntimesteps <- 7L
+> lambda <- 0.5
+> mean_distance <- 100
+> 
+> initial <- data.frame(
++   x = rep(0, N0),
++   y = rep(0, N0)
++ )
+> 
+> fit <- INApestMetaPoint(
++   ModelName = "PointValidationBenchmark",
++   Nperm = 1,
++   Ntimesteps = Ntimesteps,
++   InitialPoints = initial,
++ 
++   Survival = 1,
++   PropaguleProduction = lambda,
++   PropaguleEstablishment = 1,
++   EnvEstabProb = 1,
++ 
++   SDDkernel = INApestPointKernelExponential(mean_distance),
++   LDDkernel = NULL,
++   LDDrate = 0,
++ 
++   HabitatSuitability = NULL,
++   HabitatSearchRadius = 0,
++ 
++   DetectionProb = 0,
++   DetectionSD = 0,
++   ManageProb = 0,
++   ManageSD = 0,
++   MortalityProb = 0,
++   MortalitySD = 0,
++   SpreadReduction = 0,
++   SpreadReductionSD = 0,
++ 
++   InfoRadius = 0,
++   OngoingExternalInvasion = FALSE,
++ 
++   DoProgress = TRUE,
++   Seed = 20260818
++ )
+ Realisation 1 Timestep 1 ... Realisation 1 Timestep 2 ... Realisation 1 Timestep 3 ... Realisation 1 Timestep 4 ... Realisation 1 Timestep 5 ... Realisation 1 Timestep 6 ... Realisation 1 Timestep 7 ...
+> 
+> ###############################################################################
+> ### Recover independent founder lineages from parent_id
+> ###############################################################################
+> 
+> fp <- fit$FinalPoints[order(fit$FinalPoints$id), ]
+> root <- integer(max(fp$id))
+> 
+> for (i in seq_len(nrow(fp))) {
++   id <- fp$id[i]
++   pid <- fp$parent_id[i]
++   root[id] <- if (is.na(pid)) id else root[pid]
++ }
+> 
+> ###############################################################################
+> ### 1. Population growth
+> ###
+> ### With survival = 1 and Poisson(lambda) propagules per existing point:
+> ###
+> ###   N[t+1] = N[t] + Poisson(lambda * N[t])
+> ###
+> ### This is a Galton-Watson process with offspring distribution
+> ### 1 + Poisson(lambda), hence
+> ###
+> ###   E[N_t]   = (1 + lambda)^t
+> ###
+> ###   Var[N_t] = lambda * m^(t-1) * (m^t - 1) / (m - 1), m = 1 + lambda
+> ###############################################################################
+> 
+> m <- 1 + lambda
+> growth_rows <- vector("list", Ntimesteps)
+> 
+> for (tt in seq_len(Ntimesteps)) {
++ 
++   ids <- fit$PointHistory$id[
++     fit$PointHistory$timestep == tt
++   ]
++ 
++   lineage_n <- tabulate(
++     root[ids],
++     nbins = N0
++   )
++ 
++   q <- quantile(
++     lineage_n,
++     c(0.05, 0.5, 0.95),
++     names = FALSE
++   )
++ 
++   mean_theory <- m^tt
++ 
++   var_theory <- lambda *
++     m^(tt - 1) *
++     (m^tt - 1) /
++     (m - 1)
++ 
++   growth_rows[[tt]] <- data.frame(
++     timestep = tt,
++     mean_sim = mean(lineage_n),
++     mean_theory = mean_theory,
++     mean_rel_error = (mean(lineage_n) - mean_theory) / mean_theory,
++     var_sim = var(lineage_n),
++     var_theory = var_theory,
++     var_rel_error = (var(lineage_n) - var_theory) / var_theory,
++     q05 = q[1],
++     median = q[2],
++     q95 = q[3]
++   )
++ }
+> 
+> growth_validation <- do.call(
++   rbind,
++   growth_rows
++ )
+> 
+> ###############################################################################
+> ### 2. Dispersal-kernel validation
+> ###############################################################################
+> 
+> ev <- subset(
++   fit$EventLog,
++   event == "establishment"
++ )
+> 
+> parent_x <- fp$x[
++   match(ev$parent_id, fp$id)
++ ]
+> 
+> parent_y <- fp$y[
++   match(ev$parent_id, fp$id)
++ ]
+> 
+> step_distance <- sqrt(
++   (ev$x - parent_x)^2 +
++   (ev$y - parent_y)^2
++ )
+> 
+> emp_q <- quantile(
++   step_distance,
++   c(0.5, 0.9, 0.95, 0.99),
++   names = FALSE
++ )
+> 
+> theory_q <- qexp(
++   c(0.5, 0.9, 0.95, 0.99),
++   rate = 1 / mean_distance
++ )
+> 
+> dispersal_validation <- data.frame(
++   statistic = c("mean", "q50", "q90", "q95", "q99"),
++   simulated = c(mean(step_distance), emp_q),
++   theoretical = c(mean_distance, theory_q)
++ )
+> 
+> dispersal_validation$relative_error <-
++   (dispersal_validation$simulated - dispersal_validation$theoretical) /
++   dispersal_validation$theoretical
+> 
+> ###############################################################################
+> ### 3. Emergent final spatial footprint
+> ###############################################################################
+> 
+> fp$root <- root[fp$id]
+> 
+> fp$radius_from_origin <- sqrt(
++   fp$x^2 +
++   fp$y^2
++ )
+> 
+> max_radius <- tapply(
++   fp$radius_from_origin,
++   factor(fp$root, levels = seq_len(N0)),
++   max
++ )
+> 
+> lineage_n_final <- tabulate(
++   fp$root,
++   nbins = N0
++ )
+> 
+> final_realisation_distribution <- data.frame(
++   root_id = seq_len(N0),
++   n_final = lineage_n_final,
++   max_radius = as.numeric(max_radius)
++ )
+> 
+> q_n <- quantile(
++   lineage_n_final,
++   c(0.05, 0.5, 0.95),
++   names = FALSE
++ )
+> 
+> q_r <- quantile(
++   max_radius,
++   c(0.05, 0.5, 0.95),
++   names = FALSE
++ )
+> 
+> final_summary <- data.frame(
++   metric = c(
++     "final abundance mean",
++     "final abundance q05",
++     "final abundance median",
++     "final abundance q95",
++     "maximum radius mean",
++     "maximum radius q05",
++     "maximum radius median",
++     "maximum radius q95"
++   ),
++   value = c(
++     mean(lineage_n_final),
++     q_n[1], q_n[2], q_n[3],
++     mean(max_radius),
++     q_r[1], q_r[2], q_r[3]
++   )
++ )
+> 
+> ###############################################################################
+> ### Regression-test tolerances
+> ###############################################################################
+> 
+> stopifnot(
++   max(abs(growth_validation$mean_rel_error)) < 0.03,
++   max(abs(growth_validation$var_rel_error)) < 0.10,
++   max(abs(dispersal_validation$relative_error)) < 0.05
++ )
+> 
+> ###############################################################################
+> ### Output
+> ###############################################################################
+> 
+> write.csv(
++   growth_validation,
++   "growth_validation.csv",
++   row.names = FALSE
++ )
+> 
+> write.csv(
++   dispersal_validation,
++   "dispersal_validation.csv",
++   row.names = FALSE
++ )
+> 
+> write.csv(
++   final_realisation_distribution,
++   "final_realisation_distribution.csv",
++   row.names = FALSE
++ )
+> 
+> write.csv(
++   final_summary,
++   "final_summary.csv",
++   row.names = FALSE
++ )
+> 
+> cat("\nPopulation-growth validation\n")
+
+Population-growth validation
+> print(growth_validation, row.names = FALSE)
+ timestep  mean_sim mean_theory mean_rel_error    var_sim var_theory
+        1  1.493333     1.50000   -0.004444444   0.483450    0.50000
+        2  2.232667     2.25000   -0.007703704   1.827142    1.87500
+        3  3.359000     3.37500   -0.004740741   5.434597    5.34375
+        4  5.042333     5.06250   -0.003983539  13.563062   13.71094
+        5  7.536333     7.59375   -0.007561043  33.136392   33.38086
+        6 11.309667    11.39062   -0.007107453  78.140487   78.90381
+        7 16.970333    17.08594   -0.006766042 182.716359  183.22888
+ var_rel_error q05 median q95
+  -0.033099922   1      1   3
+  -0.025524301   1      2   5
+   0.017000645   1      3   8
+  -0.010785204   1      4  12
+  -0.007323579   1      6  19
+  -0.009674082   1      9  29
+  -0.002797175   2     14  44
+> 
+> cat("\nDispersal-kernel validation\n")
+
+Dispersal-kernel validation
+> print(dispersal_validation, row.names = FALSE)
+ statistic simulated theoretical relative_error
+      mean  99.52928   100.00000  -0.0047072020
+       q50  69.29310    69.31472  -0.0003118636
+       q90 228.47497   230.25851  -0.0077458064
+       q95 296.99934   299.57323  -0.0085918305
+       q99 458.54569   460.51702  -0.0042806793
+> 
+> cat("\nFinal spatial footprint\n")
+
+Final spatial footprint
+> print(final_summary, row.names = FALSE)
+                 metric     value
+   final abundance mean  16.97033
+    final abundance q05   2.00000
+ final abundance median  14.00000
+    final abundance q95  44.00000
+    maximum radius mean 357.21347
+     maximum radius q05  39.71021
+  maximum radius median 339.93885
+     maximum radius q95 717.43038
+> 
+> cat("\nAll neutral validation checks passed.\n")
+
+All neutral validation checks passed.
+> 

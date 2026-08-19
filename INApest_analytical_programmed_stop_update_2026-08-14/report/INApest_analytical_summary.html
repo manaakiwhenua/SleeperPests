@@ -1,0 +1,1398 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang xml:lang>
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+  <meta name="dcterms.date" content="2026-08-14" />
+  <title>Analytical screening companion for INApest</title>
+  <style>
+code{white-space: pre-wrap;}
+span.smallcaps{font-variant: small-caps;}
+div.columns{display: flex; gap: min(4vw, 1.5em);}
+div.column{flex: auto; overflow-x: auto;}
+div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+
+ul.task-list[class]{list-style: none;}
+ul.task-list li input[type="checkbox"] {
+font-size: inherit;
+width: 0.8em;
+margin: 0 0.8em 0.2em -1.6em;
+vertical-align: middle;
+}
+
+pre > code.sourceCode { white-space: pre; position: relative; }
+pre > code.sourceCode > span { line-height: 1.25; }
+pre > code.sourceCode > span:empty { height: 1.2em; }
+.sourceCode { overflow: visible; }
+code.sourceCode > span { color: inherit; text-decoration: inherit; }
+div.sourceCode { margin: 1em 0; }
+pre.sourceCode { margin: 0; }
+@media screen {
+div.sourceCode { overflow: auto; }
+}
+@media print {
+pre > code.sourceCode { white-space: pre-wrap; }
+pre > code.sourceCode > span { display: inline-block; text-indent: -5em; padding-left: 5em; }
+}
+pre.numberSource code
+{ counter-reset: source-line 0; }
+pre.numberSource code > span
+{ position: relative; left: -4em; counter-increment: source-line; }
+pre.numberSource code > span > a:first-child::before
+{ content: counter(source-line);
+position: relative; left: -1em; text-align: right; vertical-align: baseline;
+border: none; display: inline-block;
+-webkit-touch-callout: none; -webkit-user-select: none;
+-khtml-user-select: none; -moz-user-select: none;
+-ms-user-select: none; user-select: none;
+padding: 0 4px; width: 4em;
+color: #aaaaaa;
+}
+pre.numberSource { margin-left: 3em; border-left: 1px solid #aaaaaa; padding-left: 4px; }
+div.sourceCode
+{ }
+@media screen {
+pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
+}
+code span.al { color: #ff0000; font-weight: bold; } 
+code span.an { color: #60a0b0; font-weight: bold; font-style: italic; } 
+code span.at { color: #7d9029; } 
+code span.bn { color: #40a070; } 
+code span.bu { color: #008000; } 
+code span.cf { color: #007020; font-weight: bold; } 
+code span.ch { color: #4070a0; } 
+code span.cn { color: #880000; } 
+code span.co { color: #60a0b0; font-style: italic; } 
+code span.cv { color: #60a0b0; font-weight: bold; font-style: italic; } 
+code span.do { color: #ba2121; font-style: italic; } 
+code span.dt { color: #902000; } 
+code span.dv { color: #40a070; } 
+code span.er { color: #ff0000; font-weight: bold; } 
+code span.ex { } 
+code span.fl { color: #40a070; } 
+code span.fu { color: #06287e; } 
+code span.im { color: #008000; font-weight: bold; } 
+code span.in { color: #60a0b0; font-weight: bold; font-style: italic; } 
+code span.kw { color: #007020; font-weight: bold; } 
+code span.op { color: #666666; } 
+code span.ot { color: #007020; } 
+code span.pp { color: #bc7a00; } 
+code span.sc { color: #4070a0; } 
+code span.ss { color: #bb6688; } 
+code span.st { color: #4070a0; } 
+code span.va { color: #19177c; } 
+code span.vs { color: #4070a0; } 
+code span.wa { color: #60a0b0; font-weight: bold; font-style: italic; } 
+</style>
+  <style type="text/css">:root { --ink:#1f2933; --muted:#52606d; --line:#d9e2ec; --accent:#0b7285; --soft:#f0f7f8; --warn:#fff7e6; --good:#edf8f1; }
+html { scroll-behavior:smooth; }
+body { max-width: 1160px; margin: 0 auto; padding: 2rem 3rem 5rem; color:var(--ink); font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; line-height:1.58; }
+h1,h2,h3,h4 { line-height:1.2; color:#102a43; }
+h1 { font-size:2.35rem; margin-bottom:.3rem; }
+h2 { border-bottom:1px solid var(--line); padding-bottom:.35rem; margin-top:2.5rem; }
+h3 { margin-top:1.8rem; }
+p, li { max-width: 95ch; }
+table { border-collapse:collapse; width:100%; margin:1.1rem 0 1.8rem; font-size:.94rem; }
+th,td { border-bottom:1px solid var(--line); padding:.56rem .65rem; text-align:left; vertical-align:top; }
+th { background:#f5f7fa; color:#243b53; }
+tr:hover td { background:#fafcfd; }
+code { background:#f3f4f6; padding:.08rem .25rem; border-radius:4px; }
+pre code { background:transparent; padding:0; }
+pre { background:#f6f8fa; border:1px solid var(--line); border-radius:7px; padding:1rem; overflow:auto; }
+.summary-box, .key-box, .limit-box, .method-box { padding:1.15rem 1.35rem; margin:1.2rem 0 1.6rem; border-radius:8px; }
+.summary-box { background:var(--soft); border-left:5px solid var(--accent); }
+.key-box { background:var(--good); border-left:5px solid #2f855a; }
+.limit-box { background:var(--warn); border-left:5px solid #b7791f; }
+.method-box { background:#f7f5ff; border-left:5px solid #6b46c1; }
+.small { color:var(--muted); font-size:.91rem; }
+.badge { display:inline-block; padding:.13rem .5rem; border-radius:999px; background:#e6fffa; color:#285e61; font-size:.82rem; font-weight:650; }
+#TOC { background:#f8fafc; border:1px solid var(--line); border-radius:8px; padding:1rem 1.2rem; }
+@media (max-width:800px){body{padding:1.2rem}.table-wrap{overflow-x:auto}}
+</style>
+</head>
+<body>
+<header id="title-block-header">
+<h1 class="title">Analytical screening companion for INApest</h1>
+<p class="subtitle">Growth, extinction, management, information, habitat
+and landscape escape across four INApest model classes</p>
+<p class="date">14 August 2026</p>
+</header>
+<nav id="TOC" role="doc-toc">
+<ul>
+<li><a href="#executive-summary" id="toc-executive-summary"><span class="toc-section-number">0.1</span> Executive summary</a></li>
+<li><a href="#what-colleagues-should-remember" id="toc-what-colleagues-should-remember"><span class="toc-section-number">0.1.1</span> What colleagues should
+remember</a></li>
+<li><a href="#scope-and-deliverables" id="toc-scope-and-deliverables"><span class="toc-section-number">1</span> Scope and deliverables</a></li>
+<li><a href="#production-code-corrections" id="toc-production-code-corrections"><span class="toc-section-number">2</span> Production-code corrections</a></li>
+<li><a href="#analytical-framework" id="toc-analytical-framework"><span class="toc-section-number">3</span> Analytical framework</a>
+<ul>
+<li><a href="#a-common-landscape-criterion" id="toc-a-common-landscape-criterion"><span class="toc-section-number">3.1</span> A common landscape
+criterion</a></li>
+<li><a href="#binary-inapest" id="toc-binary-inapest"><span class="toc-section-number">3.2</span> Binary INApest</a></li>
+<li><a href="#inapestmeta" id="toc-inapestmeta"><span class="toc-section-number">3.3</span> INApestMeta</a></li>
+<li><a href="#inapestmetatransitionmatrix" id="toc-inapestmetatransitionmatrix"><span class="toc-section-number">3.4</span>
+INApestMetaTransitionMatrix</a></li>
+<li><a href="#inapestmetamultiplelanduse" id="toc-inapestmetamultiplelanduse"><span class="toc-section-number">3.5</span>
+INApestMetaMultipleLandUse</a></li>
+</ul></li>
+<li><a href="#management-information-and-habitat-complexity" id="toc-management-information-and-habitat-complexity"><span class="toc-section-number">4</span> Management, information and habitat
+complexity</a>
+<ul>
+<li><a href="#detection-and-information-states" id="toc-detection-and-information-states"><span class="toc-section-number">4.1</span> Detection and information
+states</a></li>
+<li><a href="#spatial-targeting" id="toc-spatial-targeting"><span class="toc-section-number">4.2</span> Spatial targeting</a></li>
+<li><a href="#habitat-heterogeneity" id="toc-habitat-heterogeneity"><span class="toc-section-number">4.3</span> Habitat heterogeneity</a></li>
+</ul></li>
+<li><a href="#extinction-as-a-branching-process-problem" id="toc-extinction-as-a-branching-process-problem"><span class="toc-section-number">5</span> Extinction as a branching-process
+problem</a></li>
+<li><a href="#escape-and-containment" id="toc-escape-and-containment"><span class="toc-section-number">6</span> Escape and containment</a>
+<ul>
+<li><a href="#why-the-first-moment-poisson-approximation-is-not-enough" id="toc-why-the-first-moment-poisson-approximation-is-not-enough"><span class="toc-section-number">6.1</span> Why the first-moment Poisson
+approximation is not enough</a></li>
+<li><a href="#branching-no-escape-recursion" id="toc-branching-no-escape-recursion"><span class="toc-section-number">6.2</span> Branching no-escape recursion</a>
+<ul>
+<li><a href="#validation-and-comparison" id="toc-validation-and-comparison"><span class="toc-section-number">6.2.1</span> Validation and
+comparison</a></li>
+</ul></li>
+<li><a href="#identifiability-of-outside-movement" id="toc-identifiability-of-outside-movement"><span class="toc-section-number">6.3</span> Identifiability of outside
+movement</a></li>
+</ul></li>
+<li><a href="#validation-summary-by-model-family" id="toc-validation-summary-by-model-family"><span class="toc-section-number">7</span> Validation summary by model
+family</a>
+<ul>
+<li><a href="#binary-inapest-1" id="toc-binary-inapest-1"><span class="toc-section-number">7.1</span> Binary INApest</a></li>
+<li><a href="#inapestmeta-1" id="toc-inapestmeta-1"><span class="toc-section-number">7.2</span> INApestMeta</a></li>
+<li><a href="#transition-matrix" id="toc-transition-matrix"><span class="toc-section-number">7.3</span> Transition matrix</a></li>
+<li><a href="#multiple-land-use" id="toc-multiple-land-use"><span class="toc-section-number">7.4</span> Multiple land use</a></li>
+</ul></li>
+<li><a href="#user-facing-r-function" id="toc-user-facing-r-function"><span class="toc-section-number">8</span> User-facing R function</a>
+<ul>
+<li><a href="#example-binary-inapest" id="toc-example-binary-inapest"><span class="toc-section-number">8.1</span> Example: binary INApest</a></li>
+<li><a href="#example-transition-model" id="toc-example-transition-model"><span class="toc-section-number">8.2</span> Example: transition model</a></li>
+<li><a href="#main-outputs" id="toc-main-outputs"><span class="toc-section-number">8.3</span> Main outputs</a></li>
+</ul></li>
+<li><a href="#limitations-and-decision-rules" id="toc-limitations-and-decision-rules"><span class="toc-section-number">9</span> Limitations and decision rules</a>
+<ul>
+<li><a href="#limitations-that-should-accompany-any-shared-result" id="toc-limitations-that-should-accompany-any-shared-result"><span class="toc-section-number">9.0.1</span> Limitations that should
+accompany any shared result</a></li>
+</ul></li>
+<li><a href="#testing-and-reproducibility" id="toc-testing-and-reproducibility"><span class="toc-section-number">10</span> Testing and
+reproducibility</a></li>
+<li><a href="#development-lineage" id="toc-development-lineage"><span class="toc-section-number">11</span> Development lineage</a></li>
+<li><a href="#suggested-next-developments" id="toc-suggested-next-developments"><span class="toc-section-number">12</span> Suggested next
+developments</a></li>
+</ul>
+</nav>
+<section id="executive-summary" class="summary-box" data-number="0.1">
+<h2 data-number="0.1"><span class="header-section-number">0.1</span>
+Executive summary</h2>
+<h3 class="unnumbered unlisted" id="what-this-work-set-out-to-do">What
+this work set out to do</h3>
+<p>INApest is a family of spatial simulation models designed to explore
+how an invasive species may establish, spread and respond to management
+across a landscape. The models can represent differences among locations
+in habitat suitability, dispersal, detection and management, and can
+also represent movement of information between locations. More complex
+versions of INApest track population abundance, life stages and
+different land uses within a location.</p>
+<p>These simulations are deliberately stochastic: two invasions with
+exactly the same starting conditions can have different outcomes simply
+because establishment, survival, dispersal, detection and management are
+uncertain. This is valuable for realistic response planning, but it can
+make it difficult to see <strong>why</strong> a particular combination
+of biological and management parameters produces growth, decline,
+eradication or escape.</p>
+<p>The purpose of this work was therefore to develop an
+<strong>analytical screening companion to INApest</strong>. The new
+analytical tool does not replace the stochastic simulations. Instead, it
+uses the same underlying model parameters to provide rapid estimates
+of:</p>
+<ul>
+<li>whether an invasion is expected to increase or decrease when it is
+still rare;</li>
+<li>how quickly occupancy or population size is expected to change over
+a specified period;</li>
+<li>the probability that a small incursion dies out or is
+eradicated;</li>
+<li>the probability that the invasion produces at least one successful
+escape from the modelled landscape, where outside dispersal can be
+quantified;</li>
+<li>how management, detection, information transfer, information loss,
+habitat suitability and spatial arrangement change these outcomes.</li>
+</ul>
+<p>A single user-facing R function, <code>INApestAnalytical()</code>,
+now provides these calculations for the four main model types: the
+original presence/absence version of INApest, the abundance-based
+<code>INApestMeta</code>, the life-stage-based
+<code>INApestMetaTransitionMatrix</code>, and the multiple-land-use
+version of <code>INApestMeta</code>.</p>
+<h3 class="unnumbered unlisted" id="a-simple-way-to-interpret-the-main-analytical-result">A simple way
+to interpret the main analytical result</h3>
+<p>The central output is a <strong>landscape growth multiplier</strong>.
+This can be thought of as an estimate of whether a small invasion tends
+to replace itself and expand from one timestep to the next after
+accounting for survival, management, dispersal, establishment and the
+spatial structure of the landscape.</p>
+<p>A multiplier greater than 1 means that the invasion is expected to
+<strong>grow when rare</strong>. A multiplier below 1 means it is
+expected to <strong>decline when rare</strong>. A value close to 1
+identifies a system close to the boundary between growth and
+decline.</p>
+<p>This is similar in spirit to asking whether a population replaces
+itself from one generation to the next, but the calculation is made
+across the whole landscape. It therefore captures an important feature
+that cannot be obtained simply by averaging survival, management or
+habitat suitability across locations: <strong>where suitable habitat and
+well-connected locations occur can be as important as their average
+values</strong>.</p>
+<p>The analytical framework also handles conditions that change through
+time. This includes the new INApest option for SDD and LDD connectivity
+matrices to vary among timesteps, as well as changing habitat or
+management. In these situations the sequence of conditions matters; the
+calculation follows them in their actual temporal order rather than
+simply averaging them.</p>
+<h3 class="unnumbered unlisted" id="population-decline-does-not-mean-guaranteed-eradicationand-growth-does-not-mean-certain-establishment">Population
+decline does not mean guaranteed eradication—and growth does not mean
+certain establishment</h3>
+<p>A major advantage of the new framework is that it separates
+<strong>expected population growth</strong> from <strong>probability of
+extinction</strong>.</p>
+<p>A small invasive population can disappear through chance even when
+its average growth rate is greater than replacement. Conversely, a
+population whose expected growth rate is below replacement can persist
+for some time before eventually disappearing.</p>
+<p>For this reason, extinction is calculated using a
+<strong>branching-process approximation</strong>. In plain terms, this
+follows the possible descendants of each individual or occupied location
+and asks how likely it is that the entire invasion lineage eventually
+disappears.</p>
+<p>These extinction calculations agreed well with the stochastic INApest
+simulations in the validation experiments. For example, in the original
+presence/absence INApest model, baseline extinction at the test horizon
+was <strong>0.555 in the simulations and 0.551 analytically</strong>.
+Under management the corresponding values were <strong>0.690 and
+0.667</strong>. Similar agreement was obtained for the abundance and
+transition-matrix models.</p>
+<p>The analytical extinction probabilities should still be viewed as
+screening estimates, particularly once populations become large, but
+they are substantially more informative than trying to infer eradication
+probability from the average population trajectory alone.</p>
+<h3 class="unnumbered unlisted" id="management-effectiveness-depends-on-information-as-well-as-treatment-efficacy">Management
+effectiveness depends on information as well as treatment efficacy</h3>
+<p>The analysis shows particularly clearly that <strong>effective
+control is not determined solely by how strongly management affects the
+pest</strong>.</p>
+<p>Management first has to occur.</p>
+<p>INApest distinguishes between locations that have information about
+the pest and locations that do not. Detection, transfer of information
+between locations, external information, information decay and
+programmed stopping rules can therefore determine whether otherwise
+effective control is actually applied.</p>
+<p>In one binary-INApest example, the same management treatment produced
+a landscape growth multiplier of <strong>0.965 when all relevant
+locations had information</strong>, meaning expected decline. When
+information depended on imperfect detection, the multiplier increased to
+<strong>1.008</strong>, moving the system just into expected growth.
+Strong information transfer between neighbouring locations reduced it
+again to approximately <strong>0.990</strong>.</p>
+<p>This means that surveillance and information-sharing can sometimes
+determine whether a response crosses the boundary between expected
+eradication and expected continued spread, even when the biological
+effectiveness of the treatment itself is unchanged.</p>
+<p>The stochastic information-decay mechanism can be represented
+analytically, and the programmed stopping rule is now represented
+explicitly rather than being forced into an equivalent probability. The
+analytical state tracks <strong>time since the most recent local
+evidence</strong> in finite age classes. This reproduces the
+deterministic stop clock and the production rule that programmed
+stopping takes priority over stochastic decay wherever it is supplied.
+In binary INApest, an informed extant infestation continually refreshes
+local evidence. In the abundance, stage-structured and multiple-land-use
+models, the remaining approximation is not the clock itself but how
+node-level evidence created by kills of other individuals, and
+information held by temporarily empty nodes, feeds back into later
+management.</p>
+<h3 class="unnumbered unlisted" id="spatial-arrangement-matters">Spatial
+arrangement matters</h3>
+<p>The work also demonstrates why landscape averages can sometimes be
+misleading.</p>
+<p>Landscapes with the <strong>same average habitat suitability</strong>
+produced different invasion growth rates when suitable habitat was
+clustered rather than dispersed. Likewise, applying the <strong>same
+total management effort</strong> uniformly across the landscape,
+concentrating it on highly connected locations, or concentrating it on
+peripheral locations produced different outcomes.</p>
+<p>There is an additional operational distinction. The strategy that
+best reduces the ability of an invasion to grow <strong>anywhere in the
+landscape</strong> is not necessarily the strategy that best controls a
+<strong>known incursion at a particular location</strong>.</p>
+<p>For that reason, the analytical tool reports both the overall
+landscape growth multiplier and an expected trajectory starting from the
+actual or specified initial invasion. This allows questions such as “Is
+the landscape generally vulnerable to invasion?” and “What is likely to
+happen to this particular incursion?” to be considered separately.</p>
+<h3 class="unnumbered unlisted" id="the-transition-matrix-model-reveals-an-important-distinction-between-local-growth-and-landscape-growth">The
+transition-matrix model reveals an important distinction between local
+growth and landscape growth</h3>
+<p>The life-stage version of INApest provides one of the clearest
+examples of why the landscape calculation is useful.</p>
+<p>A traditional stage-structured analysis can calculate whether the
+population would increase locally after stage-specific management
+mortality. This is the same approach used in our yellow-legged hornet
+work.</p>
+<p>However, INApest also asks whether the offspring produced by that
+population remain within the landscape, reach suitable locations and
+establish successfully.</p>
+<p>The analytical companion therefore reports <strong>two different
+growth measures</strong> for the transition-matrix model:</p>
+<p><strong>Intrinsic local growth</strong> describes what the managed
+life-stage transition matrix says would happen to the population before
+accounting for landscape dispersal and establishment losses.</p>
+<p><strong>Realized landscape growth</strong> includes those spatial
+losses and establishment constraints.</p>
+<p>These can lead to different management conclusions. In one validation
+example, the intrinsic managed population multiplier was
+<strong>1.217</strong>, suggesting that local demography was still
+capable of increasing. After dispersal loss and establishment across the
+landscape were included, however, the landscape multiplier was
+<strong>0.903</strong>, indicating expected decline.</p>
+<p>This distinction is likely to be particularly valuable when assessing
+containment or eradication strategies for species that produce many
+dispersing propagules but where only a fraction successfully establish
+elsewhere.</p>
+<h3 class="unnumbered unlisted" id="escape-from-the-landscape-requires-more-than-estimating-average-exports">Escape
+from the landscape requires more than estimating average exports</h3>
+<p>A further goal was to estimate the risk that an invasion escapes
+beyond the modelled response area before it is eradicated.</p>
+<p>An earlier approximation used the expected number of exported
+propagules and converted that mean into an escape probability using a
+Poisson assumption. This is computationally simple but ignores an
+important fact: propagules are produced in related invasion lineages. A
+few successful populations may produce many descendants while many
+incursions produce none.</p>
+<p>The analytical tool therefore now uses a more sophisticated
+<strong>branching no-escape calculation</strong> wherever the model
+structure allows it. Rather than considering only the average number
+exported, it calculates the probability that the complete invasion
+lineage produces no successful escape.</p>
+<p>This generally performed better than the simple Poisson calculation.
+In an explicit binary-INApest validation, simulated probability of
+escape by timestep 8 was <strong>0.083</strong>. The branching
+approximation gave <strong>0.102</strong>, whereas the simple Poisson
+approximation gave <strong>0.144</strong>. Under management the
+corresponding values were <strong>0.030, 0.037 and 0.048</strong>.</p>
+<p>The branching estimate is therefore reported as the primary
+analytical escape result, while the simpler first-moment estimate is
+retained as a diagnostic comparison.</p>
+<p>There is an important practical restriction: INApest can only
+estimate escape analytically if movement <strong>outside</strong> the
+modelled landscape can be identified. For some model variants this is
+naturally represented by unused dispersal-kernel probability. For
+others, an explicit outside-dispersal probability or an external set of
+destination nodes is required. Internal SDD and LDD matrices alone do
+not always contain enough information to reconstruct escape.</p>
+<h3 class="unnumbered unlisted" id="the-analytical-work-also-improved-the-simulation-code">The
+analytical work also improved the simulation code</h3>
+<p>Developing and testing the analytical framework proved useful for
+checking the simulation functions themselves. Several implementation
+problems became visible because the analytical calculations provided an
+independent expectation against which the simulation could be
+compared.</p>
+<p>The corrected release includes fixes for stale timestep indexing in
+the serial transition-matrix model, a dimensional error in information
+transfer in the serial multiple-land-use model, initialization of
+time-varying habitat suitability in the binary INApest functions, an
+error in the timing of population-share weighting for long-distance
+dispersal in the serial multiple-land-use model, and loss of the
+realisation dimension when simulations were run with
+<code>Nperm = 1</code>.</p>
+<p>The multiple-land-use long-distance dispersal issue was particularly
+clear. In a controlled diagnostic example, the previous code produced
+about <strong>36 destination individuals</strong>, whereas the
+population-share formulation predicted approximately
+<strong>18.9</strong>. After correction, the stochastic simulator
+produced <strong>18.55</strong>, closely matching the independent
+analytical expectation.</p>
+<p>The corrected functions have been regression-tested so that these
+fixes do not undo the recently added time-varying dispersal, information
+decay or programmed information-stopping functionality.</p>
+<h3 class="unnumbered unlisted" id="what-the-analytical-tool-can-and-cannot-tell-us">What the analytical
+tool can and cannot tell us</h3>
+<p>The analytical companion is most reliable for <strong>small, newly
+established invasions</strong>, which is also the stage at which rapid
+response decisions are often most important.</p>
+<p>It becomes less exact as populations become large and several
+nonlinear processes become important. These include finite carrying
+capacity, competition for the same establishment locations,
+density-dependent dispersal, strongly nonlinear recruitment,
+correlations created by information spreading through the landscape, and
+variation among stochastic parameter draws.</p>
+<p>Programmed stopping is now represented explicitly with
+time-since-last-evidence state classes, so the deterministic clock
+itself is no longer treated as a memoryless approximation. The remaining
+limitation is the coupling between that node-level clock and finite
+populations: in the Meta, transition and multiple-land-use models, a
+management kill can leave information behind after the killed focal
+individual is gone, and informed-but-uninvaded nodes can affect later
+recolonisation. These shared-node effects are weak at rarity but can
+become more important as prevalence grows.</p>
+<p>The multiple-land-use escape calculation is currently somewhat more
+approximate than the corresponding binary and transition-matrix
+calculations because its branching representation does not yet reproduce
+every detail of the simulator’s finite-capacity land-use allocation.</p>
+<p>Finally, the parallel versions of the simulation functions were
+tested for their underlying model logic using sequential substitutes in
+the WebR testing environment. A final conventional-R test using genuine
+parallel workers and the full INA package remains advisable before a
+production release.</p>
+<p>These limitations are important. In particular, a calculated growth
+multiplier of 0.99 should not be interpreted as proof of eradication,
+nor should 1.01 be interpreted as inevitable establishment. Outcomes
+close to the replacement boundary are precisely where stochastic
+simulation remains most important.</p>
+<h3 class="unnumbered unlisted" id="how-the-analytical-companion-should-be-used">How the analytical
+companion should be used</h3>
+<p>The analytical and stochastic approaches are best viewed as
+complementary.</p>
+<p><code>INApestAnalytical()</code> is intended for <strong>rapid
+screening and understanding</strong>: identifying whether an invasion
+appears strongly growing or declining, finding approximate management
+thresholds, comparing surveillance or information strategies, examining
+spatial targeting, exploring habitat and connectivity scenarios,
+estimating early extinction and escape risk, and understanding which
+processes are driving the result.</p>
+<p>The full stochastic INApest functions remain the preferred tool for
+<strong>final response probabilities and detailed operational
+assessment</strong>, particularly for scenarios close to the
+growth/decline threshold, established populations, strong density
+dependence, strong shared-node information/evidence feedbacks, or other
+situations where stochastic and nonlinear effects dominate.</p>
+<p>The main practical advance from this work is therefore not a
+replacement for INApest. It is a second way of looking at the same
+invasion-response problem: <strong>the simulation tells us the range of
+outcomes that can occur, while the analytical companion helps explain
+why those outcomes occur and where the important thresholds
+lie.</strong></p>
+</section>
+<section id="what-colleagues-should-remember" class="key-box" data-number="0.1.1">
+<h3 data-number="0.1.1"><span class="header-section-number">0.1.1</span>
+What colleagues should remember</h3>
+<ol type="1">
+<li><strong>((G)) is the landscape growth-when-rare criterion.</strong>
+It is not automatically the same as a local demographic multiplier.</li>
+<li><strong>The transition model needs two multipliers:</strong>
+intrinsic local () and realized landscape ((G)).</li>
+<li><strong>Extinction and escape are distributional questions.</strong>
+Branching PGFs are preferred over converting a mean trajectory directly
+into probabilities.</li>
+<li><strong>Information can determine whether otherwise-effective
+management crosses the control threshold.</strong> Detection, SEAM,
+retention and programmed persistence are therefore analytically
+consequential, not just operational details.</li>
+<li><strong>Spatial arrangement matters.</strong> Equal mean habitat or
+management can have different thresholds and very different outcomes
+from a specific incursion location.</li>
+<li><strong>Use simulation near the decision boundary or away from
+rarity.</strong> The analytical outputs are designed to show direction,
+thresholds and mechanisms quickly; they deliberately expose their
+approximation limits.</li>
+</ol>
+</section>
+<h1 data-number="1" id="scope-and-deliverables"><span class="header-section-number">1</span> Scope and deliverables</h1>
+<p>The release contains three integrated components:</p>
+<ul>
+<li>corrected versions of the eight current INApest/INApestMeta
+production functions;</li>
+<li><code>INApestAnalytical.R</code>, containing the unified user-facing
+analytical interface plus lower-level analytical helpers;</li>
+<li>this Quarto technical summary, together with validation scripts and
+raw CSV results.</li>
+</ul>
+<p>The analytical interface covers the four conceptual model families
+rather than duplicating every serial/parallel implementation, because
+serial and parallel versions share the same biological model. The
+corrected production code remains separate and preserves existing coding
+style as far as practical.</p>
+<h1 data-number="2" id="production-code-corrections"><span class="header-section-number">2</span> Production-code corrections</h1>
+<table>
+<colgroup>
+<col style="width: 25%" />
+<col style="width: 25%" />
+<col style="width: 25%" />
+<col style="width: 25%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th>Issue</th>
+<th>Affected implementation(s)</th>
+<th>Correction</th>
+<th>Verification</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Stale mortality timestep index</td>
+<td>Serial transition matrix</td>
+<td><code>NodeMortalityProb[, s, timestep]</code> rather than stale
+<code>t</code></td>
+<td>Earlier transition serial/parallel comparison and programmed-stop
+tests</td>
+</tr>
+<tr class="even">
+<td>Stale detection timestep index</td>
+<td>Serial transition matrix</td>
+<td><code>NodeDetectionProb[,,timestep]</code></td>
+<td>Time-varying detection/programmed-stop regression</td>
+</tr>
+<tr class="odd">
+<td>SEAM node × land-use dimensional mismatch</td>
+<td>Serial MLU</td>
+<td>Collapse land-use detection to node-level before SEAM
+multiplication</td>
+<td>Cross-node information-refresh test</td>
+</tr>
+<tr class="even">
+<td>Time-varying habitat used before <code>BPAM</code> initialized</td>
+<td><code>INApest</code>, <code>INApestParallel</code>,
+<code>INApestParallelINAscene</code></td>
+<td>Initialize <code>BPAM</code> from <code>EnvEstabProb[,1]</code> when
+habitat is node × time</td>
+<td>All three variants run matrix habitat; static behaviour
+retained</td>
+</tr>
+<tr class="odd">
+<td>LDD population-share weighting calculated too late</td>
+<td>Serial MLU</td>
+<td>Apply <code>Pn</code> before calculating/drawing
+<code>Qin</code></td>
+<td>Corrected simulation 18.55 vs analytical 18.85; old code ~36.0</td>
+</tr>
+<tr class="even">
+<td>Singleton realisation dimension dropped</td>
+<td>All functions; extra extraction issue in older <code>foreach</code>
+parallel functions</td>
+<td>Preserve/restore explicit realisation dimension and aggregate with
+<code>drop=FALSE</code></td>
+<td><code>Nperm = 1</code> test passed for all eight versions</td>
+</tr>
+</tbody>
+</table>
+<p>The incremental patch in this release is relative to the immediately
+preceding programmed-information-stop build; the first three fixes above
+were already incorporated during that earlier development and are
+retained in the final source.</p>
+<h1 data-number="3" id="analytical-framework"><span class="header-section-number">3</span> Analytical framework</h1>
+<h2 data-number="3.1" id="a-common-landscape-criterion"><span class="header-section-number">3.1</span> A common landscape
+criterion</h2>
+<p>For every model family, the analysis constructs a non-negative
+operator (G_t) describing expected descendants/types produced from each
+rare source type during timestep (t). For constant conditions,</p>
+<p>[ R_{} = (G), ]</p>
+<p>where () is the spectral radius. For a repeating sequence of (T)
+time-varying conditions,</p>
+<p>[ G_{} = G_T G_{T-1}G_1, R_{}=(G_{}), ]</p>
+<p>and an equivalent per-timestep multiplier is</p>
+<p>[ R_{}=R_{}^{1/T}. ]</p>
+<p>This ordered-product formulation directly supports the new node ×
+node × timestep SDD/LDD arrays and time-varying habitat or management
+inputs.</p>
+<h2 data-number="3.2" id="binary-inapest"><span class="header-section-number">3.2</span> Binary INApest</h2>
+<p>For binary occupancy, define the combined source-to-destination
+colonisation opportunity</p>
+<p>[ D_{ij}=1-(1-SDD_{ij})(1-LDD_{ij}) ]</p>
+<p>and destination establishment (E_j). Without management, an occupied
+source persists with survival (s_i) and can generate new occupied nodes
+through (D_{ij}E_j). With universal information and adoption probability
+(a_i), eradication probability (k_i), and spread reduction (r_i), the
+expected occupied-node persistence and spreading weights are</p>
+<p>[ u_i=s_i(1-a_i k_i), ]</p>
+<p>[ v_i=s_i{(1-a_i)+a_i(1-k_i)(1-r_i)}. ]</p>
+<p>Thus (G_{ii}=u_i), while off-diagonal colonisation is weighted by
+(v_iD_{ij}E_j). This is an exact first-order operator for the rare
+occupancy process under the stated independence assumptions.</p>
+<p>For a homogeneous network with adjacency matrix (A), edge probability
+(p), establishment (e), and survival (s), the unmanaged special case
+reduces to</p>
+<p>[ R_{}=s{1+ep(A)}. ]</p>
+<h2 data-number="3.3" id="inapestmeta"><span class="header-section-number">3.3</span> INApestMeta</h2>
+<p>INApestMeta is an abundance model, but its rare-state mathematics is
+not well represented by a naive continuous Jacobian. Propagules are
+Poisson generated, while dispersers are passed to
+<code>rmultinom()</code> using an integer <code>size</code>. At small
+populations, this introduces a real threshold/truncation effect.</p>
+<p>The preferred operator therefore asks: <strong>what is the expected
+descendant vector produced by one individual at source node
+(i)?</strong> It integrates survival/management, Poisson propagule
+production, the integer multinomial dispersal step, destination
+establishment and the low-density availability of carrying-capacity
+slots. Columns of the resulting single-parent operator are these
+expected descendant vectors.</p>
+<p>This simulator-faithful construction substantially improved agreement
+at rarity relative to treating all dispersal as continuously
+divisible.</p>
+<h2 data-number="3.4" id="inapestmetatransitionmatrix"><span class="header-section-number">3.4</span>
+INApestMetaTransitionMatrix</h2>
+<p>The supplied managed-population-growth work provides the local
+demographic starting point. If (A) is the stage transition matrix and
+(m) is a vector of stage-specific management mortality applied to source
+stages, then</p>
+<p>[ A_M=A,(1-m), ]</p>
+<p>and the dominant eigenvalue modulus is the intrinsic managed
+multiplier per transition step. If a biological cycle contains (k) such
+steps, the corresponding cycle multiplier is (^k).</p>
+<p>The landscape simulation adds a second layer: fecundity must produce
+propagules, those propagules may be lost/exported, and internal arrivals
+must establish. The analytical companion therefore builds a
+<strong>stage × node operator</strong> and reports both:</p>
+<ul>
+<li><code>IntrinsicLocalLambda</code>: local managed demography before
+landscape dispersal/establishment losses;</li>
+<li><code>EquivalentPerTimestepMultiplier</code>: realized landscape
+growth when rare.</li>
+</ul>
+<p>The distinction is operationally important. In the validation
+example, all-informed management yielded intrinsic () but landscape
+(R=0.903). Local demography alone would therefore suggest continued
+growth while the full managed landscape is predicted to decline.</p>
+<h2 data-number="3.5" id="inapestmetamultiplelanduse"><span class="header-section-number">3.5</span> INApestMetaMultipleLandUse</h2>
+<p>The MLU model uses node × land-use types. The single-parent operator
+tracks survival and management in the source land use, dispersal from
+the source node, and allocation of recruits among available land-use
+capacity at destinations. The corrected LDD formulation weights the
+source’s LDD contribution by its population share before the multinomial
+dispersal draw.</p>
+<p>The rare-state operator again provides a spectral threshold and
+expected finite-horizon trajectory. Because recruit allocation among
+land uses is a finite-capacity sampling process, the branching
+distribution is less exact than in the simplest binary case; the mean
+operator nevertheless validated closely in the baseline scenario.</p>
+<h1 data-number="4" id="management-information-and-habitat-complexity"><span class="header-section-number">4</span> Management, information and
+habitat complexity</h1>
+<h2 data-number="4.1" id="detection-and-information-states"><span class="header-section-number">4.1</span> Detection and information
+states</h2>
+<p>Where information limits management, the analytical state expands
+from pest type (i) to at least two pest-information types:</p>
+<ul>
+<li>(U_i): invaded but uninformed;</li>
+<li>(H_i): invaded and informed.</li>
+</ul>
+<p>Detection moves new or persisting pest lineages toward (H); informed
+lineages experience management adoption, mortality/eradication and
+spread reduction; <code>InfoRetentionProb</code> governs expected
+movement back toward uninformed status. Direct SEAM transfer associated
+with informed invaded sources can be included in the
+offspring-information probabilities.</p>
+<p>This compact state system captures the first-order threshold effect
+well, but it does not fully represent <strong>informed-but-uninvaded
+nodes</strong>. Those nodes are second-order near the pest-free state
+but matter increasingly at finite prevalence because they are
+preconditioned to manage if later invaded. A richer nonlinear
+information mean-field was explored for binary INApest to quantify this
+effect.</p>
+<p>When <code>InfoPersistenceSteps</code> is not supplied, the compact
+(U/H) information system above is retained. When a finite programmed
+stopping value is supplied, the analytical state is expanded to include
+<strong>time since local evidence</strong>. For each pest type the
+augmented states are uninformed (U), informed without a currently valid
+local-evidence clock (X), and age classes (H_1,H_2,) representing the
+number of timesteps since the most recent local evidence. All informed
+age states receive management during the current timestep before any
+programmed expiry, matching the ordering in the stochastic
+functions.</p>
+<p>A new local detection resets the next-timestep state to (H_1). In
+binary INApest, an informed extant infestation is treated as known to be
+locally present and therefore continually resets its own evidence clock.
+A SEAM or external-information refresh without new local evidence enters
+(X). A finite node-specific <code>InfoPersistenceSteps</code> value
+takes priority over <code>InfoRetentionProb</code>; where persistence is
+<code>NA</code>, the existing stochastic retention transition is used.
+Node-specific and node × timestep persistence inputs are handled by
+constructing the corresponding time-specific information operator before
+the usual ordered product of (G_t) matrices.</p>
+<p>This makes the <strong>deterministic programmed-stop clock explicit
+rather than memoryless</strong>. The remaining approximation is the
+coupling of the node-level information clock to finite populations. In
+Meta, transition and multiple-land-use models, a management kill by one
+individual can leave information at the node after that individual is
+gone, and an informed-but-uninvaded node can alter management after
+later recolonisation. Those shared-node effects are not fully
+represented by the low-density individual-type branching operator and
+become more important away from rarity.</p>
+<h2 data-number="4.2" id="spatial-targeting"><span class="header-section-number">4.2</span> Spatial targeting</h2>
+<p>The global multiplier and the response from a particular incursion
+can point to different operational priorities. With the same mean
+<code>ManageProb = 0.3</code> in a binary-INApest test:</p>
+<table>
+<colgroup>
+<col style="width: 27%" />
+<col style="width: 36%" />
+<col style="width: 36%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th>Allocation</th>
+<th style="text-align: right;">Global multiplier</th>
+<th style="text-align: right;">Simulated occupied nodes at timestep 6
+from central incursion</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Uniform</td>
+<td style="text-align: right;">0.936</td>
+<td style="text-align: right;">0.523</td>
+</tr>
+<tr class="even">
+<td>High-centrality targeting</td>
+<td style="text-align: right;">0.969</td>
+<td style="text-align: right;"><strong>0.187</strong></td>
+</tr>
+<tr class="odd">
+<td>Peripheral targeting</td>
+<td style="text-align: right;">0.995</td>
+<td style="text-align: right;">1.093</td>
+</tr>
+</tbody>
+</table>
+<p>Uniform effort gives the lowest global spectral radius, but targeting
+the known central incursion/high-centrality region is far superior over
+the finite response horizon. This is why
+<code>INApestAnalytical()</code> returns both the spectral criterion and
+the initial-condition-specific trajectory.</p>
+<h2 data-number="4.3" id="habitat-heterogeneity"><span class="header-section-number">4.3</span> Habitat heterogeneity</h2>
+<p>Equal mean suitability does not imply equal invasion potential. In
+the binary validation, three landscapes with mean habitat suitability
+0.6 gave growth multipliers of approximately 1.007 (homogeneous), 1.103
+(clustered binary habitat), and 1.040 (distributed binary habitat).
+Connectivity among suitable sites is therefore part of the mechanism,
+not merely a source of noise.</p>
+<h1 data-number="5" id="extinction-as-a-branching-process-problem"><span class="header-section-number">5</span> Extinction as a branching-process
+problem</h1>
+<p>Mean decline does not directly give an extinction probability. The
+analytical companion uses multitype branching PGFs whenever a
+model-specific distribution is available, and a mean-matched multitype
+Poisson branching fallback for more complicated or time-varying
+cases.</p>
+<p>If (F_i(z)) is the offspring PGF of one individual/type (i),
+finite-horizon extinction is obtained by recursively substituting the
+extinction vector through the PGFs. The eventual branching fade-out
+probability is the minimal fixed point</p>
+<p>[ q = F(q). ]</p>
+<p>For an initial state (x_0), lineage independence in the branching
+approximation gives the overall extinction probability from the
+component type-specific probabilities.</p>
+<p>Selected validation results:</p>
+<table>
+<thead>
+<tr class="header">
+<th>Model/scenario</th>
+<th style="text-align: right;">Simulated extinction</th>
+<th style="text-align: right;">Branching extinction</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Binary INApest baseline</td>
+<td style="text-align: right;">0.555</td>
+<td style="text-align: right;"><strong>0.551</strong></td>
+</tr>
+<tr class="even">
+<td>Binary INApest all-informed management</td>
+<td style="text-align: right;">0.690</td>
+<td style="text-align: right;"><strong>0.667</strong></td>
+</tr>
+<tr class="odd">
+<td>INApestMeta baseline</td>
+<td style="text-align: right;">0.706</td>
+<td style="text-align: right;"><strong>0.688</strong></td>
+</tr>
+<tr class="even">
+<td>INApestMeta all-informed management</td>
+<td style="text-align: right;">0.854</td>
+<td style="text-align: right;"><strong>0.873</strong></td>
+</tr>
+<tr class="odd">
+<td>Transition baseline</td>
+<td style="text-align: right;">0.475</td>
+<td style="text-align: right;"><strong>0.500</strong></td>
+</tr>
+<tr class="even">
+<td>Transition all-informed management</td>
+<td style="text-align: right;">0.713</td>
+<td style="text-align: right;"><strong>0.720</strong></td>
+</tr>
+</tbody>
+</table>
+<p>These comparisons support branching extinction as a useful screening
+estimate. Deviations are expected because the real simulations have
+finite sites/capacity, shared environmental/management states,
+collisions among descendants and other dependencies absent from a
+branching process.</p>
+<h1 data-number="6" id="escape-and-containment"><span class="header-section-number">6</span> Escape and containment</h1>
+<h2 data-number="6.1" id="why-the-first-moment-poisson-approximation-is-not-enough"><span class="header-section-number">6.1</span> Why the first-moment Poisson
+approximation is not enough</h2>
+<p>The earlier escape approximation calculated cumulative expected
+successful exports (_T) and used</p>
+<p>[ P(T)-e^{-_T}. ]</p>
+<p>This is useful as a first-moment diagnostic but treats the cumulative
+events as though they arose from one Poisson process. In an invasion,
+successful exports are clustered within stochastic descendant lineages.
+The distribution of lineage size therefore matters.</p>
+<h2 data-number="6.2" id="branching-no-escape-recursion"><span class="header-section-number">6.2</span> Branching no-escape
+recursion</h2>
+<p>The preferred method propagates the probability that a lineage
+produces <strong>no successful outside establishment</strong> through
+all descendants. In a mean-matched multitype Poisson case with internal
+mean offspring matrix (G) and successful outside-event mean (e_i), the
+recursion is</p>
+<p>[ g_i^{(t+1)} = . ]</p>
+<p>Model-specific versions improve on this generic form where
+possible:</p>
+<ul>
+<li>binary INApest uses edge-based Bernoulli colonisation and explicit
+outside edges;</li>
+<li>INApestMeta uses a one-parent PGF with Poisson propagule production
+and reconstructed integer allocation over internal + external kernel
+mass;</li>
+<li>the transition model uses a stage × node PGF with Poisson fecundity
+thinned into internal recruitment and outside export;</li>
+<li>MLU currently uses a mean-matched multitype branching no-escape
+recursion, which is still distributional but is less simulator-specific
+than the Meta/transition versions.</li>
+</ul>
+<p>The first-moment value is retained in the result as
+<code>FirstMomentPoissonProbabilityByHorizon</code> for comparison, but
+<code>BranchingProbabilityByHorizon</code> is the primary estimate.</p>
+<h3 data-number="6.2.1" id="validation-and-comparison"><span class="header-section-number">6.2.1</span> Validation and
+comparison</h3>
+<p>Binary INApest with explicit outer sink nodes:</p>
+<table>
+<thead>
+<tr class="header">
+<th>Scenario, timestep 8</th>
+<th style="text-align: right;">Simulation</th>
+<th style="text-align: right;">Branching</th>
+<th style="text-align: right;">First-moment Poisson</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Unmanaged</td>
+<td style="text-align: right;"><strong>0.083</strong></td>
+<td style="text-align: right;">0.102</td>
+<td style="text-align: right;">0.144</td>
+</tr>
+<tr class="even">
+<td>Managed</td>
+<td style="text-align: right;"><strong>0.030</strong></td>
+<td style="text-align: right;">0.037</td>
+<td style="text-align: right;">0.048</td>
+</tr>
+</tbody>
+</table>
+<p>Complex-model analytical examples over eight timesteps:</p>
+<table>
+<thead>
+<tr class="header">
+<th>Model/scenario</th>
+<th style="text-align: right;">Branching escape</th>
+<th style="text-align: right;">First-moment comparator</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Meta baseline</td>
+<td style="text-align: right;"><strong>0.144</strong></td>
+<td style="text-align: right;">0.160</td>
+</tr>
+<tr class="even">
+<td>Meta managed</td>
+<td style="text-align: right;"><strong>0.071</strong></td>
+<td style="text-align: right;">0.077</td>
+</tr>
+<tr class="odd">
+<td>Transition baseline</td>
+<td style="text-align: right;"><strong>0.222</strong></td>
+<td style="text-align: right;">0.248</td>
+</tr>
+<tr class="even">
+<td>Transition managed</td>
+<td style="text-align: right;"><strong>0.121</strong></td>
+<td style="text-align: right;">0.132</td>
+</tr>
+<tr class="odd">
+<td>MLU baseline</td>
+<td style="text-align: right;"><strong>0.137</strong></td>
+<td style="text-align: right;">0.160</td>
+</tr>
+<tr class="even">
+<td>MLU managed</td>
+<td style="text-align: right;"><strong>0.058</strong></td>
+<td style="text-align: right;">0.063</td>
+</tr>
+</tbody>
+</table>
+<h2 data-number="6.3" id="identifiability-of-outside-movement"><span class="header-section-number">6.3</span> Identifiability of outside
+movement</h2>
+<p>Escape cannot be conjured from an internal matrix if the matrix does
+not encode what was omitted.</p>
+<ul>
+<li><strong>Binary INApest:</strong> internal source→destination entries
+are independent Bernoulli opportunities.
+<code>1 - rowSums(SDDprob)</code> is therefore not a valid outside
+probability. Supply an explicit source × outside-destination
+<code>ExportProb</code> matrix.</li>
+<li><strong>INApestMeta / MLU:</strong> supply
+<code>ExportSDDprob</code> and/or <code>ExportLDDprob</code>.
+<code>AssumeResidualExport = TRUE</code> is allowed only when the
+matrices are known to be cropped normalized kernels whose missing row
+mass genuinely represents outside movement.</li>
+<li><strong>Transition model:</strong> residual export is a defined part
+of the dispersal semantics, so the analytical companion can use missing
+row mass by default.</li>
+</ul>
+<p><code>OutsideEstablishmentProb</code> then converts movement outside
+into <strong>successful escape/establishment</strong>, which is usually
+the management-relevant estimand.</p>
+<h1 data-number="7" id="validation-summary-by-model-family"><span class="header-section-number">7</span> Validation summary by model
+family</h1>
+<h2 data-number="7.1" id="binary-inapest-1"><span class="header-section-number">7.1</span> Binary INApest</h2>
+<p>The low-density operator and branching extinction were accurate
+across baseline, management and heterogeneous-habitat scenarios. A
+nonlinear occupancy mean-field improved finite-prevalence trajectories
+where saturation/collisions became important. Information transfer was
+directionally supported but close-to-threshold SEAM effects required
+longer/higher-replication stochastic runs because differences in (R)
+were small.</p>
+<h2 data-number="7.2" id="inapestmeta-1"><span class="header-section-number">7.2</span> INApestMeta</h2>
+<table>
+<colgroup>
+<col style="width: 13%" />
+<col style="width: 17%" />
+<col style="width: 17%" />
+<col style="width: 17%" />
+<col style="width: 17%" />
+<col style="width: 17%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th>Scenario</th>
+<th style="text-align: right;">(R)</th>
+<th style="text-align: right;">Simulated final mean</th>
+<th style="text-align: right;">Analytical final mean</th>
+<th style="text-align: right;">Sim extinction</th>
+<th style="text-align: right;">Branching extinction</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Baseline</td>
+<td style="text-align: right;">0.862</td>
+<td style="text-align: right;">0.537</td>
+<td style="text-align: right;">0.420</td>
+<td style="text-align: right;">0.706</td>
+<td style="text-align: right;">0.688</td>
+</tr>
+<tr class="even">
+<td>All-informed management</td>
+<td style="text-align: right;">0.714</td>
+<td style="text-align: right;">0.157</td>
+<td style="text-align: right;">0.134</td>
+<td style="text-align: right;">0.854</td>
+<td style="text-align: right;">0.873</td>
+</tr>
+<tr class="odd">
+<td>Detection-limited</td>
+<td style="text-align: right;">0.724</td>
+<td style="text-align: right;">0.171</td>
+<td style="text-align: right;">0.196</td>
+<td style="text-align: right;">0.840</td>
+<td style="text-align: right;">—</td>
+</tr>
+</tbody>
+</table>
+<p>The rare-state threshold is the strongest output. Finite-horizon
+means can diverge as recruitment nonlinearities and finite capacity
+become influential.</p>
+<p>A focused 1,000-realisation information test gave the expected
+management-information ranking: detection with retention 1 had (R),
+retention 0.5 raised the analytical multiplier to about 0.776, and
+strong SEAM reduced it to about 0.719. Strong SEAM reduced simulated
+timestep-6 abundance from 0.226 to 0.172 and raised extinction from
+0.799 to 0.840.</p>
+<h2 data-number="7.3" id="transition-matrix"><span class="header-section-number">7.3</span> Transition matrix</h2>
+<table>
+<colgroup>
+<col style="width: 11%" />
+<col style="width: 14%" />
+<col style="width: 14%" />
+<col style="width: 14%" />
+<col style="width: 14%" />
+<col style="width: 14%" />
+<col style="width: 14%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th>Scenario</th>
+<th style="text-align: right;">Intrinsic local ()</th>
+<th style="text-align: right;">Landscape (R)</th>
+<th style="text-align: right;">Sim final</th>
+<th style="text-align: right;">Analytical final</th>
+<th style="text-align: right;">Sim extinction</th>
+<th style="text-align: right;">Branching extinction</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Baseline</td>
+<td style="text-align: right;">1.422</td>
+<td style="text-align: right;">1.058</td>
+<td style="text-align: right;">2.025</td>
+<td style="text-align: right;">1.740</td>
+<td style="text-align: right;">0.475</td>
+<td style="text-align: right;">0.500</td>
+</tr>
+<tr class="even">
+<td>All-informed management</td>
+<td style="text-align: right;">1.217</td>
+<td style="text-align: right;"><strong>0.903</strong></td>
+<td style="text-align: right;">0.863</td>
+<td style="text-align: right;">0.766</td>
+<td style="text-align: right;">0.713</td>
+<td style="text-align: right;">0.720</td>
+</tr>
+<tr class="odd">
+<td>Detection-limited</td>
+<td style="text-align: right;">—</td>
+<td style="text-align: right;">1.004</td>
+<td style="text-align: right;">1.419</td>
+<td style="text-align: right;">1.350</td>
+<td style="text-align: right;">0.594</td>
+<td style="text-align: right;">—</td>
+</tr>
+<tr class="even">
+<td>Detection + SEAM</td>
+<td style="text-align: right;">—</td>
+<td style="text-align: right;">0.977</td>
+<td style="text-align: right;">1.400</td>
+<td style="text-align: right;">1.266</td>
+<td style="text-align: right;">0.606</td>
+<td style="text-align: right;">—</td>
+</tr>
+</tbody>
+</table>
+<p>Density-dependent dispersal is a clear example of a parameter that
+may leave the first-order rare-state multiplier unchanged while
+dramatically altering finite-density trajectories. In the test beginning
+with 30 adults, the density-dependent simulation reached about 82.6
+compared with 52.2 from the linear operator.</p>
+<h2 data-number="7.4" id="multiple-land-use"><span class="header-section-number">7.4</span> Multiple land use</h2>
+<table>
+<thead>
+<tr class="header">
+<th>Scenario</th>
+<th style="text-align: right;">(R)</th>
+<th style="text-align: right;">Simulated final mean</th>
+<th style="text-align: right;">Analytical final mean</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Baseline</td>
+<td style="text-align: right;">0.854</td>
+<td style="text-align: right;">0.558</td>
+<td style="text-align: right;"><strong>0.561</strong></td>
+</tr>
+<tr class="even">
+<td>All-informed management</td>
+<td style="text-align: right;">0.797</td>
+<td style="text-align: right;">0.117</td>
+<td style="text-align: right;">0.190</td>
+</tr>
+<tr class="odd">
+<td>Detection-limited</td>
+<td style="text-align: right;">0.807</td>
+<td style="text-align: right;">0.525</td>
+<td style="text-align: right;">0.475</td>
+</tr>
+<tr class="even">
+<td>Detection + SEAM</td>
+<td style="text-align: right;">0.797</td>
+<td style="text-align: right;">0.392</td>
+<td style="text-align: right;">0.474</td>
+</tr>
+<tr class="odd">
+<td>Homogeneous habitat</td>
+<td style="text-align: right;">0.833</td>
+<td style="text-align: right;">0.575</td>
+<td style="text-align: right;">0.497</td>
+</tr>
+<tr class="even">
+<td>Clustered habitat</td>
+<td style="text-align: right;">0.846</td>
+<td style="text-align: right;">0.575</td>
+<td style="text-align: right;">0.544</td>
+</tr>
+</tbody>
+</table>
+<p>The baseline agreement is very strong. Management/information cases
+are less exact because node-level information is shared across land uses
+while the branching types approximate individuals more
+independently.</p>
+<h1 data-number="8" id="user-facing-r-function"><span class="header-section-number">8</span> User-facing R function</h1>
+<p>Source the analytical file once:</p>
+<div class="sourceCode" id="cb1"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="co">#| eval: false</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="fu">source</span>(<span class="st">&quot;INApestAnalytical.R&quot;</span>)</span></code></pre></div>
+<p>The unified interface is:</p>
+<div class="sourceCode" id="cb2"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="co">#| eval: false</span></span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a><span class="fu">INApestAnalytical</span>(</span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>  Model,</span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a>  Ntimesteps,</span>
+<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a>  InitialState,</span>
+<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a>  SDDprob,</span>
+<span id="cb2-7"><a href="#cb2-7" aria-hidden="true" tabindex="-1"></a>  <span class="co"># model-specific biology ...</span></span>
+<span id="cb2-8"><a href="#cb2-8" aria-hidden="true" tabindex="-1"></a>  <span class="at">DetectionProb =</span> <span class="dv">0</span>,</span>
+<span id="cb2-9"><a href="#cb2-9" aria-hidden="true" tabindex="-1"></a>  <span class="at">ManageProb =</span> <span class="dv">0</span>,</span>
+<span id="cb2-10"><a href="#cb2-10" aria-hidden="true" tabindex="-1"></a>  <span class="at">MortalityProb =</span> <span class="dv">0</span>,</span>
+<span id="cb2-11"><a href="#cb2-11" aria-hidden="true" tabindex="-1"></a>  <span class="at">EradicationProb =</span> <span class="dv">0</span>,</span>
+<span id="cb2-12"><a href="#cb2-12" aria-hidden="true" tabindex="-1"></a>  <span class="at">SpreadReduction =</span> <span class="dv">0</span>,</span>
+<span id="cb2-13"><a href="#cb2-13" aria-hidden="true" tabindex="-1"></a>  <span class="at">SEAM =</span> <span class="cn">NULL</span>,</span>
+<span id="cb2-14"><a href="#cb2-14" aria-hidden="true" tabindex="-1"></a>  <span class="at">InfoRetentionProb =</span> <span class="dv">1</span>,</span>
+<span id="cb2-15"><a href="#cb2-15" aria-hidden="true" tabindex="-1"></a>  <span class="at">InfoPersistenceSteps =</span> <span class="cn">NA</span>,</span>
+<span id="cb2-16"><a href="#cb2-16" aria-hidden="true" tabindex="-1"></a>  <span class="co"># optional outside movement ...</span></span>
+<span id="cb2-17"><a href="#cb2-17" aria-hidden="true" tabindex="-1"></a>  <span class="at">ExportProb =</span> <span class="cn">NULL</span>,</span>
+<span id="cb2-18"><a href="#cb2-18" aria-hidden="true" tabindex="-1"></a>  <span class="at">ExportSDDprob =</span> <span class="cn">NULL</span>,</span>
+<span id="cb2-19"><a href="#cb2-19" aria-hidden="true" tabindex="-1"></a>  <span class="at">ExportLDDprob =</span> <span class="cn">NULL</span>,</span>
+<span id="cb2-20"><a href="#cb2-20" aria-hidden="true" tabindex="-1"></a>  <span class="at">OutsideEstablishmentProb =</span> <span class="dv">1</span>,</span>
+<span id="cb2-21"><a href="#cb2-21" aria-hidden="true" tabindex="-1"></a>  <span class="at">AssumeResidualExport =</span> <span class="cn">FALSE</span></span>
+<span id="cb2-22"><a href="#cb2-22" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div>
+<h2 data-number="8.1" id="example-binary-inapest"><span class="header-section-number">8.1</span> Example: binary INApest</h2>
+<div class="sourceCode" id="cb3"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="co">#| eval: false</span></span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a>z <span class="ot">&lt;-</span> <span class="fu">INApestAnalytical</span>(</span>
+<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a>  <span class="at">Model =</span> <span class="st">&quot;INApest&quot;</span>,</span>
+<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a>  <span class="at">Ntimesteps =</span> <span class="dv">10</span>,</span>
+<span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a>  <span class="at">InitialState =</span> initial_invaded,</span>
+<span id="cb3-6"><a href="#cb3-6" aria-hidden="true" tabindex="-1"></a>  <span class="at">SDDprob =</span> SDDprob,</span>
+<span id="cb3-7"><a href="#cb3-7" aria-hidden="true" tabindex="-1"></a>  <span class="at">LDDprob =</span> LDDprob,</span>
+<span id="cb3-8"><a href="#cb3-8" aria-hidden="true" tabindex="-1"></a>  <span class="at">EnvEstabProb =</span> EnvEstabProb,</span>
+<span id="cb3-9"><a href="#cb3-9" aria-hidden="true" tabindex="-1"></a>  <span class="at">Survival =</span> Survival,</span>
+<span id="cb3-10"><a href="#cb3-10" aria-hidden="true" tabindex="-1"></a>  <span class="at">DetectionProb =</span> DetectionProb,</span>
+<span id="cb3-11"><a href="#cb3-11" aria-hidden="true" tabindex="-1"></a>  <span class="at">ManageProb =</span> ManageProb,</span>
+<span id="cb3-12"><a href="#cb3-12" aria-hidden="true" tabindex="-1"></a>  <span class="at">EradicationProb =</span> EradicationProb,</span>
+<span id="cb3-13"><a href="#cb3-13" aria-hidden="true" tabindex="-1"></a>  <span class="at">SpreadReduction =</span> SpreadReduction,</span>
+<span id="cb3-14"><a href="#cb3-14" aria-hidden="true" tabindex="-1"></a>  <span class="at">SEAM =</span> SEAM,</span>
+<span id="cb3-15"><a href="#cb3-15" aria-hidden="true" tabindex="-1"></a>  <span class="at">InfoRetentionProb =</span> InfoRetentionProb,</span>
+<span id="cb3-16"><a href="#cb3-16" aria-hidden="true" tabindex="-1"></a>  <span class="at">ExportProb =</span> outside_edges</span>
+<span id="cb3-17"><a href="#cb3-17" aria-hidden="true" tabindex="-1"></a>)</span>
+<span id="cb3-18"><a href="#cb3-18" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-19"><a href="#cb3-19" aria-hidden="true" tabindex="-1"></a><span class="fu">print</span>(z)</span>
+<span id="cb3-20"><a href="#cb3-20" aria-hidden="true" tabindex="-1"></a><span class="fu">summary</span>(z)</span></code></pre></div>
+<h2 data-number="8.2" id="example-transition-model"><span class="header-section-number">8.2</span> Example: transition model</h2>
+<div class="sourceCode" id="cb4"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="co">#| eval: false</span></span>
+<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a>z <span class="ot">&lt;-</span> <span class="fu">INApestAnalytical</span>(</span>
+<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a>  <span class="at">Model =</span> <span class="st">&quot;INApestMetaTransitionMatrix&quot;</span>,</span>
+<span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a>  <span class="at">Ntimesteps =</span> <span class="dv">10</span>,</span>
+<span id="cb4-5"><a href="#cb4-5" aria-hidden="true" tabindex="-1"></a>  <span class="at">InitialState =</span> initial_stage_matrix,</span>
+<span id="cb4-6"><a href="#cb4-6" aria-hidden="true" tabindex="-1"></a>  <span class="at">SDDprob =</span> SDDprob,</span>
+<span id="cb4-7"><a href="#cb4-7" aria-hidden="true" tabindex="-1"></a>  <span class="at">LDDprob =</span> LDDprob,</span>
+<span id="cb4-8"><a href="#cb4-8" aria-hidden="true" tabindex="-1"></a>  <span class="at">Transition =</span> Transition,</span>
+<span id="cb4-9"><a href="#cb4-9" aria-hidden="true" tabindex="-1"></a>  <span class="at">Nstages =</span> <span class="fu">nrow</span>(Transition),</span>
+<span id="cb4-10"><a href="#cb4-10" aria-hidden="true" tabindex="-1"></a>  <span class="at">K =</span> K,</span>
+<span id="cb4-11"><a href="#cb4-11" aria-hidden="true" tabindex="-1"></a>  <span class="at">SeedbankK =</span> SeedbankK,</span>
+<span id="cb4-12"><a href="#cb4-12" aria-hidden="true" tabindex="-1"></a>  <span class="at">PropaguleEstablishment =</span> PropaguleEstablishment,</span>
+<span id="cb4-13"><a href="#cb4-13" aria-hidden="true" tabindex="-1"></a>  <span class="at">ManageProb =</span> ManageProb,</span>
+<span id="cb4-14"><a href="#cb4-14" aria-hidden="true" tabindex="-1"></a>  <span class="at">MortalityProb =</span> MortalityProb,</span>
+<span id="cb4-15"><a href="#cb4-15" aria-hidden="true" tabindex="-1"></a>  <span class="at">SpreadReduction =</span> SpreadReduction</span>
+<span id="cb4-16"><a href="#cb4-16" aria-hidden="true" tabindex="-1"></a>)</span>
+<span id="cb4-17"><a href="#cb4-17" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb4-18"><a href="#cb4-18" aria-hidden="true" tabindex="-1"></a>z<span class="sc">$</span>Growth<span class="sc">$</span>IntrinsicLocalLambda</span>
+<span id="cb4-19"><a href="#cb4-19" aria-hidden="true" tabindex="-1"></a>z<span class="sc">$</span>Growth<span class="sc">$</span>EquivalentPerTimestepMultiplier</span>
+<span id="cb4-20"><a href="#cb4-20" aria-hidden="true" tabindex="-1"></a>z<span class="sc">$</span>Extinction<span class="sc">$</span>ProbabilityByHorizon</span>
+<span id="cb4-21"><a href="#cb4-21" aria-hidden="true" tabindex="-1"></a>z<span class="sc">$</span>Escape<span class="sc">$</span>BranchingProbabilityByHorizon</span></code></pre></div>
+<h2 data-number="8.3" id="main-outputs"><span class="header-section-number">8.3</span> Main outputs</h2>
+<table>
+<colgroup>
+<col style="width: 50%" />
+<col style="width: 50%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th>Output</th>
+<th>Interpretation</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>Growth$EquivalentPerTimestepMultiplier</code></td>
+<td>Landscape growth multiplier when rare</td>
+</tr>
+<tr class="even">
+<td><code>Growth$CycleMultiplier</code></td>
+<td>Spectral radius of the ordered full-horizon/cycle operator</td>
+</tr>
+<tr class="odd">
+<td><code>Growth$Classification</code></td>
+<td>Growth/decline/approximately replacement when rare</td>
+</tr>
+<tr class="even">
+<td><code>Growth$IntrinsicLocalLambda</code></td>
+<td>Transition model only: local stage-demographic multiplier</td>
+</tr>
+<tr class="odd">
+<td><code>Trajectory$ExpectedTotal</code></td>
+<td>Initial-condition-specific expected abundance/occupancy through
+time</td>
+</tr>
+<tr class="even">
+<td><code>Extinction$ProbabilityByHorizon</code></td>
+<td>Branching estimate of extinction by requested horizon</td>
+</tr>
+<tr class="odd">
+<td><code>Extinction$BranchingFadeoutProbability</code></td>
+<td>Eventual branching-process fade-out where defined</td>
+</tr>
+<tr class="even">
+<td><code>Escape$BranchingProbabilityByHorizon</code></td>
+<td><strong>Primary</strong> estimate of ≥1 successful outside
+establishment</td>
+</tr>
+<tr class="odd">
+<td><code>Escape$FirstMomentPoissonProbabilityByHorizon</code></td>
+<td>Comparator/diagnostic only</td>
+</tr>
+<tr class="even">
+<td><code>InformationStateMethod</code></td>
+<td>Whether information uses the compact memoryless state system or
+explicit time-since-local-evidence classes</td>
+</tr>
+<tr class="odd">
+<td><code>Diagnostics</code></td>
+<td>Model-specific warnings about assumptions or unsupported
+exactness</td>
+</tr>
+<tr class="even">
+<td><code>ApproximationScope</code></td>
+<td>Generic limitations carried with every result</td>
+</tr>
+</tbody>
+</table>
+<h1 data-number="9" id="limitations-and-decision-rules"><span class="header-section-number">9</span> Limitations and decision
+rules</h1>
+<section id="limitations-that-should-accompany-any-shared-result" class="limit-box" data-number="9.0.1">
+<h3 data-number="9.0.1"><span class="header-section-number">9.0.1</span>
+Limitations that should accompany any shared result</h3>
+<ul>
+<li><strong>Rare-invasion basis.</strong> The spectral operators are
+local/low-density approximations. They are strongest for invasion
+establishment, early response, and threshold analysis.</li>
+<li><strong>Finite landscapes and capacity.</strong> Descendant lineages
+can collide, compete for the same node/capacity, and saturate habitat.
+Branching processes intentionally ignore those dependencies.</li>
+<li><strong>Binary INApest eventual extinction.</strong> On a finite
+closed landscape with an absorbing zero state, eventual stochastic
+extinction can remain possible even when ((G)&gt;1). The spectral radius
+describes growth when rare/quasi-persistence, not immortality.</li>
+<li><strong>Parameter SDs.</strong> The analytical function currently
+works with expected parameter values. It does not integrate the full
+annual random-effect distribution represented by
+<code>DetectionSD</code>, <code>ManageSD</code>,
+<code>MortalitySD</code>, etc.</li>
+<li><strong>Information correlations.</strong> A compact
+informed/uninformed operator does not fully represent
+informed-but-uninvaded nodes or all SEAM correlations at finite
+prevalence.</li>
+<li><strong>Programmed information stopping.</strong> The deterministic
+stop clock is explicitly represented with age-since-local-evidence state
+classes. In Meta, transition and multiple-land-use models, shared
+node-level evidence created by kills of other individuals and
+information retained by currently empty nodes remain higher-order
+effects that are not fully represented by the low-density
+individual-type branching model.</li>
+<li><strong>Density-dependent dispersal.</strong>
+<code>DispersalDensityFactor</code> is linearized at rarity and can have
+large finite-density effects without changing the rare-state
+multiplier.</li>
+<li><strong>Meta integer allocation.</strong> The single-parent operator
+reproduces the important low-count integer allocation mechanism, but
+multi-parent cooperative effects from <code>floor(sum(...))</code> are
+not fully represented by independent lineages.</li>
+<li><strong>MLU branching escape.</strong> The current no-escape method
+is a mean-matched multitype branching recursion, less simulator-specific
+than the binary, Meta and transition PGFs.</li>
+<li><strong>Escape identifiability.</strong> Outside movement must be
+supplied or defensibly inferable from kernel construction. Do not
+interpret arbitrary missing row mass as export.</li>
+<li><strong>Parallel execution.</strong> WebR provided R 4.6.0 and
+supported model-level logic tests, but not the installed package/PSOCK
+environment used in production. Parallel bodies were exercised with
+sequential test shims; a conventional-R parallel smoke test remains
+advisable.</li>
+</ul>
+</section>
+<p>A practical decision rule is:</p>
+<ul>
+<li>use the analytical result confidently for <strong>mechanism,
+ranking, screening and threshold location</strong> when it is well away
+from 1;</li>
+<li>if (R) is close to 1, or if strong shared-node information
+feedbacks, density dependence or capacity saturation are important, use
+it to design the stochastic experiment rather than as the final
+answer;</li>
+<li>use branching extinction/escape as rapid probabilities, but report
+stochastic estimates for high-stakes final response decisions.</li>
+</ul>
+<h1 data-number="10" id="testing-and-reproducibility"><span class="header-section-number">10</span> Testing and reproducibility</h1>
+<p>The analytical function and corrected source were tested in WebR/R
+4.6.0. The unified user-facing smoke tests cover all four analytical
+model classes, dynamic information and temporal connectivity. The
+programmed-stop analytical extension was additionally checked against
+hand-calculated clock cases, node-specific and node × timestep
+persistence policies, all four model families, and exact backward
+compatibility when <code>InfoPersistenceSteps = NA</code>. The
+production bug suite includes <code>Nperm = 1</code> across all eight
+functions, matrix habitat initialization in all three binary
+implementations, and the corrected serial MLU LDD diagnostic. The WebR
+wrapper can raise a non-local-control exception after some parallel-shim
+runs have completed and written all PASS markers/results; this is a
+runtime teardown artifact already observed in earlier testing, not a
+failed model assertion.</p>
+<p>Raw validation CSVs are included in the release so the values in this
+report can be audited without rerunning the simulations.</p>
+<h1 data-number="11" id="development-lineage"><span class="header-section-number">11</span> Development lineage</h1>
+<p>The transition-matrix analytical formulation was anchored to the
+supplied <code>managed_population_growth_experiment.qmd</code> and
+<code>Local_Managed_PopGrowth_response_surface.R</code>, particularly
+the convention that stage mortality acts on source stages before
+transition/reproduction and the distinction between timestep and cycle
+multipliers. That local calculation was then generalized to a stage ×
+node landscape operator rather than replaced with an unrelated
+formulation.</p>
+<p>The analytical companion was developed in stages—binary occupancy
+first, then Meta abundance, transition-stage structure, and multiple
+land use—because each layer exposed different stochastic structure and
+therefore required a different approximation rather than a
+one-size-fits-all Jacobian.</p>
+<h1 data-number="12" id="suggested-next-developments"><span class="header-section-number">12</span> Suggested next developments</h1>
+<ol type="1">
+<li>Extend the programmed-stop mean-field to track <strong>shared
+node-level evidence and informed-but-uninvaded nodes at finite
+prevalence</strong>, complementing the new explicit
+age-since-local-evidence clock used at rarity.</li>
+<li>Build a simulator-faithful <strong>MLU offspring/escape PGF</strong>
+to replace the current mean-matched MLU branching fallback.</li>
+<li>Integrate selected parameter uncertainty (<code>DetectionSD</code>,
+<code>ManageSD</code>, mortality SD) by quadrature or small mixtures of
+operators rather than only plug-in means.</li>
+<li>Add automated side-by-side analytical versus stochastic calibration
+plots to the user-facing workflow.</li>
+<li>Run a conventional-R package/PSOCK regression on the final eight
+functions before merging the corrected production files.</li>
+</ol>
+<hr />
+<p><span class="small">Prepared as a technical screening and validation
+report for the INApest development workflow. Analytical probabilities
+are approximations and should be interpreted together with the
+diagnostics and limitations above.</span></p>
+</body>
+</html>

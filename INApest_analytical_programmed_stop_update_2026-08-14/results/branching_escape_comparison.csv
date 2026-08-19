@@ -1,0 +1,7 @@
+"case","rho","branching_escape","first_moment_escape","method"
+"Meta_baseline",1.0855651540203,0.14397850124041,0.159532009939777,"Meta one-parent branching no-escape PGF"
+"Meta_managed",0.911874729377049,0.0708976088241218,0.0765651489307428,"Meta one-parent branching no-escape PGF"
+"Transition_baseline",1.05013715131622,0.221893735573953,0.24843784754515,"stage x node branching no-escape PGF"
+"Transition_managed",0.896940775180106,0.12119313780726,0.132332889405855,"stage x node branching no-escape PGF"
+"MLU_baseline",1.0855651540203,0.13663714799582,0.159532009939777,"mean-matched multitype branching no-escape recursion"
+"MLU_managed",0.962533544417285,0.0582929525977309,0.0629418777406244,"mean-matched multitype branching no-escape recursion"

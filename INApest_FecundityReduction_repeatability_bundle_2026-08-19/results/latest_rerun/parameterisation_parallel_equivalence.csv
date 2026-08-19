@@ -1,0 +1,10 @@
+"model","parameterisation","all_equal","max_abs_difference"
+"INApestMetaMultipleLandUse","scalar",TRUE,0
+"INApestMetaMultipleLandUse","landuse_vector",TRUE,0
+"INApestMetaMultipleLandUse","node_by_landuse",TRUE,0
+"INApestMetaMultipleLandUse","node_by_landuse_by_timestep",TRUE,0
+"INApestMetaTransitionMatrix","scalar",TRUE,0
+"INApestMetaTransitionMatrix","node_vector",TRUE,0
+"INApestMetaTransitionMatrix","stage_vector",TRUE,0
+"INApestMetaTransitionMatrix","node_by_timestep",TRUE,0
+"INApestMetaTransitionMatrix","node_by_stage_by_timestep",TRUE,0

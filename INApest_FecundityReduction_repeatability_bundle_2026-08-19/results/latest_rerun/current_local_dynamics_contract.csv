@@ -1,0 +1,3 @@
+"check","pass","message"
+"old_custom_function_FR_zero",TRUE,""
+"old_custom_function_FR_active_errors",TRUE,"Custom LocalDynamics must accept a 'nodefecundityreduction' argument (or ...) when FecundityReduction is active"

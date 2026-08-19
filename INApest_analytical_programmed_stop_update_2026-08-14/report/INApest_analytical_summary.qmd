@@ -1,0 +1,574 @@
+---
+title: "Analytical screening companion for INApest"
+subtitle: "Growth, extinction, management, information, habitat and landscape escape across four INApest model classes"
+date: "14 August 2026"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    number-sections: true
+    code-fold: true
+    embed-resources: true
+    css: report.css
+---
+
+::: {.summary-box}
+## Executive summary
+
+### What this work set out to do {.unnumbered .unlisted}
+
+INApest is a family of spatial simulation models designed to explore how an invasive species may establish, spread and respond to management across a landscape. The models can represent differences among locations in habitat suitability, dispersal, detection and management, and can also represent movement of information between locations. More complex versions of INApest track population abundance, life stages and different land uses within a location.
+
+These simulations are deliberately stochastic: two invasions with exactly the same starting conditions can have different outcomes simply because establishment, survival, dispersal, detection and management are uncertain. This is valuable for realistic response planning, but it can make it difficult to see **why** a particular combination of biological and management parameters produces growth, decline, eradication or escape.
+
+The purpose of this work was therefore to develop an **analytical screening companion to INApest**. The new analytical tool does not replace the stochastic simulations. Instead, it uses the same underlying model parameters to provide rapid estimates of:
+
+- whether an invasion is expected to increase or decrease when it is still rare;
+- how quickly occupancy or population size is expected to change over a specified period;
+- the probability that a small incursion dies out or is eradicated;
+- the probability that the invasion produces at least one successful escape from the modelled landscape, where outside dispersal can be quantified;
+- how management, detection, information transfer, information loss, habitat suitability and spatial arrangement change these outcomes.
+
+A single user-facing R function, `INApestAnalytical()`, now provides these calculations for the four main model types: the original presence/absence version of INApest, the abundance-based `INApestMeta`, the life-stage-based `INApestMetaTransitionMatrix`, and the multiple-land-use version of `INApestMeta`.
+
+### A simple way to interpret the main analytical result {.unnumbered .unlisted}
+
+The central output is a **landscape growth multiplier**. This can be thought of as an estimate of whether a small invasion tends to replace itself and expand from one timestep to the next after accounting for survival, management, dispersal, establishment and the spatial structure of the landscape.
+
+A multiplier greater than 1 means that the invasion is expected to **grow when rare**. A multiplier below 1 means it is expected to **decline when rare**. A value close to 1 identifies a system close to the boundary between growth and decline.
+
+This is similar in spirit to asking whether a population replaces itself from one generation to the next, but the calculation is made across the whole landscape. It therefore captures an important feature that cannot be obtained simply by averaging survival, management or habitat suitability across locations: **where suitable habitat and well-connected locations occur can be as important as their average values**.
+
+The analytical framework also handles conditions that change through time. This includes the new INApest option for SDD and LDD connectivity matrices to vary among timesteps, as well as changing habitat or management. In these situations the sequence of conditions matters; the calculation follows them in their actual temporal order rather than simply averaging them.
+
+### Population decline does not mean guaranteed eradication—and growth does not mean certain establishment {.unnumbered .unlisted}
+
+A major advantage of the new framework is that it separates **expected population growth** from **probability of extinction**.
+
+A small invasive population can disappear through chance even when its average growth rate is greater than replacement. Conversely, a population whose expected growth rate is below replacement can persist for some time before eventually disappearing.
+
+For this reason, extinction is calculated using a **branching-process approximation**. In plain terms, this follows the possible descendants of each individual or occupied location and asks how likely it is that the entire invasion lineage eventually disappears.
+
+These extinction calculations agreed well with the stochastic INApest simulations in the validation experiments. For example, in the original presence/absence INApest model, baseline extinction at the test horizon was **0.555 in the simulations and 0.551 analytically**. Under management the corresponding values were **0.690 and 0.667**. Similar agreement was obtained for the abundance and transition-matrix models.
+
+The analytical extinction probabilities should still be viewed as screening estimates, particularly once populations become large, but they are substantially more informative than trying to infer eradication probability from the average population trajectory alone.
+
+### Management effectiveness depends on information as well as treatment efficacy {.unnumbered .unlisted}
+
+The analysis shows particularly clearly that **effective control is not determined solely by how strongly management affects the pest**.
+
+Management first has to occur.
+
+INApest distinguishes between locations that have information about the pest and locations that do not. Detection, transfer of information between locations, external information, information decay and programmed stopping rules can therefore determine whether otherwise effective control is actually applied.
+
+In one binary-INApest example, the same management treatment produced a landscape growth multiplier of **0.965 when all relevant locations had information**, meaning expected decline. When information depended on imperfect detection, the multiplier increased to **1.008**, moving the system just into expected growth. Strong information transfer between neighbouring locations reduced it again to approximately **0.990**.
+
+This means that surveillance and information-sharing can sometimes determine whether a response crosses the boundary between expected eradication and expected continued spread, even when the biological effectiveness of the treatment itself is unchanged.
+
+The stochastic information-decay mechanism can be represented analytically, and the programmed stopping rule is now represented explicitly rather than being forced into an equivalent probability. The analytical state tracks **time since the most recent local evidence** in finite age classes. This reproduces the deterministic stop clock and the production rule that programmed stopping takes priority over stochastic decay wherever it is supplied. In binary INApest, an informed extant infestation continually refreshes local evidence. In the abundance, stage-structured and multiple-land-use models, the remaining approximation is not the clock itself but how node-level evidence created by kills of other individuals, and information held by temporarily empty nodes, feeds back into later management.
+
+### Spatial arrangement matters {.unnumbered .unlisted}
+
+The work also demonstrates why landscape averages can sometimes be misleading.
+
+Landscapes with the **same average habitat suitability** produced different invasion growth rates when suitable habitat was clustered rather than dispersed. Likewise, applying the **same total management effort** uniformly across the landscape, concentrating it on highly connected locations, or concentrating it on peripheral locations produced different outcomes.
+
+There is an additional operational distinction. The strategy that best reduces the ability of an invasion to grow **anywhere in the landscape** is not necessarily the strategy that best controls a **known incursion at a particular location**.
+
+For that reason, the analytical tool reports both the overall landscape growth multiplier and an expected trajectory starting from the actual or specified initial invasion. This allows questions such as “Is the landscape generally vulnerable to invasion?” and “What is likely to happen to this particular incursion?” to be considered separately.
+
+### The transition-matrix model reveals an important distinction between local growth and landscape growth {.unnumbered .unlisted}
+
+The life-stage version of INApest provides one of the clearest examples of why the landscape calculation is useful.
+
+A traditional stage-structured analysis can calculate whether the population would increase locally after stage-specific management mortality. This is the same approach used in our yellow-legged hornet work.
+
+However, INApest also asks whether the offspring produced by that population remain within the landscape, reach suitable locations and establish successfully.
+
+The analytical companion therefore reports **two different growth measures** for the transition-matrix model:
+
+**Intrinsic local growth** describes what the managed life-stage transition matrix says would happen to the population before accounting for landscape dispersal and establishment losses.
+
+**Realized landscape growth** includes those spatial losses and establishment constraints.
+
+These can lead to different management conclusions. In one validation example, the intrinsic managed population multiplier was **1.217**, suggesting that local demography was still capable of increasing. After dispersal loss and establishment across the landscape were included, however, the landscape multiplier was **0.903**, indicating expected decline.
+
+This distinction is likely to be particularly valuable when assessing containment or eradication strategies for species that produce many dispersing propagules but where only a fraction successfully establish elsewhere.
+
+### Escape from the landscape requires more than estimating average exports {.unnumbered .unlisted}
+
+A further goal was to estimate the risk that an invasion escapes beyond the modelled response area before it is eradicated.
+
+An earlier approximation used the expected number of exported propagules and converted that mean into an escape probability using a Poisson assumption. This is computationally simple but ignores an important fact: propagules are produced in related invasion lineages. A few successful populations may produce many descendants while many incursions produce none.
+
+The analytical tool therefore now uses a more sophisticated **branching no-escape calculation** wherever the model structure allows it. Rather than considering only the average number exported, it calculates the probability that the complete invasion lineage produces no successful escape.
+
+This generally performed better than the simple Poisson calculation. In an explicit binary-INApest validation, simulated probability of escape by timestep 8 was **0.083**. The branching approximation gave **0.102**, whereas the simple Poisson approximation gave **0.144**. Under management the corresponding values were **0.030, 0.037 and 0.048**.
+
+The branching estimate is therefore reported as the primary analytical escape result, while the simpler first-moment estimate is retained as a diagnostic comparison.
+
+There is an important practical restriction: INApest can only estimate escape analytically if movement **outside** the modelled landscape can be identified. For some model variants this is naturally represented by unused dispersal-kernel probability. For others, an explicit outside-dispersal probability or an external set of destination nodes is required. Internal SDD and LDD matrices alone do not always contain enough information to reconstruct escape.
+
+### The analytical work also improved the simulation code {.unnumbered .unlisted}
+
+Developing and testing the analytical framework proved useful for checking the simulation functions themselves. Several implementation problems became visible because the analytical calculations provided an independent expectation against which the simulation could be compared.
+
+The corrected release includes fixes for stale timestep indexing in the serial transition-matrix model, a dimensional error in information transfer in the serial multiple-land-use model, initialization of time-varying habitat suitability in the binary INApest functions, an error in the timing of population-share weighting for long-distance dispersal in the serial multiple-land-use model, and loss of the realisation dimension when simulations were run with `Nperm = 1`.
+
+The multiple-land-use long-distance dispersal issue was particularly clear. In a controlled diagnostic example, the previous code produced about **36 destination individuals**, whereas the population-share formulation predicted approximately **18.9**. After correction, the stochastic simulator produced **18.55**, closely matching the independent analytical expectation.
+
+The corrected functions have been regression-tested so that these fixes do not undo the recently added time-varying dispersal, information decay or programmed information-stopping functionality.
+
+### What the analytical tool can and cannot tell us {.unnumbered .unlisted}
+
+The analytical companion is most reliable for **small, newly established invasions**, which is also the stage at which rapid response decisions are often most important.
+
+It becomes less exact as populations become large and several nonlinear processes become important. These include finite carrying capacity, competition for the same establishment locations, density-dependent dispersal, strongly nonlinear recruitment, correlations created by information spreading through the landscape, and variation among stochastic parameter draws.
+
+Programmed stopping is now represented explicitly with time-since-last-evidence state classes, so the deterministic clock itself is no longer treated as a memoryless approximation. The remaining limitation is the coupling between that node-level clock and finite populations: in the Meta, transition and multiple-land-use models, a management kill can leave information behind after the killed focal individual is gone, and informed-but-uninvaded nodes can affect later recolonisation. These shared-node effects are weak at rarity but can become more important as prevalence grows.
+
+The multiple-land-use escape calculation is currently somewhat more approximate than the corresponding binary and transition-matrix calculations because its branching representation does not yet reproduce every detail of the simulator's finite-capacity land-use allocation.
+
+Finally, the parallel versions of the simulation functions were tested for their underlying model logic using sequential substitutes in the WebR testing environment. A final conventional-R test using genuine parallel workers and the full INA package remains advisable before a production release.
+
+These limitations are important. In particular, a calculated growth multiplier of 0.99 should not be interpreted as proof of eradication, nor should 1.01 be interpreted as inevitable establishment. Outcomes close to the replacement boundary are precisely where stochastic simulation remains most important.
+
+### How the analytical companion should be used {.unnumbered .unlisted}
+
+The analytical and stochastic approaches are best viewed as complementary.
+
+`INApestAnalytical()` is intended for **rapid screening and understanding**: identifying whether an invasion appears strongly growing or declining, finding approximate management thresholds, comparing surveillance or information strategies, examining spatial targeting, exploring habitat and connectivity scenarios, estimating early extinction and escape risk, and understanding which processes are driving the result.
+
+The full stochastic INApest functions remain the preferred tool for **final response probabilities and detailed operational assessment**, particularly for scenarios close to the growth/decline threshold, established populations, strong density dependence, strong shared-node information/evidence feedbacks, or other situations where stochastic and nonlinear effects dominate.
+
+The main practical advance from this work is therefore not a replacement for INApest. It is a second way of looking at the same invasion-response problem: **the simulation tells us the range of outcomes that can occur, while the analytical companion helps explain why those outcomes occur and where the important thresholds lie.**
+:::
+::: {.key-box}
+### What colleagues should remember
+
+1. **\(\rho(G)\) is the landscape growth-when-rare criterion.** It is not automatically the same as a local demographic multiplier.
+2. **The transition model needs two multipliers:** intrinsic local \(\lambda\) and realized landscape \(\rho(G)\).
+3. **Extinction and escape are distributional questions.** Branching PGFs are preferred over converting a mean trajectory directly into probabilities.
+4. **Information can determine whether otherwise-effective management crosses the control threshold.** Detection, SEAM, retention and programmed persistence are therefore analytically consequential, not just operational details.
+5. **Spatial arrangement matters.** Equal mean habitat or management can have different thresholds and very different outcomes from a specific incursion location.
+6. **Use simulation near the decision boundary or away from rarity.** The analytical outputs are designed to show direction, thresholds and mechanisms quickly; they deliberately expose their approximation limits.
+:::
+
+# Scope and deliverables
+
+The release contains three integrated components:
+
+- corrected versions of the eight current INApest/INApestMeta production functions;
+- `INApestAnalytical.R`, containing the unified user-facing analytical interface plus lower-level analytical helpers;
+- this Quarto technical summary, together with validation scripts and raw CSV results.
+
+The analytical interface covers the four conceptual model families rather than duplicating every serial/parallel implementation, because serial and parallel versions share the same biological model. The corrected production code remains separate and preserves existing coding style as far as practical.
+
+# Production-code corrections
+
+| Issue | Affected implementation(s) | Correction | Verification |
+|---|---|---|---|
+| Stale mortality timestep index | Serial transition matrix | `NodeMortalityProb[, s, timestep]` rather than stale `t` | Earlier transition serial/parallel comparison and programmed-stop tests |
+| Stale detection timestep index | Serial transition matrix | `NodeDetectionProb[,,timestep]` | Time-varying detection/programmed-stop regression |
+| SEAM node × land-use dimensional mismatch | Serial MLU | Collapse land-use detection to node-level before SEAM multiplication | Cross-node information-refresh test |
+| Time-varying habitat used before `BPAM` initialized | `INApest`, `INApestParallel`, `INApestParallelINAscene` | Initialize `BPAM` from `EnvEstabProb[,1]` when habitat is node × time | All three variants run matrix habitat; static behaviour retained |
+| LDD population-share weighting calculated too late | Serial MLU | Apply `Pn` before calculating/drawing `Qin` | Corrected simulation 18.55 vs analytical 18.85; old code ~36.0 |
+| Singleton realisation dimension dropped | All functions; extra extraction issue in older `foreach` parallel functions | Preserve/restore explicit realisation dimension and aggregate with `drop=FALSE` | `Nperm = 1` test passed for all eight versions |
+
+The incremental patch in this release is relative to the immediately preceding programmed-information-stop build; the first three fixes above were already incorporated during that earlier development and are retained in the final source.
+
+# Analytical framework
+
+## A common landscape criterion
+
+For every model family, the analysis constructs a non-negative operator \(G_t\) describing expected descendants/types produced from each rare source type during timestep \(t\). For constant conditions,
+
+\[
+R_{\mathrm{landscape}} = \rho(G),
+\]
+
+where \(\rho\) is the spectral radius. For a repeating sequence of \(T\) time-varying conditions,
+
+\[
+G_{\mathrm{cycle}} = G_T G_{T-1}\cdots G_1,
+\qquad
+R_{\mathrm{cycle}}=\rho(G_{\mathrm{cycle}}),
+\]
+
+and an equivalent per-timestep multiplier is
+
+\[
+R_{\mathrm{equiv}}=R_{\mathrm{cycle}}^{1/T}.
+\]
+
+This ordered-product formulation directly supports the new node × node × timestep SDD/LDD arrays and time-varying habitat or management inputs.
+
+## Binary INApest
+
+For binary occupancy, define the combined source-to-destination colonisation opportunity
+
+\[
+D_{ij}=1-(1-SDD_{ij})(1-LDD_{ij})
+\]
+
+and destination establishment \(E_j\). Without management, an occupied source persists with survival \(s_i\) and can generate new occupied nodes through \(D_{ij}E_j\). With universal information and adoption probability \(a_i\), eradication probability \(k_i\), and spread reduction \(r_i\), the expected occupied-node persistence and spreading weights are
+
+\[
+u_i=s_i(1-a_i k_i),
+\]
+
+\[
+v_i=s_i\{(1-a_i)+a_i(1-k_i)(1-r_i)\}.
+\]
+
+Thus \(G_{ii}=u_i\), while off-diagonal colonisation is weighted by \(v_iD_{ij}E_j\). This is an exact first-order operator for the rare occupancy process under the stated independence assumptions.
+
+For a homogeneous network with adjacency matrix \(A\), edge probability \(p\), establishment \(e\), and survival \(s\), the unmanaged special case reduces to
+
+\[
+R_{\mathrm{occ}}=s\{1+ep\rho(A)\}.
+\]
+
+## INApestMeta
+
+INApestMeta is an abundance model, but its rare-state mathematics is not well represented by a naive continuous Jacobian. Propagules are Poisson generated, while dispersers are passed to `rmultinom()` using an integer `size`. At small populations, this introduces a real threshold/truncation effect.
+
+The preferred operator therefore asks: **what is the expected descendant vector produced by one individual at source node \(i\)?** It integrates survival/management, Poisson propagule production, the integer multinomial dispersal step, destination establishment and the low-density availability of carrying-capacity slots. Columns of the resulting single-parent operator are these expected descendant vectors.
+
+This simulator-faithful construction substantially improved agreement at rarity relative to treating all dispersal as continuously divisible.
+
+## INApestMetaTransitionMatrix
+
+The supplied managed-population-growth work provides the local demographic starting point. If \(A\) is the stage transition matrix and \(m\) is a vector of stage-specific management mortality applied to source stages, then
+
+\[
+A_M=A\,\mathrm{diag}(1-m),
+\]
+
+and the dominant eigenvalue modulus is the intrinsic managed multiplier per transition step. If a biological cycle contains \(k\) such steps, the corresponding cycle multiplier is \(\lambda^k\).
+
+The landscape simulation adds a second layer: fecundity must produce propagules, those propagules may be lost/exported, and internal arrivals must establish. The analytical companion therefore builds a **stage × node operator** and reports both:
+
+- `IntrinsicLocalLambda`: local managed demography before landscape dispersal/establishment losses;
+- `EquivalentPerTimestepMultiplier`: realized landscape growth when rare.
+
+The distinction is operationally important. In the validation example, all-informed management yielded intrinsic \(\lambda=1.217\) but landscape \(R=0.903\). Local demography alone would therefore suggest continued growth while the full managed landscape is predicted to decline.
+
+## INApestMetaMultipleLandUse
+
+The MLU model uses node × land-use types. The single-parent operator tracks survival and management in the source land use, dispersal from the source node, and allocation of recruits among available land-use capacity at destinations. The corrected LDD formulation weights the source's LDD contribution by its population share before the multinomial dispersal draw.
+
+The rare-state operator again provides a spectral threshold and expected finite-horizon trajectory. Because recruit allocation among land uses is a finite-capacity sampling process, the branching distribution is less exact than in the simplest binary case; the mean operator nevertheless validated closely in the baseline scenario.
+
+# Management, information and habitat complexity
+
+## Detection and information states
+
+Where information limits management, the analytical state expands from pest type \(i\) to at least two pest-information types:
+
+- \(U_i\): invaded but uninformed;
+- \(H_i\): invaded and informed.
+
+Detection moves new or persisting pest lineages toward \(H\); informed lineages experience management adoption, mortality/eradication and spread reduction; `InfoRetentionProb` governs expected movement back toward uninformed status. Direct SEAM transfer associated with informed invaded sources can be included in the offspring-information probabilities.
+
+This compact state system captures the first-order threshold effect well, but it does not fully represent **informed-but-uninvaded nodes**. Those nodes are second-order near the pest-free state but matter increasingly at finite prevalence because they are preconditioned to manage if later invaded. A richer nonlinear information mean-field was explored for binary INApest to quantify this effect.
+
+When `InfoPersistenceSteps` is not supplied, the compact \(U/H\) information system above is retained. When a finite programmed stopping value is supplied, the analytical state is expanded to include **time since local evidence**. For each pest type the augmented states are uninformed \(U\), informed without a currently valid local-evidence clock \(X\), and age classes \(H_1,H_2,\ldots\) representing the number of timesteps since the most recent local evidence. All informed age states receive management during the current timestep before any programmed expiry, matching the ordering in the stochastic functions.
+
+A new local detection resets the next-timestep state to \(H_1\). In binary INApest, an informed extant infestation is treated as known to be locally present and therefore continually resets its own evidence clock. A SEAM or external-information refresh without new local evidence enters \(X\). A finite node-specific `InfoPersistenceSteps` value takes priority over `InfoRetentionProb`; where persistence is `NA`, the existing stochastic retention transition is used. Node-specific and node × timestep persistence inputs are handled by constructing the corresponding time-specific information operator before the usual ordered product of \(G_t\) matrices.
+
+This makes the **deterministic programmed-stop clock explicit rather than memoryless**. The remaining approximation is the coupling of the node-level information clock to finite populations. In Meta, transition and multiple-land-use models, a management kill by one individual can leave information at the node after that individual is gone, and an informed-but-uninvaded node can alter management after later recolonisation. Those shared-node effects are not fully represented by the low-density individual-type branching operator and become more important away from rarity.
+
+## Spatial targeting
+
+The global multiplier and the response from a particular incursion can point to different operational priorities. With the same mean `ManageProb = 0.3` in a binary-INApest test:
+
+| Allocation | Global multiplier | Simulated occupied nodes at timestep 6 from central incursion |
+|---|---:|---:|
+| Uniform | 0.936 | 0.523 |
+| High-centrality targeting | 0.969 | **0.187** |
+| Peripheral targeting | 0.995 | 1.093 |
+
+Uniform effort gives the lowest global spectral radius, but targeting the known central incursion/high-centrality region is far superior over the finite response horizon. This is why `INApestAnalytical()` returns both the spectral criterion and the initial-condition-specific trajectory.
+
+## Habitat heterogeneity
+
+Equal mean suitability does not imply equal invasion potential. In the binary validation, three landscapes with mean habitat suitability 0.6 gave growth multipliers of approximately 1.007 (homogeneous), 1.103 (clustered binary habitat), and 1.040 (distributed binary habitat). Connectivity among suitable sites is therefore part of the mechanism, not merely a source of noise.
+
+# Extinction as a branching-process problem
+
+Mean decline does not directly give an extinction probability. The analytical companion uses multitype branching PGFs whenever a model-specific distribution is available, and a mean-matched multitype Poisson branching fallback for more complicated or time-varying cases.
+
+If \(F_i(\mathbf z)\) is the offspring PGF of one individual/type \(i\), finite-horizon extinction is obtained by recursively substituting the extinction vector through the PGFs. The eventual branching fade-out probability is the minimal fixed point
+
+\[
+\mathbf q = \mathbf F(\mathbf q).
+\]
+
+For an initial state \(x_0\), lineage independence in the branching approximation gives the overall extinction probability from the component type-specific probabilities.
+
+Selected validation results:
+
+| Model/scenario | Simulated extinction | Branching extinction |
+|---|---:|---:|
+| Binary INApest baseline | 0.555 | **0.551** |
+| Binary INApest all-informed management | 0.690 | **0.667** |
+| INApestMeta baseline | 0.706 | **0.688** |
+| INApestMeta all-informed management | 0.854 | **0.873** |
+| Transition baseline | 0.475 | **0.500** |
+| Transition all-informed management | 0.713 | **0.720** |
+
+These comparisons support branching extinction as a useful screening estimate. Deviations are expected because the real simulations have finite sites/capacity, shared environmental/management states, collisions among descendants and other dependencies absent from a branching process.
+
+# Escape and containment
+
+## Why the first-moment Poisson approximation is not enough
+
+The earlier escape approximation calculated cumulative expected successful exports \(\Lambda_T\) and used
+
+\[
+P(\mathrm{escape\ by\ }T)\approx1-e^{-\Lambda_T}.
+\]
+
+This is useful as a first-moment diagnostic but treats the cumulative events as though they arose from one Poisson process. In an invasion, successful exports are clustered within stochastic descendant lineages. The distribution of lineage size therefore matters.
+
+## Branching no-escape recursion
+
+The preferred method propagates the probability that a lineage produces **no successful outside establishment** through all descendants. In a mean-matched multitype Poisson case with internal mean offspring matrix \(G\) and successful outside-event mean \(e_i\), the recursion is
+
+\[
+g_i^{(t+1)} = \exp\left[-e_i + \sum_j G_{ji}\{g_j^{(t)}-1\}\right].
+\]
+
+Model-specific versions improve on this generic form where possible:
+
+- binary INApest uses edge-based Bernoulli colonisation and explicit outside edges;
+- INApestMeta uses a one-parent PGF with Poisson propagule production and reconstructed integer allocation over internal + external kernel mass;
+- the transition model uses a stage × node PGF with Poisson fecundity thinned into internal recruitment and outside export;
+- MLU currently uses a mean-matched multitype branching no-escape recursion, which is still distributional but is less simulator-specific than the Meta/transition versions.
+
+The first-moment value is retained in the result as `FirstMomentPoissonProbabilityByHorizon` for comparison, but `BranchingProbabilityByHorizon` is the primary estimate.
+
+### Validation and comparison
+
+Binary INApest with explicit outer sink nodes:
+
+| Scenario, timestep 8 | Simulation | Branching | First-moment Poisson |
+|---|---:|---:|---:|
+| Unmanaged | **0.083** | 0.102 | 0.144 |
+| Managed | **0.030** | 0.037 | 0.048 |
+
+Complex-model analytical examples over eight timesteps:
+
+| Model/scenario | Branching escape | First-moment comparator |
+|---|---:|---:|
+| Meta baseline | **0.144** | 0.160 |
+| Meta managed | **0.071** | 0.077 |
+| Transition baseline | **0.222** | 0.248 |
+| Transition managed | **0.121** | 0.132 |
+| MLU baseline | **0.137** | 0.160 |
+| MLU managed | **0.058** | 0.063 |
+
+## Identifiability of outside movement
+
+Escape cannot be conjured from an internal matrix if the matrix does not encode what was omitted.
+
+- **Binary INApest:** internal source→destination entries are independent Bernoulli opportunities. `1 - rowSums(SDDprob)` is therefore not a valid outside probability. Supply an explicit source × outside-destination `ExportProb` matrix.
+- **INApestMeta / MLU:** supply `ExportSDDprob` and/or `ExportLDDprob`. `AssumeResidualExport = TRUE` is allowed only when the matrices are known to be cropped normalized kernels whose missing row mass genuinely represents outside movement.
+- **Transition model:** residual export is a defined part of the dispersal semantics, so the analytical companion can use missing row mass by default.
+
+`OutsideEstablishmentProb` then converts movement outside into **successful escape/establishment**, which is usually the management-relevant estimand.
+
+# Validation summary by model family
+
+## Binary INApest
+
+The low-density operator and branching extinction were accurate across baseline, management and heterogeneous-habitat scenarios. A nonlinear occupancy mean-field improved finite-prevalence trajectories where saturation/collisions became important. Information transfer was directionally supported but close-to-threshold SEAM effects required longer/higher-replication stochastic runs because differences in \(R\) were small.
+
+## INApestMeta
+
+| Scenario | \(R\) | Simulated final mean | Analytical final mean | Sim extinction | Branching extinction |
+|---|---:|---:|---:|---:|---:|
+| Baseline | 0.862 | 0.537 | 0.420 | 0.706 | 0.688 |
+| All-informed management | 0.714 | 0.157 | 0.134 | 0.854 | 0.873 |
+| Detection-limited | 0.724 | 0.171 | 0.196 | 0.840 | — |
+
+The rare-state threshold is the strongest output. Finite-horizon means can diverge as recruitment nonlinearities and finite capacity become influential.
+
+A focused 1,000-realisation information test gave the expected management-information ranking: detection with retention 1 had \(R\approx0.723\), retention 0.5 raised the analytical multiplier to about 0.776, and strong SEAM reduced it to about 0.719. Strong SEAM reduced simulated timestep-6 abundance from 0.226 to 0.172 and raised extinction from 0.799 to 0.840.
+
+## Transition matrix
+
+| Scenario | Intrinsic local \(\lambda\) | Landscape \(R\) | Sim final | Analytical final | Sim extinction | Branching extinction |
+|---|---:|---:|---:|---:|---:|---:|
+| Baseline | 1.422 | 1.058 | 2.025 | 1.740 | 0.475 | 0.500 |
+| All-informed management | 1.217 | **0.903** | 0.863 | 0.766 | 0.713 | 0.720 |
+| Detection-limited | — | 1.004 | 1.419 | 1.350 | 0.594 | — |
+| Detection + SEAM | — | 0.977 | 1.400 | 1.266 | 0.606 | — |
+
+Density-dependent dispersal is a clear example of a parameter that may leave the first-order rare-state multiplier unchanged while dramatically altering finite-density trajectories. In the test beginning with 30 adults, the density-dependent simulation reached about 82.6 compared with 52.2 from the linear operator.
+
+## Multiple land use
+
+| Scenario | \(R\) | Simulated final mean | Analytical final mean |
+|---|---:|---:|---:|
+| Baseline | 0.854 | 0.558 | **0.561** |
+| All-informed management | 0.797 | 0.117 | 0.190 |
+| Detection-limited | 0.807 | 0.525 | 0.475 |
+| Detection + SEAM | 0.797 | 0.392 | 0.474 |
+| Homogeneous habitat | 0.833 | 0.575 | 0.497 |
+| Clustered habitat | 0.846 | 0.575 | 0.544 |
+
+The baseline agreement is very strong. Management/information cases are less exact because node-level information is shared across land uses while the branching types approximate individuals more independently.
+
+# User-facing R function
+
+Source the analytical file once:
+
+```r
+#| eval: false
+source("INApestAnalytical.R")
+```
+
+The unified interface is:
+
+```r
+#| eval: false
+INApestAnalytical(
+  Model,
+  Ntimesteps,
+  InitialState,
+  SDDprob,
+  # model-specific biology ...
+  DetectionProb = 0,
+  ManageProb = 0,
+  MortalityProb = 0,
+  EradicationProb = 0,
+  SpreadReduction = 0,
+  SEAM = NULL,
+  InfoRetentionProb = 1,
+  InfoPersistenceSteps = NA,
+  # optional outside movement ...
+  ExportProb = NULL,
+  ExportSDDprob = NULL,
+  ExportLDDprob = NULL,
+  OutsideEstablishmentProb = 1,
+  AssumeResidualExport = FALSE
+)
+```
+
+## Example: binary INApest
+
+```r
+#| eval: false
+z <- INApestAnalytical(
+  Model = "INApest",
+  Ntimesteps = 10,
+  InitialState = initial_invaded,
+  SDDprob = SDDprob,
+  LDDprob = LDDprob,
+  EnvEstabProb = EnvEstabProb,
+  Survival = Survival,
+  DetectionProb = DetectionProb,
+  ManageProb = ManageProb,
+  EradicationProb = EradicationProb,
+  SpreadReduction = SpreadReduction,
+  SEAM = SEAM,
+  InfoRetentionProb = InfoRetentionProb,
+  ExportProb = outside_edges
+)
+
+print(z)
+summary(z)
+```
+
+## Example: transition model
+
+```r
+#| eval: false
+z <- INApestAnalytical(
+  Model = "INApestMetaTransitionMatrix",
+  Ntimesteps = 10,
+  InitialState = initial_stage_matrix,
+  SDDprob = SDDprob,
+  LDDprob = LDDprob,
+  Transition = Transition,
+  Nstages = nrow(Transition),
+  K = K,
+  SeedbankK = SeedbankK,
+  PropaguleEstablishment = PropaguleEstablishment,
+  ManageProb = ManageProb,
+  MortalityProb = MortalityProb,
+  SpreadReduction = SpreadReduction
+)
+
+z$Growth$IntrinsicLocalLambda
+z$Growth$EquivalentPerTimestepMultiplier
+z$Extinction$ProbabilityByHorizon
+z$Escape$BranchingProbabilityByHorizon
+```
+
+## Main outputs
+
+| Output | Interpretation |
+|---|---|
+| `Growth$EquivalentPerTimestepMultiplier` | Landscape growth multiplier when rare |
+| `Growth$CycleMultiplier` | Spectral radius of the ordered full-horizon/cycle operator |
+| `Growth$Classification` | Growth/decline/approximately replacement when rare |
+| `Growth$IntrinsicLocalLambda` | Transition model only: local stage-demographic multiplier |
+| `Trajectory$ExpectedTotal` | Initial-condition-specific expected abundance/occupancy through time |
+| `Extinction$ProbabilityByHorizon` | Branching estimate of extinction by requested horizon |
+| `Extinction$BranchingFadeoutProbability` | Eventual branching-process fade-out where defined |
+| `Escape$BranchingProbabilityByHorizon` | **Primary** estimate of ≥1 successful outside establishment |
+| `Escape$FirstMomentPoissonProbabilityByHorizon` | Comparator/diagnostic only |
+| `InformationStateMethod` | Whether information uses the compact memoryless state system or explicit time-since-local-evidence classes |
+| `Diagnostics` | Model-specific warnings about assumptions or unsupported exactness |
+| `ApproximationScope` | Generic limitations carried with every result |
+
+# Limitations and decision rules
+
+::: {.limit-box}
+### Limitations that should accompany any shared result
+
+- **Rare-invasion basis.** The spectral operators are local/low-density approximations. They are strongest for invasion establishment, early response, and threshold analysis.
+- **Finite landscapes and capacity.** Descendant lineages can collide, compete for the same node/capacity, and saturate habitat. Branching processes intentionally ignore those dependencies.
+- **Binary INApest eventual extinction.** On a finite closed landscape with an absorbing zero state, eventual stochastic extinction can remain possible even when \(\rho(G)>1\). The spectral radius describes growth when rare/quasi-persistence, not immortality.
+- **Parameter SDs.** The analytical function currently works with expected parameter values. It does not integrate the full annual random-effect distribution represented by `DetectionSD`, `ManageSD`, `MortalitySD`, etc.
+- **Information correlations.** A compact informed/uninformed operator does not fully represent informed-but-uninvaded nodes or all SEAM correlations at finite prevalence.
+- **Programmed information stopping.** The deterministic stop clock is explicitly represented with age-since-local-evidence state classes. In Meta, transition and multiple-land-use models, shared node-level evidence created by kills of other individuals and information retained by currently empty nodes remain higher-order effects that are not fully represented by the low-density individual-type branching model.
+- **Density-dependent dispersal.** `DispersalDensityFactor` is linearized at rarity and can have large finite-density effects without changing the rare-state multiplier.
+- **Meta integer allocation.** The single-parent operator reproduces the important low-count integer allocation mechanism, but multi-parent cooperative effects from `floor(sum(...))` are not fully represented by independent lineages.
+- **MLU branching escape.** The current no-escape method is a mean-matched multitype branching recursion, less simulator-specific than the binary, Meta and transition PGFs.
+- **Escape identifiability.** Outside movement must be supplied or defensibly inferable from kernel construction. Do not interpret arbitrary missing row mass as export.
+- **Parallel execution.** WebR provided R 4.6.0 and supported model-level logic tests, but not the installed package/PSOCK environment used in production. Parallel bodies were exercised with sequential test shims; a conventional-R parallel smoke test remains advisable.
+:::
+
+A practical decision rule is:
+
+- use the analytical result confidently for **mechanism, ranking, screening and threshold location** when it is well away from 1;
+- if \(R\) is close to 1, or if strong shared-node information feedbacks, density dependence or capacity saturation are important, use it to design the stochastic experiment rather than as the final answer;
+- use branching extinction/escape as rapid probabilities, but report stochastic estimates for high-stakes final response decisions.
+
+# Testing and reproducibility
+
+The analytical function and corrected source were tested in WebR/R 4.6.0. The unified user-facing smoke tests cover all four analytical model classes, dynamic information and temporal connectivity. The programmed-stop analytical extension was additionally checked against hand-calculated clock cases, node-specific and node × timestep persistence policies, all four model families, and exact backward compatibility when `InfoPersistenceSteps = NA`. The production bug suite includes `Nperm = 1` across all eight functions, matrix habitat initialization in all three binary implementations, and the corrected serial MLU LDD diagnostic. The WebR wrapper can raise a non-local-control exception after some parallel-shim runs have completed and written all PASS markers/results; this is a runtime teardown artifact already observed in earlier testing, not a failed model assertion.
+
+Raw validation CSVs are included in the release so the values in this report can be audited without rerunning the simulations.
+
+# Development lineage
+
+The transition-matrix analytical formulation was anchored to the supplied `managed_population_growth_experiment.qmd` and `Local_Managed_PopGrowth_response_surface.R`, particularly the convention that stage mortality acts on source stages before transition/reproduction and the distinction between timestep and cycle multipliers. That local calculation was then generalized to a stage × node landscape operator rather than replaced with an unrelated formulation.
+
+The analytical companion was developed in stages—binary occupancy first, then Meta abundance, transition-stage structure, and multiple land use—because each layer exposed different stochastic structure and therefore required a different approximation rather than a one-size-fits-all Jacobian.
+
+# Suggested next developments
+
+1. Extend the programmed-stop mean-field to track **shared node-level evidence and informed-but-uninvaded nodes at finite prevalence**, complementing the new explicit age-since-local-evidence clock used at rarity.
+2. Build a simulator-faithful **MLU offspring/escape PGF** to replace the current mean-matched MLU branching fallback.
+3. Integrate selected parameter uncertainty (`DetectionSD`, `ManageSD`, mortality SD) by quadrature or small mixtures of operators rather than only plug-in means.
+4. Add automated side-by-side analytical versus stochastic calibration plots to the user-facing workflow.
+5. Run a conventional-R package/PSOCK regression on the final eight functions before merging the corrected production files.
+
+---
+
+<span class="small">Prepared as a technical screening and validation report for the INApest development workflow. Analytical probabilities are approximations and should be interpreted together with the diagnostics and limitations above.</span>

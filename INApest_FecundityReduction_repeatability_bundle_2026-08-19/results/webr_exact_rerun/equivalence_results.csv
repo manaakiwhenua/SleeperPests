@@ -1,0 +1,13 @@
+"model","output","all_equal","max_abs_difference"
+"INApest","InvasionLargeOut.rds",TRUE,0
+"INApest","InfoLargeOut.rds",TRUE,0
+"INApest","DetectedLargeOut.rds",TRUE,0
+"INApestMetaMultipleLandUse","PopulationLargeOut.rds",TRUE,0
+"INApestMetaMultipleLandUse","InvasionLargeOut.rds",TRUE,0
+"INApestMetaMultipleLandUse","InfoLargeOut.rds",TRUE,0
+"INApestMetaMultipleLandUse","DetectedLargeOut.rds",TRUE,0
+"INApestMetaTransitionMatrix","PopulationStageLargeOut.rds",TRUE,0
+"INApestMetaTransitionMatrix","PopulationLargeOut.rds",TRUE,0
+"INApestMetaTransitionMatrix","InvasionLargeOut.rds",TRUE,0
+"INApestMetaTransitionMatrix","InfoLargeOut.rds",TRUE,0
+"INApestMetaTransitionMatrix","DetectedLargeOut.rds",TRUE,0

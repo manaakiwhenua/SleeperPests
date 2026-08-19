@@ -1,0 +1,5 @@
+"model","scenario","eradication_probability","mean_final_n","median_final_n","q05_final_n","q95_final_n","mean_final_radius","median_final_radius","q95_final_radius","mean_final_detected","mean_final_managing","mean_final_stage1","mean_final_stage2"
+"INApestMetaPoint","Unmanaged",0.3,28.74,23,0,82.5,1286.70936746621,1264.58080216446,3202.32893988046,0,0,NA,NA
+"INApestMetaPoint","Managed",0.74,1.36,0,0,7.09999999999999,344.368245852628,0,1735.23587143713,0.52,1.1,NA,NA
+"INApestPointTransitionMatrix","Unmanaged",0.56,2.26,0,0,10.1,602.425196803278,0,1951.80763618194,0,0,0.56,1.7
+"INApestPointTransitionMatrix","Managed",0.86,0.2,0,0,1,124.410974321666,0,913.721096435298,0.06,0.16,0.08,0.12

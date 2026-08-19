@@ -1,0 +1,8 @@
+"Model","InformationMode","GrowthMultiplier","GrowthClassification","ExpectedTotalAtHorizon","ExtinctionByHorizon","EscapeByHorizon","FirstMomentEscape"
+"INApest","none",1.04563020124531,"growth when rare",1.38669080316582,0.55126893276705,NA,NA
+"INApest","none",1.04563020124531,"growth when rare",1.38669080316582,0.55126893276705,3.04980288334811e-06,3.06230699320675e-06
+"INApestMeta","none",0.853995991464196,"decline when rare",0.561020415964746,0.556361120360871,NA,NA
+"INApestMetaTransitionMatrix","none",1.05761827781705,"growth when rare",1.74024798470924,0.500385180863226,0,0
+"INApestMetaMultipleLandUse","none",0.853995991464198,"decline when rare",0.561020415964746,0.556361120360871,NA,NA
+"INApestMeta","dynamic",0.79969328704395,"decline when rare",0.463863477937549,0.804507027314314,NA,NA
+"INApestMeta","none",0.836406694840463,"decline when rare",0.601397163812622,0.724819055648539,NA,NA

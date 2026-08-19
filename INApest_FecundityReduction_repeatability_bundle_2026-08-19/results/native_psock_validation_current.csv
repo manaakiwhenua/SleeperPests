@@ -1,0 +1,5 @@
+"model","serial_mean","parallel_mean","z","pass"
+"INApest binary",0.516666666666667,0.375,1.54481096357817,TRUE
+"INApestMeta",37.2083333333333,38.9,1.25677903797181,TRUE
+"INApestMetaMultipleLandUse",4800,4800,0,TRUE
+"INApestMetaTransitionMatrix",165.441666666667,166.525,0.236022276256968,TRUE

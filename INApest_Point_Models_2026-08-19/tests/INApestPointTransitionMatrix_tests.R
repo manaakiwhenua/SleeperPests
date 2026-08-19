@@ -1,0 +1,113 @@
+###############################################################################
+### Regression/mechanism tests for INApestPointTransitionMatrix
+###############################################################################
+source("/mnt-data/INApestPointTransitionMatrix.R")
+
+# 1. Certain stage progression with a fixed 10-unit relocation.
+A_move <- matrix(c(0, 0, 1, 1), 2, 2, byrow = TRUE)
+f <- INApestPointTransitionMatrix(
+  Nperm = 1, Ntimesteps = 1, Nstages = 2, Transition = A_move,
+  InitialPoints = data.frame(x = 0, y = 0, stage = 1),
+  SDDkernel = INApestPointKernelFixed(1),
+  TransitionKernels = list(INApestPointKernelFixed(10)),
+  DetectionProb = 0, DetectionSD = 0,
+  ManageProb = 0, ManageSD = 0,
+  MortalityProb = 0, MortalitySD = 0,
+  FecundityReduction = 0, FecundityReductionSD = 0,
+  SpreadReduction = 0, SpreadReductionSD = 0,
+  DoProgress = FALSE, Seed = 1
+)
+stopifnot(nrow(f$FinalPoints) == 1, f$FinalPoints$stage == 2)
+stopifnot(abs(sqrt(f$FinalPoints$x^2 + f$FinalPoints$y^2) - 10) < 1e-8)
+
+# 2. Large-cohort transition probabilities.
+N <- 20000L
+A_prob <- matrix(c(0.2, 0, 0.5, 1), 2, 2, byrow = TRUE)
+f <- INApestPointTransitionMatrix(
+  Nperm = 1, Ntimesteps = 1, Nstages = 2, Transition = A_prob,
+  InitialPoints = data.frame(x = seq_len(N), y = 0, stage = 1),
+  SDDkernel = INApestPointKernelFixed(1),
+  DetectionProb = 0, DetectionSD = 0,
+  ManageProb = 0, ManageSD = 0,
+  MortalityProb = 0, MortalitySD = 0,
+  FecundityReduction = 0, FecundityReductionSD = 0,
+  SpreadReduction = 0, SpreadReductionSD = 0,
+  DoProgress = FALSE, Seed = 11
+)
+p2 <- sum(f$FinalPoints$stage == 2) / N
+p1 <- sum(f$FinalPoints$stage == 1) / N
+pd <- 1 - nrow(f$FinalPoints) / N
+stopifnot(abs(p2 - 0.5) < 0.02, abs(p1 - 0.2) < 0.02, abs(pd - 0.3) < 0.02)
+
+# 3. Full fecundity reduction suppresses offspring but not the parent.
+A_fec <- matrix(c(0, 1000, 0, 1), 2, 2, byrow = TRUE)
+f <- INApestPointTransitionMatrix(
+  Nperm = 1, Ntimesteps = 1, Nstages = 2, Transition = A_fec,
+  InitialPoints = data.frame(x = 0, y = 0, stage = 2), InitialInfo = TRUE,
+  SDDkernel = INApestPointKernelFixed(1),
+  DetectionProb = 0, DetectionSD = 0,
+  ManageProb = 1, ManageSD = 0,
+  MortalityProb = 0, MortalitySD = 0,
+  FecundityReduction = 1, FecundityReductionSD = 0,
+  SpreadReduction = 0, SpreadReductionSD = 0,
+  DoProgress = FALSE, Seed = 4
+)
+stopifnot(f$Summary$n_propagules == 0, nrow(f$FinalPoints) == 1)
+
+# 4. Stage-specific detection and mortality contracts.
+f <- INApestPointTransitionMatrix(
+  Nperm = 1, Ntimesteps = 1, Nstages = 2, Transition = diag(2),
+  InitialPoints = data.frame(x = c(0, 1), y = 0, stage = c(1, 2)),
+  SDDkernel = INApestPointKernelFixed(1),
+  DetectionProb = c(0, 1), DetectionSD = 0,
+  ManageProb = 0, ManageSD = 0,
+  MortalityProb = 0, MortalitySD = 0,
+  FecundityReduction = 0, FecundityReductionSD = 0,
+  SpreadReduction = 0, SpreadReductionSD = 0,
+  DoProgress = FALSE, Seed = 5
+)
+stopifnot(!f$FinalPoints$detected[f$FinalPoints$stage == 1])
+stopifnot(f$FinalPoints$detected[f$FinalPoints$stage == 2])
+
+# 5. Habitat-modified establishment can prevent all recruits.
+hab0 <- function(x, y, timestep) rep(0, length(x))
+f <- INApestPointTransitionMatrix(
+  Nperm = 1, Ntimesteps = 1, Nstages = 2, Transition = A_fec,
+  InitialPoints = data.frame(x = 0, y = 0, stage = 2),
+  SDDkernel = INApestPointKernelFixed(1), HabitatSuitability = hab0,
+  DetectionProb = 0, DetectionSD = 0,
+  ManageProb = 0, ManageSD = 0,
+  MortalityProb = 0, MortalitySD = 0,
+  FecundityReduction = 0, FecundityReductionSD = 0,
+  SpreadReduction = 0, SpreadReductionSD = 0,
+  DoProgress = FALSE, Seed = 7
+)
+stopifnot(f$Summary$n_propagules > 900, f$Summary$n_established == 0)
+
+cat("INApestPointTransitionMatrix regression tests passed.\n")
+
+# 6. Three-stage progression: each individual progresses at most one stage,
+# with a distinct movement kernel for each adjacent transition.
+A3 <- matrix(0, 3, 3)
+diag(A3) <- c(0, 0, 1)
+A3[2, 1] <- 1
+A3[3, 2] <- 1
+f <- INApestPointTransitionMatrix(
+  Nperm = 1, Ntimesteps = 1, Nstages = 3, Transition = A3,
+  InitialPoints = data.frame(x = c(0, 100, 200), y = 0, stage = c(1, 2, 3)),
+  SDDkernel = INApestPointKernelFixed(1),
+  TransitionKernels = list(INApestPointKernelFixed(10), INApestPointKernelFixed(20)),
+  DetectionProb = 0, DetectionSD = 0,
+  ManageProb = 0, ManageSD = 0,
+  MortalityProb = 0, MortalitySD = 0,
+  FecundityReduction = 0, FecundityReductionSD = 0,
+  SpreadReduction = 0, SpreadReductionSD = 0,
+  DoProgress = FALSE, Seed = 42
+)
+stopifnot(identical(sort(f$FinalPoints$stage), c(2L, 3L, 3L)))
+e <- subset(f$EventLog, event == "stage_transition")
+start_x <- c("1" = 0, "2" = 100, "3" = 200)
+d <- sqrt((e$x - as.numeric(start_x[as.character(e$point_id)]))^2 + e$y^2)
+stopifnot(any(abs(d - 10) < 1e-8), any(abs(d - 20) < 1e-8))
+
+cat("Three-stage transition check passed.\n")

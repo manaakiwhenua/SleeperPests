@@ -1,0 +1,35 @@
+INApest corrected production source validation
+Date: 2026-08-17
+
+Baseline
+- All eight production files were freshly retrieved from GitHub main.
+- Fresh downloads were byte-identical to the current-main copies used in the reconciliation build.
+
+WebR / R 4.6.0 parse test
+PASS INApest.R
+PASS INApestParallel.R
+PASS INApestParallelInAScene.R
+PASS INApestMetaParallel.r
+PASS INApestMetaMultipleLandUse.r
+PASS INApestMetaParallelMultipleLandUse.r
+PASS INApestMetaTransitionMatrix.r
+PASS INApestMetaTransitionMatrixParallel.r
+
+WebR / R 4.6.0 serial source test
+PASS INApest.R
+PASS INApestMetaMultipleLandUse.r
+PASS INApestMetaTransitionMatrix.r
+
+Structural correction checks
+PASS InfoRetentionProb and InfoPersistenceSteps present in all eight public APIs
+PASS programmed persistence / stochastic-decay priority logic present in all eight
+PASS binary matrix EnvEstabProb initializes BPAM from timestep 1 in all three binary implementations
+PASS serial MLU LDD applies source population share before Qin multinomial generation
+PASS serial MLU SEAM collapses land-use detection to node level
+PASS serial transition detection uses NodeDetectionProb[,,timestep]
+PASS parallel transition worker export includes information-retention/persistence variables
+PASS Nperm=1 dimension-preserving extraction/summary logic present where required
+PASS INApestParallelInAScene refreshes SEAM after information loss when loss is active
+
+Scope note
+This is a syntax/source/structural validation of the current-main reconciled release. The cumulative correction set had earlier regression testing. A full concurrent-worker and installed INA integration test should still be run in the normal R environment after repository update.

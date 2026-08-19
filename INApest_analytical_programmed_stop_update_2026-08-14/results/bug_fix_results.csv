@@ -1,0 +1,13 @@
+"test","model","pass","value"
+"Nperm=1 explicit realisation dimension","INApest",TRUE,3
+"Nperm=1 explicit realisation dimension","INApestParallel",TRUE,3
+"Nperm=1 explicit realisation dimension","INApestParallelINAscene",TRUE,3
+"Nperm=1 explicit realisation dimension","INApestMetaParallel",TRUE,3
+"Nperm=1 explicit realisation dimension","INApestMetaMultipleLandUse",TRUE,4
+"Nperm=1 explicit realisation dimension","INApestMetaParallelMultipleLandUse",TRUE,4
+"Nperm=1 explicit realisation dimension","INApestMetaTransitionMatrix",TRUE,3
+"Nperm=1 explicit realisation dimension","INApestMetaTransitionMatrixParallel",TRUE,3
+"temporal EnvEstabProb init","INApest",TRUE,NA
+"temporal EnvEstabProb init","INApestParallel",TRUE,NA
+"temporal EnvEstabProb init","INApestParallelINAscene",TRUE,NA
+"serial MLU LDD population share","INApestMetaMultipleLandUse",TRUE,18.5533333333333
