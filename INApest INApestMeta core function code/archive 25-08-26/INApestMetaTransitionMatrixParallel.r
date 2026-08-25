@@ -942,67 +942,6 @@ local.dynamics.transition.matrix <- function(
 #   return(t(n))
 # }
 
-
-# -----------------------------------------------------------------------------
-# Optional custom LocalDynamics arguments
-# -----------------------------------------------------------------------------
-# Ordinary LocalDynamicsArgs entries are passed unchanged. Wrap a vector,
-# matrix, array, or list in INApestLocalDynamicsTimeArg() when its final
-# dimension/list position is indexed by simulation timestep. This avoids
-# guessing whether an arbitrary custom matrix is static or time-varying.
-INApestLocalDynamicsTimeArg <- function(x) {
-  structure(list(values = x), class = "INApestLocalDynamicsTimeArg")
-}
-
-.resolve_INApest_LocalDynamicsArgs <- function(LocalDynamicsArgs, timestep, Ntimesteps) {
-  if (is.null(LocalDynamicsArgs)) LocalDynamicsArgs <- list()
-  if (!is.list(LocalDynamicsArgs))
-    stop("LocalDynamicsArgs must be a named list")
-  if (!length(LocalDynamicsArgs)) return(list())
-  if (is.null(names(LocalDynamicsArgs)) || any(!nzchar(names(LocalDynamicsArgs))))
-    stop("Every LocalDynamicsArgs entry must have a non-empty name")
-  if (anyDuplicated(names(LocalDynamicsArgs)))
-    stop("LocalDynamicsArgs names must be unique")
-
-  resolve_one <- function(x, name) {
-    if (inherits(x, "INApestLocalDynamicsTimeArg")) {
-      values <- x$values
-      if (is.list(values)) {
-        if (length(values) != Ntimesteps)
-          stop(name, " wrapped list must have length Ntimesteps")
-        return(values[[timestep]])
-      }
-      d <- dim(values)
-      if (is.null(d)) {
-        if (length(values) != Ntimesteps)
-          stop(name, " wrapped vector must have length Ntimesteps")
-        return(values[[timestep]])
-      }
-      if (tail(d, 1L) != Ntimesteps)
-        stop(name, " wrapped array/matrix must have Ntimesteps in its final dimension")
-      index <- lapply(d, seq_len)
-      index[[length(d)]] <- timestep
-      return(do.call(`[`, c(list(values), index, list(drop = TRUE))))
-    }
-
-    # Resolver functions are evaluated by the parent model. The returned
-    # current value, not timestep itself, is passed to LocalDynamics.
-    if (is.function(x)) {
-      fm <- names(formals(x))
-      call_args <- list(timestep = timestep, Ntimesteps = Ntimesteps)
-      if (!is.null(fm) && !("..." %in% fm))
-        call_args <- call_args[intersect(names(call_args), fm)]
-      return(do.call(x, call_args))
-    }
-
-    x
-  }
-
-  out <- Map(resolve_one, LocalDynamicsArgs, names(LocalDynamicsArgs))
-  names(out) <- names(LocalDynamicsArgs)
-  out
-}
-
 INApestMetaTransitionMatrixParallel = function(
 ModelName, #Name for storing results to file 
 Nperm,                  #Number of permutations per parameter combination
@@ -1012,7 +951,6 @@ Weights,               #Weight for converting stage populations to total populat
 Transition,            #Transition matrix (N stages x N stages), list of matrices (length = N nodes)
                        #or 4D array (Nstages x N stages x N nodes x N timesteps)
 LocalDynamics = local.dynamics.transition.matrix, #Local population growth, dispersal and management function; user-defined functions are supported
-LocalDynamicsArgs = list(), #Named custom arguments passed to LocalDynamics; wrap time-varying values with INApestLocalDynamicsTimeArg()
 DetectionProb,          #Vector of Per-individual detection probability for each stage, or matrix of probabilities per stage per node (e.g. farm) 
                         #or 3D array of probabilities per stage per node per year (must be between 0 and 1)
 DetectionSD = NULL, #Option to provide standard deviation for detection probability. Can be single number or vector (nodes)
@@ -1050,31 +988,14 @@ BlockedTransitionMortality = 0,
 OngoingExternalInvasion = F,   ##Option to include ongoing invasion from external sources
 OngoingExternalInfo = F,   ##Option to include ongoing communication from external sources
 OutputDir = NA,		      #Directory for storing results
-DoPlots = TRUE,	     #Option to omit printing of line graphs.Default is to print.
-Pathogen = NULL, #Optional INApestPathogen object
-InitialPathogenState = NULL #Optional nodes x demographic stages x pathogen states array
+DoPlots = TRUE	     #Option to omit printing of line graphs.Default is to print.
 )
 {
 if(!is.function(LocalDynamics))
   stop("LocalDynamics must be a function")
-if(!is.null(Pathogen) && identical(LocalDynamics, local.dynamics.transition.matrix)) {
-  if(!exists("local.dynamics.transition.matrix.pathogen", mode="function"))
-    stop("Source INApestPathogenTransitionMatrix.R before using Pathogen")
-  LocalDynamics <- local.dynamics.transition.matrix.pathogen
-}
-if (is.null(LocalDynamicsArgs)) LocalDynamicsArgs <- list()
-if (!is.list(LocalDynamicsArgs))
-  stop("LocalDynamicsArgs must be a named list")
-if (length(LocalDynamicsArgs) &&
-    (is.null(names(LocalDynamicsArgs)) || any(!nzchar(names(LocalDynamicsArgs)))))
-  stop("Every LocalDynamicsArgs entry must have a non-empty name")
-if (anyDuplicated(names(LocalDynamicsArgs)))
-  stop("LocalDynamicsArgs names must be unique")
 # Force the argument before any parallel worker closure is created. This keeps
 # the selected default or user-supplied function as an explicit model input.
 force(LocalDynamics)
-force(LocalDynamicsArgs)
-UserLocalDynamicsArgs <- LocalDynamicsArgs
 ###POTENTIAL ADDITIONS
 ###1) Make detection prob a function of population size. Could be based on individual detection prob so that DetectionProb = 1-(1-DPindividual)^N)
 ###   DPindividual could vary between nodes
@@ -1217,18 +1138,6 @@ PopulationResults = array(dim = c(nrow(SDDprob),Ntimesteps,Nperm))
 ###of individual nodes in each timestep of each realisation
 PopulationStageResults = array(dim = c(nrow(SDDprob),Nstages,Ntimesteps,Nperm))
 
-PathogenStageResults <- NULL
-PathogenDeathResults <- NULL
-NewInfectionResults <- NULL
-PathogenDetectedResults <- NULL
-if(!is.null(Pathogen)) {
-  if(!inherits(Pathogen, "INApestPathogen")) stop("Pathogen must be created by INApestPathogen()")
-  PathogenStageResults <- array(0, dim=c(nrow(SDDprob),Nstages,length(Pathogen$States),Ntimesteps,Nperm), dimnames=list(NULL,NULL,Pathogen$States,NULL,NULL))
-  PathogenDeathResults <- array(0, dim=c(nrow(SDDprob),Nstages,Ntimesteps,Nperm))
-  NewInfectionResults <- array(0, dim=c(nrow(SDDprob),Nstages,Ntimesteps,Nperm))
-  PathogenDetectedResults <- array(0L, dim=c(nrow(SDDprob),Ntimesteps,Nperm))
-}
-
 ###Declare array tracking invasion status
 ###of individual nodes in each timestep of each realisation
 InvasionResults = array(dim = c(nrow(SDDprob),Ntimesteps,Nperm))
@@ -1346,10 +1255,6 @@ PermutationWorker <- function(i_perm) {
   n_nodes <- nrow(SDDprob)
   PopulationResults_local      <- matrix(0, nrow = n_nodes, ncol = Ntimesteps)
   PopulationStageResults_local <- array(0, dim = c(n_nodes, Nstages, Ntimesteps))
-  PathogenStageResults_local <- if(is.null(Pathogen)) NULL else array(0, dim=c(n_nodes,Nstages,length(Pathogen$States),Ntimesteps), dimnames=list(NULL,NULL,Pathogen$States,NULL))
-  PathogenDeathResults_local <- if(is.null(Pathogen)) NULL else array(0, dim=c(n_nodes,Nstages,Ntimesteps))
-  NewInfectionResults_local <- if(is.null(Pathogen)) NULL else array(0, dim=c(n_nodes,Nstages,Ntimesteps))
-  PathogenDetectedResults_local <- if(is.null(Pathogen)) NULL else matrix(0L,nrow=n_nodes,ncol=Ntimesteps)
   InvasionResults_local        <- matrix(0, nrow = n_nodes, ncol = Ntimesteps)
   DetectedResults_local        <- matrix(0, nrow = n_nodes, ncol = Ntimesteps)
   ManagingResults_local        <- matrix(0, nrow = n_nodes, ncol = Ntimesteps)
@@ -1411,11 +1316,6 @@ PermutationWorker <- function(i_perm) {
   
   InitBio <- floor(InitBio)   # integers
   N <- InitBio
-  PathogenStageState <- NULL
-  if(!is.null(Pathogen)) {
-    if(!exists("INApestPathogenStageState", mode="function")) stop("Source INApestPathogenTransitionMatrix.R before using Pathogen")
-    PathogenStageState <- INApestPathogenStageState(N, Pathogen, InitialPathogenState, Ntimesteps)
-  }
   if (sum(N) == 0 && OngoingExternalInvasion == FALSE) {
     warning("No initial populations and no future external invasions")
   }
@@ -1596,7 +1496,6 @@ PermutationWorker <- function(i_perm) {
       KnownPresence <- which(rowSums(N - N0) > 0)
       if (length(KnownPresence) > 0) LastKnownPresence[KnownPresence] <- timestep
     }
-    if(!is.null(Pathogen)) PathogenStageState <- .iptm_reconcile(PathogenStageState, N0)
     N <- N0
     if (sum(N0) > 0) {
       LocalDynamicsArgs <- list(nodetransition = NodeTransition, weights = Weights, sddprob = NodeSDDprob,
@@ -1613,14 +1512,6 @@ PermutationWorker <- function(i_perm) {
       else if(any(NodeFecundityReduction * Managing > 0))
         stop("Custom LocalDynamics must accept a 'nodefecundityreduction' argument (or ...) when FecundityReduction is active")
 
-      if(!is.null(Pathogen)) {
-        if(!all(c("pathogen_state","Pathogen","timestep","Ntimesteps") %in% LocalDynamicsFormals) && !("..." %in% LocalDynamicsFormals))
-          stop("Pathogen-aware LocalDynamics must accept pathogen_state, Pathogen, timestep and Ntimesteps (or ...)")
-        LocalDynamicsArgs$pathogen_state <- PathogenStageState
-        LocalDynamicsArgs$Pathogen <- Pathogen
-        LocalDynamicsArgs$timestep <- timestep
-        LocalDynamicsArgs$Ntimesteps <- Ntimesteps
-      }
       LocalDynamicsAcceptsTransitionMovement <-
         "..." %in% LocalDynamicsFormals ||
         all(c("transition_sddprob", "transition_lddprob", "transition_lddrate") %in% LocalDynamicsFormals)
@@ -1631,28 +1522,7 @@ PermutationWorker <- function(i_perm) {
       } else if(TransitionMovementConfigured) {
         stop("Custom LocalDynamics must accept 'transition_sddprob', 'transition_lddprob' and 'transition_lddrate' arguments (or ...) when transition movement is active")
       }
-      ResolvedLocalDynamicsArgs <- .resolve_INApest_LocalDynamicsArgs(
-        UserLocalDynamicsArgs, timestep = timestep, Ntimesteps = Ntimesteps
-      )
-      if (length(ResolvedLocalDynamicsArgs)) {
-        duplicate_args <- intersect(names(ResolvedLocalDynamicsArgs), names(LocalDynamicsArgs))
-        if (length(duplicate_args))
-          stop("LocalDynamicsArgs may not override INApest core LocalDynamics argument(s): ",
-               paste(duplicate_args, collapse = ", "))
-        LocalDynamicsFormals <- names(formals(LocalDynamics))
-        unknown_args <- setdiff(names(ResolvedLocalDynamicsArgs), LocalDynamicsFormals)
-        if (!("..." %in% LocalDynamicsFormals) && length(unknown_args))
-          stop("Custom LocalDynamics does not accept LocalDynamicsArgs entry/entries: ",
-               paste(unknown_args, collapse = ", "))
-        LocalDynamicsArgs <- c(LocalDynamicsArgs, ResolvedLocalDynamicsArgs)
-      }
-      LocalDynamicsResult <- do.call(LocalDynamics, LocalDynamicsArgs)
-      if(!is.null(Pathogen)) {
-        if(!is.list(LocalDynamicsResult) || is.null(LocalDynamicsResult$N) || is.null(LocalDynamicsResult$PathogenState)) stop("Pathogen-aware LocalDynamics must return list(N=..., PathogenState=...)")
-        N <- LocalDynamicsResult$N; PathogenStageState <- LocalDynamicsResult$PathogenState
-        PathogenDeathResults_local[,,timestep] <- if(is.null(LocalDynamicsResult$PathogenDeaths)) 0 else LocalDynamicsResult$PathogenDeaths
-        NewInfectionResults_local[,,timestep] <- if(is.null(LocalDynamicsResult$NewInfections)) 0 else LocalDynamicsResult$NewInfections
-      } else N <- LocalDynamicsResult
+      N <- do.call(LocalDynamics, LocalDynamicsArgs)
     }
     
     # Apply programmed stopping after last known local presence
@@ -1692,7 +1562,6 @@ PermutationWorker <- function(i_perm) {
       Invaded[Invaded == 0] <- ExternalInvasion[Invaded == 0]
       if (is.na(IncursionStartPop) == TRUE) N[, 1] <- N[, 1] + ExternalInvasion
       else N[, 1] <- N[, 1] + ExternalInvasion * IncursionStartPop
-      if(!is.null(Pathogen)) PathogenStageState <- .iptm_reconcile(PathogenStageState, N)
       
       
     }
@@ -1718,17 +1587,6 @@ PermutationWorker <- function(i_perm) {
     }
     PopulationResults_local[, timestep] <- weighted_population
     PopulationStageResults_local[, , timestep] <- N
-    if(!is.null(Pathogen)) {
-      PathogenStageResults_local[,,,timestep] <- PathogenStageState
-      pdet <- Pathogen$Engine$Resolve(Pathogen$DetectionProb, timestep, list(n_nodes=nrow(SDDprob),Ntimesteps=Ntimesteps), "DetectionProb")
-      I_node <- apply(PathogenStageState[, , "I", drop=FALSE], 1, sum)
-      PathogenDetectedNow <- rbinom(nrow(SDDprob),1,1-(1-pdet)^I_node)
-      PathogenDetectedResults_local[,timestep] <- PathogenDetectedNow
-      if(isTRUE(Pathogen$DetectionTriggersInfo)) {
-        if(UseInfoPersistence == T) LastKnownPresence[PathogenDetectedNow == 1] <- timestep
-        HaveInfo[HaveInfo == 0] <- PathogenDetectedNow[HaveInfo == 0]
-      }
-    }
     
     # detection: compute per-stage detection probs at current N and NodeDetectionProb[,,timestep]
     DetectionProbPerStage <- 1 - (1 - NodeDetectionProb[, , timestep])^N  # nodes x stages
@@ -1751,11 +1609,7 @@ PermutationWorker <- function(i_perm) {
     PopulationStageResults = PopulationStageResults_local,
     InvasionResults = InvasionResults_local,
     DetectedResults = DetectedResults_local,
-    ManagingResults = ManagingResults_local,
-    PathogenStageResults = PathogenStageResults_local,
-    PathogenDeathResults = PathogenDeathResults_local,
-    NewInfectionResults = NewInfectionResults_local,
-    PathogenDetected = PathogenDetectedResults_local
+    ManagingResults = ManagingResults_local
   )
  }
 
@@ -1765,13 +1619,6 @@ if (n_cores == 1L) {
   cl <- parallel::makeCluster(n_cores, type = "PSOCK")
   on.exit(if (inherits(cl, "cluster")) parallel::stopCluster(cl), add = TRUE)
   parallel::clusterSetRNGStream(cl)
-  if(!is.null(Pathogen)) {
-    helper_names <- c(".iptm_take", ".iptm_reconcile", "INApestPathogenStageState",
-                      ".iptm_resolve", ".iptm_node_contact", ".iptm_pathogen_step")
-    missing_helpers <- helper_names[!vapply(helper_names, exists, logical(1), mode="function", inherits=TRUE)]
-    if(length(missing_helpers)) stop("Missing pathogen transition helper(s): ", paste(missing_helpers, collapse=", "), ". Source INApestPathogenTransitionMatrix.R first.")
-    parallel::clusterExport(cl, helper_names, envir=environment())
-  }
   perm_results <- parallel::parLapply(cl, seq_len(Nperm), PermutationWorker)
   parallel::stopCluster(cl)
   cl <- NULL
@@ -1784,12 +1631,6 @@ for (i in seq_along(perm_results)) {
   InvasionResults[,, i]         <- perm_results[[i]]$InvasionResults
   DetectedResults[,, i]         <- perm_results[[i]]$DetectedResults
   ManagingResults[,, i]         <- perm_results[[i]]$ManagingResults
-  if(!is.null(Pathogen)) {
-    PathogenStageResults[,,,,i] <- perm_results[[i]]$PathogenStageResults
-    PathogenDeathResults[,,,i] <- perm_results[[i]]$PathogenDeathResults
-    NewInfectionResults[,,,i] <- perm_results[[i]]$NewInfectionResults
-    PathogenDetectedResults[,,i] <- perm_results[[i]]$PathogenDetected
-  }
 }
 
 
@@ -1811,12 +1652,6 @@ FileNameStem = paste0(OutputDir,ModelName)
 saveRDS(ManagingResults, paste0(FileNameStem,"InfoLargeOut.rds"))
 saveRDS(PopulationResults, paste0(FileNameStem,"PopulationLargeOut.rds"))
 saveRDS(PopulationStageResults, paste0(FileNameStem,"PopulationStageLargeOut.rds"))
-if(!is.null(Pathogen)) {
-  saveRDS(PathogenStageResults, paste0(FileNameStem,"PathogenStageLargeOut.rds"))
-  saveRDS(PathogenDeathResults, paste0(FileNameStem,"PathogenDeathLargeOut.rds"))
-  saveRDS(NewInfectionResults, paste0(FileNameStem,"NewInfectionLargeOut.rds"))
-  saveRDS(PathogenDetectedResults, paste0(FileNameStem,"PathogenDetectedLargeOut.rds"))
-}
 saveRDS(InvasionResults, paste0(FileNameStem,"InvasionLargeOut.rds"))
 saveRDS(DetectedResults, paste0(FileNameStem,"DetectedLargeOut.rds"))
 

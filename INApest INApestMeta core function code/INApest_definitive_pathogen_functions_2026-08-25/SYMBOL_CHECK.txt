@@ -1,0 +1,13 @@
+Definitive pathogen-information trigger symbol audit
+
+Required common API:
+- INApestPathogen(..., DetectionProb=..., DetectionTriggersInfo=...)
+- DetectionTriggersInfo defaults FALSE
+
+Family coverage:
+- INApest / INApestParallel: PathogenDetectedResults
+- INApestMeta / INApestMetaParallel: PathogenDetectedResults
+- INApestMetaMultipleLandUse / parallel: PathogenDetectedResults
+- INApestMetaTransitionMatrix / parallel: PathogenDetectedResults
+- INApestMetaPoint / parallel: pathogen_detected in PathogenEvents
+- INApestPointTransitionMatrix / parallel: pathogen_detected in PathogenEvents via common point interaction

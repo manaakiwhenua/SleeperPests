@@ -33,7 +33,7 @@
 }
 
 .ipp_parallel_relabel <- function(x, perm) {
-  for (nm in c("PointHistory", "EventLog", "FinalPoints", "InfoSites", "Summary", "PathogenEvents")) {
+  for (nm in c("PointHistory", "EventLog", "FinalPoints", "InfoSites", "Summary")) {
     if (is.data.frame(x[[nm]]) && "perm" %in% names(x[[nm]]))
       x[[nm]]$perm <- rep(perm, nrow(x[[nm]]))
   }
@@ -59,14 +59,12 @@
     FinalPoints = .ipp_parallel_rbind(xs, "FinalPoints"),
     InfoSites = .ipp_parallel_rbind(xs, "InfoSites"),
     Summary = .ipp_parallel_rbind(xs, "Summary"),
-    PathogenEvents = .ipp_parallel_rbind(xs, "PathogenEvents"),
     ParallelMeta = meta
   )
   if (nrow(out$PointHistory)) out$PointHistory <- out$PointHistory[order(out$PointHistory$perm, out$PointHistory$timestep, out$PointHistory$id), , drop = FALSE]
   if (nrow(out$EventLog)) out$EventLog <- out$EventLog[order(out$EventLog$perm, out$EventLog$timestep), , drop = FALSE]
   if (nrow(out$FinalPoints)) out$FinalPoints <- out$FinalPoints[order(out$FinalPoints$perm, out$FinalPoints$id), , drop = FALSE]
   if (nrow(out$Summary)) out$Summary <- out$Summary[order(out$Summary$perm, out$Summary$timestep), , drop = FALSE]
-  if (nrow(out$PathogenEvents)) out$PathogenEvents <- out$PathogenEvents[order(out$PathogenEvents$perm, out$PathogenEvents$timestep), , drop = FALSE]
   class(out) <- c(class_name, "list")
   out
 }
@@ -176,6 +174,7 @@ INApestMetaPointParallel <- function(
   if (DoProgress) message("Parallel INApestMetaPoint simulation complete in ", round(elapsed, 2), " s.")
   out
 }
+
 
 ###############################################################################
 ### Backwards compatibility

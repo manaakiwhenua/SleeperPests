@@ -1,565 +1,4 @@
 ###############################################################################
-### INApestVertebratePoint
-### Standalone vertebrate-specialist point extension of the current
-### INApestPointTransitionMatrix engine. Base R; no package dependency.
-### Public extension is one argument: Vertebrate = list(Birth, HomeRange,
-### Control, Interaction). NULL preserves parent biological semantics.
-###############################################################################
-
-###############################################################################
-### Shared helpers for INApest vertebrate extensions
-###
-### Public vertebrate functions add one top-level argument only:
-###   Vertebrate = list(
-###     Birth = NULL,
-###     HomeRange = NULL,
-###     Control = NULL,
-###     Interaction = NULL
-###   )
-###
-### These helpers are deliberately private (dot-prefixed). They use base R only.
-###############################################################################
-
-.iv_clip01 <- function(x) pmin(1, pmax(0, x))
-
-.iv_validate_vertebrate <- function(Vertebrate) {
-  if (is.null(Vertebrate)) return(invisible(NULL))
-  if (!is.list(Vertebrate)) stop("Vertebrate must be NULL or a named list.")
-  if (length(Vertebrate) && (is.null(names(Vertebrate)) || any(!nzchar(names(Vertebrate)))))
-    stop("Vertebrate must be a named list.")
-  allowed <- c("Birth", "HomeRange", "Control", "Interaction")
-  unknown <- setdiff(names(Vertebrate), allowed)
-  if (length(unknown))
-    stop("Unknown Vertebrate component(s): ", paste(unknown, collapse = ", "),
-         ". Allowed components are Birth, HomeRange, Control and Interaction.")
-  invisible(NULL)
-}
-
-.iv_module <- function(Vertebrate, name) {
-  if (is.null(Vertebrate) || is.null(Vertebrate[[name]])) return(NULL)
-  Vertebrate[[name]]
-}
-
-.iv_call_hook <- function(fun, args, name = "vertebrate hook") {
-  if (!is.function(fun)) stop(name, " must be a function.")
-  fm <- names(formals(fun))
-  if (is.null(fm) || "..." %in% fm) return(do.call(fun, args))
-  do.call(fun, args[intersect(names(args), fm)])
-}
-
-.iv_rbind_fill <- function(...) {
-  xs <- list(...)
-  if (length(xs) == 1L && is.list(xs[[1]]) && !is.data.frame(xs[[1]])) xs <- xs[[1]]
-  xs <- xs[!vapply(xs, is.null, logical(1))]
-  if (!length(xs)) return(data.frame())
-  xs <- lapply(xs, function(x) {
-    x <- as.data.frame(x, stringsAsFactors = FALSE)
-    for (nm in names(x)) if (is.factor(x[[nm]])) x[[nm]] <- as.character(x[[nm]])
-    x
-  })
-  all_names <- unique(unlist(lapply(xs, names), use.names = FALSE))
-  xs <- lapply(xs, function(x) {
-    miss <- setdiff(all_names, names(x))
-    for (nm in miss) x[[nm]] <- rep(NA, nrow(x))
-    x[, all_names, drop = FALSE]
-  })
-  do.call(rbind, xs)
-}
-
-.iv_point_reserved <- c(
-  "x", "y", "stage", "id", "parent_id", "birth_timestep",
-  "have_info", "detected", "managing", "last_known_timestep"
-)
-
-.iv_initial_point_state <- function(InitialPoints, initial_stage) {
-  p <- as.data.frame(InitialPoints, stringsAsFactors = FALSE)
-  for (nm in names(p)) if (is.factor(p[[nm]])) p[[nm]] <- as.character(p[[nm]])
-  n <- nrow(p)
-  p$x <- as.numeric(p$x)
-  p$y <- as.numeric(p$y)
-  p$stage <- as.integer(initial_stage)
-  p$id <- seq_len(n)
-  p$parent_id <- rep(NA_integer_, n)
-  p$birth_timestep <- rep(0L, n)
-  p$have_info <- rep(FALSE, n)
-  p$detected <- rep(FALSE, n)
-  p$managing <- rep(FALSE, n)
-  p$last_known_timestep <- rep(NA_integer_, n)
-  # Put engine-owned fields first and retain every other user field after them.
-  extras <- setdiff(names(p), .iv_point_reserved)
-  p[, c(.iv_point_reserved, extras), drop = FALSE]
-}
-
-.iv_external_point_state <- function(ext, next_id, timestep, Nstages) {
-  if (!is.data.frame(ext) || !all(c("x", "y") %in% names(ext)))
-    stop("ExternalIncursionGenerator must return NULL/zero rows or a data.frame with x and y.")
-  ep <- as.data.frame(ext, stringsAsFactors = FALSE)
-  for (nm in names(ep)) if (is.factor(ep[[nm]])) ep[[nm]] <- as.character(ep[[nm]])
-  if (!"stage" %in% names(ep)) ep$stage <- 1L
-  ep$stage <- as.integer(ep$stage)
-  if (any(is.na(ep$stage)) || any(ep$stage < 1L | ep$stage > Nstages))
-    stop("External incursion stage must be 1..Nstages.")
-  n <- nrow(ep)
-  ep$x <- as.numeric(ep$x); ep$y <- as.numeric(ep$y)
-  ep$id <- seq.int(next_id, length.out = n)
-  ep$parent_id <- rep(NA_integer_, n)
-  ep$birth_timestep <- rep(as.integer(timestep), n)
-  ep$have_info <- rep(FALSE, n)
-  ep$detected <- rep(FALSE, n)
-  ep$managing <- rep(FALSE, n)
-  ep$last_known_timestep <- rep(NA_integer_, n)
-  extras <- setdiff(names(ep), .iv_point_reserved)
-  ep[, c(.iv_point_reserved, extras), drop = FALSE]
-}
-
-.iv_home_range_point <- function(module, points, timestep, perm, context = list()) {
-  if (is.null(module) || !nrow(points)) return(NULL)
-  ans <- if (is.function(module)) {
-    .iv_call_hook(module, list(
-      points = points, state = points, timestep = timestep, perm = perm,
-      context = context
-    ), "Vertebrate$HomeRange")
-  } else module
-
-  if (is.data.frame(ans)) {
-    if (!all(c("id", "sigma") %in% names(ans)))
-      stop("Point HomeRange data.frame output must contain id and sigma.")
-    sigma <- ans$sigma[match(points$id, ans$id)]
-  } else {
-    sigma <- as.numeric(ans)
-    if (length(sigma) == 1L) sigma <- rep(sigma, nrow(points))
-    if (length(sigma) != nrow(points))
-      stop("Point HomeRange must resolve to one sigma per point (or a scalar).")
-  }
-  if (any(is.na(sigma)) || any(!is.finite(sigma)) || any(sigma < 0))
-    stop("Home-range sigma values must be finite and non-negative.")
-  as.numeric(sigma)
-}
-
-.iv_home_range_node <- function(module, population, timestep, perm, context = list()) {
-  n_nodes <- nrow(population); n_stages <- ncol(population)
-  if (is.null(module)) return(NULL)
-  ans <- if (is.function(module)) {
-    .iv_call_hook(module, list(
-      population = population, state = population, timestep = timestep,
-      perm = perm, context = context
-    ), "Vertebrate$HomeRange")
-  } else module
-  if (is.matrix(ans)) {
-    if (!identical(dim(ans), c(n_nodes, n_stages)))
-      stop("Node HomeRange matrix must have dimensions nodes x stages.")
-    sigma <- ans
-  } else {
-    ans <- as.numeric(ans)
-    if (length(ans) == 1L) {
-      sigma <- matrix(ans, n_nodes, n_stages)
-    } else if (length(ans) == n_stages && length(ans) != n_nodes) {
-      sigma <- matrix(rep(ans, each = n_nodes), n_nodes, n_stages)
-    } else if (length(ans) == n_nodes && length(ans) != n_stages) {
-      sigma <- matrix(rep(ans, n_stages), n_nodes, n_stages)
-    } else if (length(ans) == n_nodes && length(ans) == n_stages) {
-      stop("Node HomeRange vector is ambiguous because nodes equals stages; supply a nodes x stages matrix.")
-    } else stop("Node HomeRange must be scalar, length nodes, length stages, or a nodes x stages matrix.")
-  }
-  if (any(is.na(sigma)) || any(!is.finite(sigma)) || any(sigma < 0))
-    stop("Home-range sigma values must be finite and non-negative.")
-  sigma
-}
-
-.iv_active_devices <- function(devices, timestep) {
-  if (is.null(devices)) return(NULL)
-  if (!is.data.frame(devices)) stop("Vertebrate$Control$Devices must be a data.frame.")
-  d <- as.data.frame(devices, stringsAsFactors = FALSE)
-  if (!nrow(d)) return(d)
-  start_name <- if ("start" %in% names(d)) "start" else if ("active_from" %in% names(d)) "active_from" else NULL
-  end_name <- if ("end" %in% names(d)) "end" else if ("active_to" %in% names(d)) "active_to" else NULL
-  keep <- rep(TRUE, nrow(d))
-  if (!is.null(start_name)) keep <- keep & (is.na(d[[start_name]]) | d[[start_name]] <= timestep)
-  if (!is.null(end_name)) keep <- keep & (is.na(d[[end_name]]) | d[[end_name]] >= timestep)
-  d[keep, , drop = FALSE]
-}
-
-.iv_point_effects_empty <- function(points) {
-  data.frame(
-    id = points$id,
-    kill_prob = rep(0, nrow(points)),
-    detect_prob = rep(0, nrow(points)),
-    fecundity_reduction = rep(0, nrow(points)),
-    stringsAsFactors = FALSE
-  )
-}
-
-.iv_normalise_point_effects <- function(ans, points, name = "control model") {
-  cost <- 0
-  if (is.null(ans)) return(list(effects = .iv_point_effects_empty(points), cost = 0))
-  if (is.list(ans) && !is.data.frame(ans) && !is.null(ans$Effects)) {
-    cost <- if (is.null(ans$Cost)) 0 else as.numeric(ans$Cost)[1]
-    ans <- ans$Effects
-  }
-  if (is.numeric(ans) && !is.data.frame(ans)) {
-    v <- as.numeric(ans)
-    if (length(v) == 1L) v <- rep(v, nrow(points))
-    if (length(v) != nrow(points)) stop(name, " numeric output must be scalar or one kill probability per point.")
-    ans <- data.frame(id = points$id, kill_prob = v)
-  }
-  if (!is.data.frame(ans)) stop(name, " must return a data.frame, numeric kill probability, or list(Effects=..., Cost=...).")
-  if (!"id" %in% names(ans)) {
-    if (nrow(ans) != nrow(points)) stop(name, " output without id must have one row per point.")
-    ans$id <- points$id
-  }
-  if (anyDuplicated(ans$id)) stop(name, " output contains duplicate point ids.")
-  idx <- match(points$id, ans$id)
-  out <- .iv_point_effects_empty(points)
-  for (nm in c("kill_prob", "detect_prob", "fecundity_reduction")) {
-    if (nm %in% names(ans)) {
-      z <- ans[[nm]][idx]
-      z[is.na(z)] <- 0
-      out[[nm]] <- as.numeric(z)
-    }
-    if (any(!is.finite(out[[nm]])) || any(out[[nm]] < 0 | out[[nm]] > 1))
-      stop(name, " ", nm, " values must be between 0 and 1.")
-  }
-  if (!is.finite(cost) || cost < 0) stop(name, " Cost must be finite and non-negative.")
-  list(effects = out, cost = cost)
-}
-
-.iv_combine_point_effects <- function(a, b) {
-  out <- a
-  out$kill_prob <- 1 - (1 - a$kill_prob) * (1 - b$kill_prob)
-  out$detect_prob <- 1 - (1 - a$detect_prob) * (1 - b$detect_prob)
-  out$fecundity_reduction <- 1 - (1 - a$fecundity_reduction) * (1 - b$fecundity_reduction)
-  out
-}
-
-.iv_point_device_default <- function(points, devices, home_range) {
-  out <- .iv_point_effects_empty(points)
-  if (is.null(devices) || !nrow(devices) || !nrow(points)) return(list(effects = out, cost = 0))
-  if (!all(c("x", "y") %in% names(devices)))
-    stop("Default point-device control requires device x and y columns.")
-
-  d <- devices
-  defaults <- list(g0 = 1, effort = 1, kill = 1, detect = 0, fecundity_reduction = 0, cost = 0)
-  for (nm in names(defaults)) if (!nm %in% names(d)) d[[nm]] <- defaults[[nm]]
-  for (nm in c("g0", "kill", "detect", "fecundity_reduction")) {
-    z <- as.numeric(d[[nm]])
-    if (any(!is.finite(z)) || any(z < 0 | z > 1)) stop("Device ", nm, " values must be in [0,1].")
-    d[[nm]] <- z
-  }
-  d$effort <- as.numeric(d$effort)
-  d$cost <- as.numeric(d$cost)
-  if (any(!is.finite(d$effort)) || any(d$effort < 0)) stop("Device effort must be finite and non-negative.")
-  if (any(!is.finite(d$cost)) || any(d$cost < 0)) stop("Device cost must be finite and non-negative.")
-
-  for (j in seq_len(nrow(d))) {
-    sigma <- if ("sigma" %in% names(d) && is.finite(as.numeric(d$sigma[j]))) {
-      rep(as.numeric(d$sigma[j]), nrow(points))
-    } else {
-      if (is.null(home_range)) stop("Default point-device control requires Vertebrate$HomeRange or a device sigma column.")
-      home_range
-    }
-    if (any(sigma < 0)) stop("Device/home-range sigma must be non-negative.")
-    d2 <- (points$x - as.numeric(d$x[j]))^2 + (points$y - as.numeric(d$y[j]))^2
-    base <- numeric(nrow(points))
-    pos <- sigma > 0
-    base[pos] <- d$g0[j] * exp(-d2[pos] / (2 * sigma[pos]^2))
-    base[!pos & d2 == 0] <- d$g0[j]
-    encounter <- 1 - (1 - .iv_clip01(base))^d$effort[j]
-    out$kill_prob <- 1 - (1 - out$kill_prob) * (1 - encounter * d$kill[j])
-    out$detect_prob <- 1 - (1 - out$detect_prob) * (1 - encounter * d$detect[j])
-    out$fecundity_reduction <- 1 - (1 - out$fecundity_reduction) *
-      (1 - encounter * d$fecundity_reduction[j])
-  }
-  list(effects = out, cost = sum(d$cost * d$effort))
-}
-
-.iv_point_area_default <- function(points, area, timestep, perm, context) {
-  if (is.null(area)) return(list(effects = .iv_point_effects_empty(points), cost = 0))
-  if (is.function(area)) {
-    ans <- .iv_call_hook(area, list(points = points, state = points, timestep = timestep,
-                                    perm = perm, context = context), "Vertebrate$Control$Area")
-    return(.iv_normalise_point_effects(ans, points, "Vertebrate$Control$Area"))
-  }
-  if (is.numeric(area)) return(.iv_normalise_point_effects(area, points, "Vertebrate$Control$Area"))
-  if (!is.list(area)) stop("Vertebrate$Control$Area must be NULL, numeric, a function, or a list.")
-  out <- .iv_point_effects_empty(points)
-  resolve <- function(x, label) {
-    if (is.null(x)) return(rep(0, nrow(points)))
-    if (is.function(x)) x <- .iv_call_hook(x, list(points = points, state = points,
-      timestep = timestep, perm = perm, context = context), label)
-    x <- as.numeric(x)
-    if (length(x) == 1L) x <- rep(x, nrow(points))
-    if (length(x) != nrow(points) || any(!is.finite(x)) || any(x < 0 | x > 1))
-      stop(label, " must resolve to scalar or one [0,1] value per point.")
-    x
-  }
-  out$kill_prob <- resolve(area$Kill, "Control$Area$Kill")
-  out$detect_prob <- resolve(area$Detect, "Control$Area$Detect")
-  out$fecundity_reduction <- resolve(area$FecundityReduction, "Control$Area$FecundityReduction")
-  cost <- if (is.null(area$Cost)) 0 else {
-    x <- if (is.function(area$Cost)) .iv_call_hook(area$Cost, list(points = points, state = points,
-      timestep = timestep, perm = perm, context = context), "Control$Area$Cost") else area$Cost
-    sum(as.numeric(x))
-  }
-  if (!is.finite(cost) || cost < 0) stop("Control$Area$Cost must be finite and non-negative.")
-  list(effects = out, cost = cost)
-}
-
-.iv_point_control <- function(module, points, home_range, timestep, perm, context = list()) {
-  if (is.null(module) || !nrow(points)) return(list(effects = .iv_point_effects_empty(points), cost = 0))
-  if (!is.list(module)) stop("Vertebrate$Control must be NULL or a list.")
-  devices <- .iv_active_devices(module$Devices, timestep)
-  dev <- if (is.function(module$Model)) {
-    ans <- .iv_call_hook(module$Model, list(
-      points = points, state = points, devices = devices, home_range = home_range,
-      timestep = timestep, perm = perm, context = context
-    ), "Vertebrate$Control$Model")
-    .iv_normalise_point_effects(ans, points, "Vertebrate$Control$Model")
-  } else .iv_point_device_default(points, devices, home_range)
-  area <- .iv_point_area_default(points, module$Area, timestep, perm, context)
-  list(effects = .iv_combine_point_effects(dev$effects, area$effects), cost = dev$cost + area$cost)
-}
-
-.iv_node_effects_empty <- function(n_nodes, n_stages) {
-  list(
-    kill_prob = matrix(0, n_nodes, n_stages),
-    detect_prob = matrix(0, n_nodes, n_stages),
-    fecundity_reduction = matrix(0, n_nodes, n_stages),
-    cost = 0
-  )
-}
-
-.iv_node_prob_matrix <- function(x, n_nodes, n_stages, name) {
-  if (is.null(x)) return(matrix(0, n_nodes, n_stages))
-  if (is.matrix(x)) {
-    if (!identical(dim(x), c(n_nodes, n_stages))) stop(name, " matrix must be nodes x stages.")
-    out <- x
-  } else {
-    x <- as.numeric(x)
-    if (length(x) == 1L) out <- matrix(x, n_nodes, n_stages)
-    else if (length(x) == n_stages && length(x) != n_nodes) out <- matrix(rep(x, each = n_nodes), n_nodes, n_stages)
-    else if (length(x) == n_nodes && length(x) != n_stages) out <- matrix(rep(x, n_stages), n_nodes, n_stages)
-    else if (length(x) == n_nodes && length(x) == n_stages)
-      stop(name, " vector is ambiguous because nodes equals stages; supply a matrix.")
-    else stop(name, " must be scalar, length nodes, length stages, or nodes x stages.")
-  }
-  out <- matrix(as.numeric(out), n_nodes, n_stages)
-  if (any(!is.finite(out)) || any(out < 0 | out > 1)) stop(name, " values must be in [0,1].")
-  out
-}
-
-.iv_normalise_node_effects <- function(ans, population, name = "control model") {
-  n_nodes <- nrow(population); n_stages <- ncol(population)
-  out <- .iv_node_effects_empty(n_nodes, n_stages)
-  if (is.null(ans)) return(out)
-  if (is.numeric(ans) || is.matrix(ans)) {
-    out$kill_prob <- .iv_node_prob_matrix(ans, n_nodes, n_stages, paste0(name, " kill_prob"))
-    return(out)
-  }
-  if (!is.list(ans)) stop(name, " must return numeric/matrix kill probabilities or a list.")
-  out$kill_prob <- .iv_node_prob_matrix(ans$kill_prob, n_nodes, n_stages, paste0(name, " kill_prob"))
-  out$detect_prob <- .iv_node_prob_matrix(ans$detect_prob, n_nodes, n_stages, paste0(name, " detect_prob"))
-  out$fecundity_reduction <- .iv_node_prob_matrix(ans$fecundity_reduction, n_nodes, n_stages,
-                                                   paste0(name, " fecundity_reduction"))
-  out$cost <- if (is.null(ans$cost)) if (is.null(ans$Cost)) 0 else sum(as.numeric(ans$Cost)) else sum(as.numeric(ans$cost))
-  if (!is.finite(out$cost) || out$cost < 0) stop(name, " cost must be finite and non-negative.")
-  out
-}
-
-.iv_combine_node_effects <- function(a, b) {
-  list(
-    kill_prob = 1 - (1 - a$kill_prob) * (1 - b$kill_prob),
-    detect_prob = 1 - (1 - a$detect_prob) * (1 - b$detect_prob),
-    fecundity_reduction = 1 - (1 - a$fecundity_reduction) * (1 - b$fecundity_reduction),
-    cost = a$cost + b$cost
-  )
-}
-
-.iv_node_device_default <- function(population, devices, home_range) {
-  n_nodes <- nrow(population); n_stages <- ncol(population)
-  out <- .iv_node_effects_empty(n_nodes, n_stages)
-  if (is.null(devices) || !nrow(devices)) return(out)
-  if (!"node" %in% names(devices))
-    stop("Default node-device control requires a device/programme 'node' column. Use Control$Model for other geometries.")
-  d <- devices
-  defaults <- list(density = 1, g0 = 1, effort = 1, kill = 1, detect = 0,
-                   fecundity_reduction = 0, cost = 0)
-  for (nm in names(defaults)) if (!nm %in% names(d)) d[[nm]] <- defaults[[nm]]
-  if (any(is.na(d$node)) || any(d$node < 1 | d$node > n_nodes)) stop("Device node values must be 1..number of nodes.")
-  for (nm in c("g0", "kill", "detect", "fecundity_reduction")) {
-    z <- as.numeric(d[[nm]])
-    if (any(!is.finite(z)) || any(z < 0 | z > 1)) stop("Device ", nm, " values must be in [0,1].")
-    d[[nm]] <- z
-  }
-  for (nm in c("density", "effort", "cost")) {
-    z <- as.numeric(d[[nm]])
-    if (any(!is.finite(z)) || any(z < 0)) stop("Device ", nm, " values must be finite and non-negative.")
-    d[[nm]] <- z
-  }
-  for (j in seq_len(nrow(d))) {
-    node <- as.integer(d$node[j])
-    sigma <- if ("sigma" %in% names(d) && is.finite(as.numeric(d$sigma[j]))) {
-      rep(as.numeric(d$sigma[j]), n_stages)
-    } else {
-      if (is.null(home_range)) stop("Default node-device control requires Vertebrate$HomeRange or a device sigma column.")
-      home_range[node, ]
-    }
-    if (any(sigma < 0)) stop("Device/home-range sigma must be non-negative.")
-    encounter <- 1 - exp(-2 * pi * d$g0[j] * sigma^2 * d$density[j] * d$effort[j])
-    encounter <- .iv_clip01(encounter)
-    out$kill_prob[node, ] <- 1 - (1 - out$kill_prob[node, ]) * (1 - encounter * d$kill[j])
-    out$detect_prob[node, ] <- 1 - (1 - out$detect_prob[node, ]) * (1 - encounter * d$detect[j])
-    out$fecundity_reduction[node, ] <- 1 - (1 - out$fecundity_reduction[node, ]) *
-      (1 - encounter * d$fecundity_reduction[j])
-  }
-  out$cost <- sum(d$cost * d$effort)
-  out
-}
-
-.iv_node_area_default <- function(population, area, timestep, perm, context) {
-  n_nodes <- nrow(population); n_stages <- ncol(population)
-  if (is.null(area)) return(.iv_node_effects_empty(n_nodes, n_stages))
-  if (is.function(area)) {
-    ans <- .iv_call_hook(area, list(population = population, state = population, timestep = timestep,
-                                    perm = perm, context = context), "Vertebrate$Control$Area")
-    return(.iv_normalise_node_effects(ans, population, "Vertebrate$Control$Area"))
-  }
-  if (is.numeric(area) || is.matrix(area))
-    return(.iv_normalise_node_effects(area, population, "Vertebrate$Control$Area"))
-  if (!is.list(area)) stop("Vertebrate$Control$Area must be NULL, numeric/matrix, a function, or a list.")
-  resolve <- function(x, nm) {
-    if (is.function(x)) x <- .iv_call_hook(x, list(population = population, state = population,
-      timestep = timestep, perm = perm, context = context), nm)
-    .iv_node_prob_matrix(x, n_nodes, n_stages, nm)
-  }
-  out <- .iv_node_effects_empty(n_nodes, n_stages)
-  out$kill_prob <- resolve(area$Kill, "Control$Area$Kill")
-  out$detect_prob <- resolve(area$Detect, "Control$Area$Detect")
-  out$fecundity_reduction <- resolve(area$FecundityReduction, "Control$Area$FecundityReduction")
-  if (!is.null(area$Cost)) {
-    z <- if (is.function(area$Cost)) .iv_call_hook(area$Cost, list(population = population, state = population,
-      timestep = timestep, perm = perm, context = context), "Control$Area$Cost") else area$Cost
-    out$cost <- sum(as.numeric(z))
-    if (!is.finite(out$cost) || out$cost < 0) stop("Control$Area$Cost must be finite and non-negative.")
-  }
-  out
-}
-
-.iv_node_control <- function(module, population, home_range, timestep, perm, context = list()) {
-  n_nodes <- nrow(population); n_stages <- ncol(population)
-  if (is.null(module)) return(.iv_node_effects_empty(n_nodes, n_stages))
-  if (!is.list(module)) stop("Vertebrate$Control must be NULL or a list.")
-  devices <- .iv_active_devices(module$Devices, timestep)
-  dev <- if (is.function(module$Model)) {
-    ans <- .iv_call_hook(module$Model, list(
-      population = population, state = population, devices = devices,
-      home_range = home_range, timestep = timestep, perm = perm, context = context
-    ), "Vertebrate$Control$Model")
-    .iv_normalise_node_effects(ans, population, "Vertebrate$Control$Model")
-  } else .iv_node_device_default(population, devices, home_range)
-  area <- .iv_node_area_default(population, module$Area, timestep, perm, context)
-  .iv_combine_node_effects(dev, area)
-}
-
-.iv_point_birth <- function(module, points, transition, timestep, perm, context = list()) {
-  if (is.null(module)) return(NULL)
-  ans <- .iv_call_hook(module, list(
-    points = points, state = points, transition = transition,
-    timestep = timestep, perm = perm, context = context
-  ), "Vertebrate$Birth")
-  if (is.null(ans)) return(data.frame(parent_id = integer(0), stage = integer(0)))
-  if (is.numeric(ans) && !is.data.frame(ans)) {
-    counts <- as.numeric(ans)
-    if (length(counts) == 1L) counts <- rep(counts, nrow(points))
-    if (length(counts) != nrow(points) || any(!is.finite(counts)) || any(counts < 0) || any(counts != floor(counts)))
-      stop("Point Vertebrate$Birth numeric output must be non-negative whole-number offspring counts per parent.")
-    return(data.frame(parent_id = rep(points$id, counts), stage = 1L, stringsAsFactors = FALSE))
-  }
-  if (!is.data.frame(ans) || !"parent_id" %in% names(ans))
-    stop("Point Vertebrate$Birth must return NULL, offspring counts per parent, or a data.frame containing parent_id.")
-  out <- as.data.frame(ans, stringsAsFactors = FALSE)
-  for (nm in names(out)) if (is.factor(out[[nm]])) out[[nm]] <- as.character(out[[nm]])
-  if (!"stage" %in% names(out)) out$stage <- 1L
-  out$stage <- as.integer(out$stage)
-  if (any(!out$parent_id %in% points$id)) stop("Point Vertebrate$Birth returned a parent_id not present in the current population.")
-  out
-}
-
-.iv_node_birth <- function(module, population, transition, timestep, perm, context = list()) {
-  if (is.null(module)) return(NULL)
-  ans <- .iv_call_hook(module, list(
-    population = population, state = population, transition = transition,
-    timestep = timestep, perm = perm, context = context
-  ), "Vertebrate$Birth")
-  if (is.null(ans)) return(list(mean = rep(0, nrow(population)), mother_counts = NULL))
-  if (is.list(ans)) {
-    mean <- ans$mean
-    mothers <- ans$mother_counts
-  } else {
-    mean <- ans; mothers <- NULL
-  }
-  mean <- as.numeric(mean)
-  if (length(mean) == 1L) mean <- rep(mean, nrow(population))
-  if (length(mean) != nrow(population) || any(!is.finite(mean)) || any(mean < 0))
-    stop("Node Vertebrate$Birth must return non-negative expected births per node (or list(mean=..., mother_counts=...)).")
-  if (!is.null(mothers)) {
-    mothers <- as.numeric(mothers)
-    if (length(mothers) == 1L) mothers <- rep(mothers, nrow(population))
-    if (length(mothers) != nrow(population) || any(!is.finite(mothers)) || any(mothers < 0))
-      stop("Node Vertebrate$Birth mother_counts must be non-negative and length nodes.")
-  }
-  list(mean = mean, mother_counts = mothers)
-}
-
-.iv_point_interaction <- function(module, points, home_range, timestep, perm, context = list()) {
-  if (is.null(module) || !nrow(points)) return(list(points = points, contacts = data.frame(), events = NULL))
-  if (is.function(module)) module <- list(Update = module)
-  if (!is.list(module)) stop("Vertebrate$Interaction must be NULL, a function, or a list.")
-  contacts <- data.frame()
-  if (is.function(module$Contact)) {
-    contacts <- .iv_call_hook(module$Contact, list(
-      points = points, state = points, home_range = home_range,
-      timestep = timestep, perm = perm, context = context
-    ), "Vertebrate$Interaction$Contact")
-    if (is.null(contacts)) contacts <- data.frame()
-    if (!is.data.frame(contacts)) stop("Interaction$Contact must return a data.frame or NULL.")
-    if (nrow(contacts) && !all(c("id1", "id2") %in% names(contacts)))
-      stop("Interaction$Contact output must contain id1 and id2.")
-  }
-  updated <- points; extra_events <- NULL
-  if (is.function(module$Update)) {
-    ans <- .iv_call_hook(module$Update, list(
-      points = points, state = points, contacts = contacts, home_range = home_range,
-      timestep = timestep, perm = perm, context = context
-    ), "Vertebrate$Interaction$Update")
-    if (is.list(ans) && !is.data.frame(ans) && !is.null(ans$points)) {
-      updated <- ans$points; extra_events <- ans$events
-    } else updated <- ans
-    if (!is.data.frame(updated)) stop("Interaction$Update must return a point data.frame or list(points=...).")
-    if (!all(.iv_point_reserved %in% names(updated)))
-      stop("Interaction$Update must retain all INApest reserved point fields.")
-    if (anyDuplicated(updated$id) || !setequal(updated$id, points$id))
-      stop("Interaction$Update must retain exactly the same point ids; births/deaths belong in other model processes.")
-    updated <- updated[match(points$id, updated$id), , drop = FALSE]
-  }
-  list(points = updated, contacts = contacts, events = extra_events)
-}
-
-.iv_node_interaction <- function(module, population, home_range, timestep, perm, context = list()) {
-  if (is.null(module)) return(population)
-  fun <- if (is.function(module)) module else if (is.list(module) && is.function(module$Update)) module$Update else NULL
-  if (is.null(fun)) return(population)
-  ans <- .iv_call_hook(fun, list(
-    population = population, state = population, home_range = home_range,
-    timestep = timestep, perm = perm, context = context
-  ), "Vertebrate$Interaction")
-  if (is.list(ans) && !is.null(ans$population)) ans <- ans$population
-  if (!is.matrix(ans) || !identical(dim(ans), dim(population)))
-    stop("Node Interaction must return a population matrix with unchanged nodes x stages dimensions.")
-  if (any(!is.finite(ans)) || any(ans < 0)) stop("Node Interaction population values must be finite and non-negative.")
-  floor(ans)
-}
-
-###############################################################################
 ### INApestPointTransitionMatrix
 ### Point-based analogue of INApestMetaTransitionMatrix for small-area incursions
 ###
@@ -2259,9 +1698,9 @@ INApestPointKernelFixed <- function(distance) {
 ### INApestPointTransitionMatrix
 ###############################################################################
 
-INApestVertebratePoint <- function(
+INApestPointTransitionMatrix <- function(
 
-  ModelName = "INApestVertebratePoint",
+  ModelName = "INApestPointTransitionMatrix",
   Nperm,
   Ntimesteps,
   Nstages,
@@ -2371,15 +1810,6 @@ INApestVertebratePoint <- function(
   OngoingExternalInvasion = FALSE,
 
   ###########################################################################
-  ### Vertebrate specialist modules
-  ###########################################################################
-
-  ### One deliberately compact extension point. Supported named components:
-  ### Birth, HomeRange, Control and Interaction. NULL preserves the parent
-  ### INApestPointTransitionMatrix biological behaviour.
-  Vertebrate = NULL,
-
-  ###########################################################################
   ### Output
   ###########################################################################
 
@@ -2390,13 +1820,6 @@ INApestVertebratePoint <- function(
 ) {
 
   SpreadReductionAppliesTo <- match.arg(SpreadReductionAppliesTo)
-  if (!exists(".iv_validate_vertebrate", mode = "function"))
-    stop("INApestVertebrateHelpers.R must be sourced before INApestVertebratePoint().")
-  .iv_validate_vertebrate(Vertebrate)
-  BirthModule <- .iv_module(Vertebrate, "Birth")
-  HomeRangeModule <- .iv_module(Vertebrate, "HomeRange")
-  ControlModule <- .iv_module(Vertebrate, "Control")
-  InteractionModule <- .iv_module(Vertebrate, "Interaction")
   if (!is.null(Seed)) set.seed(Seed)
 
   if (!is.numeric(Nstages) || length(Nstages) != 1L || Nstages < 2L || Nstages != floor(Nstages))
@@ -2469,16 +1892,24 @@ INApestVertebratePoint <- function(
   .ipp_validate_probability_schedule(FecundityReductionSD, Ntimesteps, "FecundityReductionSD")
 
   snapshots <- list(); events <- list(); final_points <- list(); info_results <- list(); summaries <- list()
-  contacts <- list(); interaction_events <- list()
-  si <- 0L; ei <- 0L; sumi <- 0L; ci <- 0L; iei <- 0L
+  si <- 0L; ei <- 0L; sumi <- 0L
 
   for (perm in seq_len(Nperm)) {
 
     n_initial <- nrow(InitialPoints)
-    # Preserve every user-supplied individual attribute. The engine owns only
-    # the reserved INApest fields; sex, age, behaviour, group membership,
-    # infection state, genotype and other atomic columns remain attached.
-    points <- .iv_initial_point_state(InitialPoints, initial_stage)
+    points <- data.frame(
+      x = as.numeric(InitialPoints$x),
+      y = as.numeric(InitialPoints$y),
+      stage = initial_stage,
+      id = seq_len(n_initial),
+      parent_id = rep(NA_integer_, n_initial),
+      birth_timestep = rep(0L, n_initial),
+      have_info = rep(FALSE, n_initial),
+      detected = rep(FALSE, n_initial),
+      managing = rep(FALSE, n_initial),
+      last_known_timestep = rep(NA_integer_, n_initial),
+      stringsAsFactors = FALSE
+    )
     next_id <- nrow(points) + 1L
 
     if (!is.null(InitialInfo)) {
@@ -2522,63 +1953,9 @@ INApestVertebratePoint <- function(
       n_external <- 0L
       n_new_detections <- 0L
       n_managing <- 0L
-      n_control_deaths <- 0L
-      n_control_detections <- 0L
-      control_cost <- 0
-      control_fecundity_reduction <- setNames(numeric(nrow(points)), as.character(points$id))
-      pending_control_detection <- data.frame(
-        id = integer(0), parent_id = integer(0), x = numeric(0), y = numeric(0),
-        stage = integer(0), stringsAsFactors = FALSE
-      )
 
       #########################################################################
-      ### 0. Pre-deployed vertebrate control (independent of pest information)
-      #########################################################################
-      if (nrow(points) && !is.null(ControlModule)) {
-        control_context <- list(
-          transition = A, ModelName = ModelName, Nstages = Nstages,
-          Weights = Weights, phase = "pre_response_control"
-        )
-        hr_control <- .iv_home_range_point(
-          HomeRangeModule, points, timestep, perm, control_context
-        )
-        ce <- .iv_point_control(
-          ControlModule, points, hr_control, timestep, perm, control_context
-        )
-        control_cost <- ce$cost
-        control_fecundity_reduction <- setNames(
-          ce$effects$fecundity_reduction, as.character(points$id)
-        )
-
-        # A shared uniform couples detection and lethal effects sensibly for
-        # simple devices (e.g. kill traps with detection on encounter). Custom
-        # Control$Model functions can alter the marginal probabilities.
-        u_control <- stats::runif(nrow(points))
-        control_detected <- u_control < ce$effects$detect_prob
-        control_dead <- u_control < ce$effects$kill_prob
-        n_control_detections <- sum(control_detected)
-        n_control_deaths <- sum(control_dead)
-
-        if (any(control_detected)) {
-          pending_control_detection <- points[
-            control_detected, c("id", "parent_id", "x", "y", "stage"), drop = FALSE
-          ]
-        }
-        if (any(control_dead)) {
-          ei <- ei + 1L
-          events[[ei]] <- .ipptm_event(
-            perm, timestep, "death", points$id[control_dead],
-            points$parent_id[control_dead], points$x[control_dead],
-            points$y[control_dead], points$stage[control_dead], NA_integer_,
-            "vertebrate_predeployed_control"
-          )
-          points <- points[!control_dead, , drop = FALSE]
-          control_fecundity_reduction <- control_fecundity_reduction[as.character(points$id)]
-        }
-      }
-
-      #########################################################################
-      ### 1. Information-triggered response management and mortality
+      ### 1. Management adoption and management mortality
       #########################################################################
       if (nrow(points)) {
         p_manage <- .ipp_probability_spatial(ManageProb, ManageSD, ManageSpatial, points, timestep, perm, Ntimesteps, "ManageProb")
@@ -2598,59 +1975,18 @@ INApestVertebratePoint <- function(
       }
 
       #########################################################################
-      ### 2. Births: default matrix fecundity or a vertebrate Birth hook
+      ### 2. Fecundity: offspring are generated from pre-transition parents
       #########################################################################
       propagule_parents <- points[FALSE, , drop = FALSE]
-      propagule_state <- data.frame(parent_id = integer(0), stage = integer(0))
       if (nrow(points)) {
-        f_red <- .ipp_probability_spatial(
-          FecundityReduction, FecundityReductionSD, FecundityReductionSpatial,
-          points, timestep, perm, Ntimesteps, "FecundityReduction"
-        )
+        lambda <- fecundity[points$stage]
+        f_red <- .ipp_probability_spatial(FecundityReduction, FecundityReductionSD, FecundityReductionSpatial, points, timestep, perm, Ntimesteps, "FecundityReduction")
         f_red <- .ipp_clip01(f_red)
-        ctrl_fr <- as.numeric(control_fecundity_reduction[as.character(points$id)])
-        ctrl_fr[is.na(ctrl_fr)] <- 0
-        fec_mult <- (1 - f_red * as.numeric(points$managing)) * (1 - ctrl_fr)
-
-        if (is.null(BirthModule)) {
-          lambda <- pmax(0, fecundity[points$stage] * fec_mult)
-          n_by_parent <- stats::rpois(nrow(points), lambda)
-          n_propagules <- sum(n_by_parent)
-          if (n_propagules > 0L) {
-            parent_rows <- rep(seq_len(nrow(points)), n_by_parent)
-            propagule_parents <- points[parent_rows, , drop = FALSE]
-            propagule_state <- data.frame(
-              parent_id = points$id[parent_rows], stage = 1L,
-              stringsAsFactors = FALSE
-            )
-          }
-        } else {
-          birth_context <- list(
-            fecundity = fecundity, fecundity_multiplier = fec_mult,
-            response_fecundity_reduction = f_red,
-            control_fecundity_reduction = ctrl_fr,
-            managing = points$managing, home_range = .iv_home_range_point(
-              HomeRangeModule, points, timestep, perm,
-              list(transition = A, phase = "birth")
-            ),
-            ModelName = ModelName, Nstages = Nstages, Weights = Weights
-          )
-          # A custom Birth hook returns realised offspring (or integer counts).
-          # It receives fecundity_multiplier and is responsible for applying it
-          # to its own breeding logic.
-          propagule_state <- .iv_point_birth(
-            BirthModule, points, A, timestep, perm, birth_context
-          )
-          if (nrow(propagule_state)) {
-            if (any(is.na(propagule_state$stage)) ||
-                any(propagule_state$stage < 1L | propagule_state$stage > Nstages))
-              stop("Vertebrate$Birth offspring stage must be 1..Nstages.")
-            propagule_parents <- points[
-              match(propagule_state$parent_id, points$id), , drop = FALSE
-            ]
-          }
-          n_propagules <- nrow(propagule_state)
-        }
+        lambda <- pmax(0, lambda * (1 - f_red * as.numeric(points$managing)))
+        n_by_parent <- stats::rpois(nrow(points), lambda)
+        n_propagules <- sum(n_by_parent)
+        if (n_propagules > 0L)
+          propagule_parents <- points[rep(seq_len(nrow(points)), n_by_parent), , drop = FALSE]
       }
 
       #########################################################################
@@ -2803,7 +2139,6 @@ INApestVertebratePoint <- function(
       ### 4. Reproductive propagule SDD/LDD, habitat search and establishment
       #########################################################################
       if (nrow(propagule_parents)) {
-        ps <- propagule_state
         is_ldd <- stats::rbinom(nrow(propagule_parents), 1L, ldd_rate_t) == 1L
         spread_red <- .ipp_probability_spatial(SpreadReduction, SpreadReductionSD, SpreadReductionSpatial, propagule_parents, timestep, perm, Ntimesteps, "SpreadReduction")
         suppressed <- if (SpreadReductionAppliesTo == "LDD")
@@ -2812,7 +2147,6 @@ INApestVertebratePoint <- function(
           propagule_parents$managing & (stats::runif(nrow(propagule_parents)) < spread_red)
 
         pp <- propagule_parents[!suppressed, , drop = FALSE]
-        ps <- ps[!suppressed, , drop = FALSE]
         is_ldd <- is_ldd[!suppressed]
 
         if (nrow(pp)) {
@@ -2835,7 +2169,7 @@ INApestVertebratePoint <- function(
           px <- pp$x + dx; py <- pp$y + dy
           dest <- .ipp_habitat_search(px, py, HabitatSuitability, HabitatSearchRadius, timestep, HabitatSearchCandidates)
           cand <- data.frame(
-            x = dest$x, y = dest$y, stage = as.integer(ps$stage), parent_id = pp$id,
+            x = dest$x, y = dest$y, stage = 1L, parent_id = pp$id,
             dispersal_type = ifelse(is_ldd, "LDD", "SDD"),
             provisional_x = px, provisional_y = py,
             habitat = dest$habitat, habitat_nudged = dest$habitat_nudged,
@@ -2847,37 +2181,31 @@ INApestVertebratePoint <- function(
           p_est <- .ipp_clip01(pestab * penv * cand$habitat)
           established <- stats::rbinom(nrow(cand), 1L, p_est) == 1L
           cand <- cand[established, , drop = FALSE]
-          ps <- ps[established, , drop = FALSE]
 
           if (nrow(cand)) {
             capacity_keep <- .ipptm_capacity_keep(cand, points, LocalK, KRadius, Weights, timestep, perm, Ntimesteps)
             cand <- cand[capacity_keep, , drop = FALSE]
-            ps <- ps[capacity_keep, , drop = FALSE]
           }
 
           if (nrow(cand)) {
             n_established <- nrow(cand)
             recruits <- data.frame(
-              x = cand$x, y = cand$y, stage = as.integer(ps$stage),
+              x = cand$x, y = cand$y, stage = 1L,
               id = seq.int(next_id, length.out = n_established),
               parent_id = cand$parent_id,
               birth_timestep = timestep,
               have_info = FALSE, detected = FALSE, managing = FALSE,
               last_known_timestep = NA_integer_, stringsAsFactors = FALSE
             )
-            extra_birth_cols <- setdiff(names(ps), .iv_point_reserved)
-            extra_birth_cols <- setdiff(extra_birth_cols, c("parent_id", "stage"))
-            if (length(extra_birth_cols))
-              recruits <- cbind(recruits, ps[, extra_birth_cols, drop = FALSE])
             next_id <- next_id + n_established
             ei <- ei + 1L
             events[[ei]] <- .ipptm_event(
               perm, timestep, "establishment", recruits$id, recruits$parent_id,
-              recruits$x, recruits$y, pp$stage[match(recruits$parent_id, pp$id)], recruits$stage,
+              recruits$x, recruits$y, pp$stage[match(recruits$parent_id, pp$id)], 1L,
               cand$dispersal_type, cand$provisional_x, cand$provisional_y,
               cand$habitat, cand$habitat_nudged
             )
-            points <- .iv_rbind_fill(points, recruits)
+            points <- rbind(points, recruits)
           }
         }
       }
@@ -2893,56 +2221,16 @@ INApestVertebratePoint <- function(
           if (!"stage" %in% names(ext)) ext$stage <- 1L
           if (any(ext$stage < 1L | ext$stage > Nstages)) stop("External incursion stage must be 1..Nstages.")
           n_external <- nrow(ext)
-          ep <- .iv_external_point_state(ext, next_id, timestep, Nstages)
+          ep <- data.frame(
+            x = as.numeric(ext$x), y = as.numeric(ext$y), stage = as.integer(ext$stage),
+            id = seq.int(next_id, length.out = n_external), parent_id = NA_integer_,
+            birth_timestep = timestep, have_info = FALSE, detected = FALSE,
+            managing = FALSE, last_known_timestep = NA_integer_, stringsAsFactors = FALSE
+          )
           next_id <- next_id + n_external
-          points <- .iv_rbind_fill(points, ep)
+          points <- rbind(points, ep)
           ei <- ei + 1L
           events[[ei]] <- .ipptm_event(perm, timestep, "external_incursion", ep$id, NA_integer_, ep$x, ep$y, NA_integer_, ep$stage, "external")
-        }
-      }
-
-      #########################################################################
-      ### 5b. Social/contact interaction hook
-      #########################################################################
-      if (nrow(points) && !is.null(InteractionModule)) {
-        interaction_context <- list(
-          transition = A, ModelName = ModelName, Nstages = Nstages,
-          Weights = Weights, phase = "interaction"
-        )
-        hr_interaction <- .iv_home_range_point(
-          HomeRangeModule, points, timestep, perm, interaction_context
-        )
-        iz <- .iv_point_interaction(
-          InteractionModule, points, hr_interaction, timestep, perm,
-          interaction_context
-        )
-        points <- iz$points
-        # Generic point-pathogen adapters mark pathogen-associated deaths inside
-        # Interaction so the identity-preserving hook can complete safely. The
-        # parent engine owns actual point removal immediately afterwards.
-        if (exists("INApestPointPathogenApplyDeaths", mode = "function") &&
-            ".pathogen_death" %in% names(points)) {
-          n_pathogen_deaths <- sum(points$.pathogen_death %in% TRUE, na.rm = TRUE)
-          points <- INApestPointPathogenApplyDeaths(points)
-          if (n_pathogen_deaths > 0L) {
-            iei <- iei + 1L
-            interaction_events[[iei]] <- data.frame(
-              perm = perm, timestep = timestep,
-              event = "pathogen_mortality", n = n_pathogen_deaths,
-              stringsAsFactors = FALSE
-            )
-          }
-        }
-        if (nrow(iz$contacts)) {
-          ci <- ci + 1L
-          cc <- iz$contacts; cc$perm <- perm; cc$timestep <- timestep
-          contacts[[ci]] <- cc[, c("perm", "timestep", setdiff(names(cc), c("perm", "timestep"))), drop = FALSE]
-        }
-        if (!is.null(iz$events)) {
-          iei <- iei + 1L
-          ee <- as.data.frame(iz$events, stringsAsFactors = FALSE)
-          ee$perm <- perm; ee$timestep <- timestep
-          interaction_events[[iei]] <- ee[, c("perm", "timestep", setdiff(names(ee), c("perm", "timestep"))), drop = FALSE]
         }
       }
 
@@ -3000,33 +2288,6 @@ INApestVertebratePoint <- function(
       }
 
       #########################################################################
-      ### 6b. Register detections generated by pre-deployed control
-      ### Detection is deliberately registered here, after information transfer,
-      ### so it can trigger response management only from the next timestep.
-      #########################################################################
-      if (nrow(pending_control_detection)) {
-        info_sites <- .ipp_add_or_refresh_info_sites(
-          info_sites, pending_control_detection[, c("id", "x", "y"), drop = FALSE],
-          timestep
-        )
-        jj <- match(pending_control_detection$id, points$id)
-        surviving <- !is.na(jj)
-        if (any(surviving)) {
-          kk <- jj[surviving]
-          points$detected[kk] <- TRUE
-          points$have_info[kk] <- TRUE
-          points$last_known_timestep[kk] <- timestep
-        }
-        ei <- ei + 1L
-        events[[ei]] <- .ipptm_event(
-          perm, timestep, "detection", pending_control_detection$id,
-          pending_control_detection$parent_id, pending_control_detection$x,
-          pending_control_detection$y, pending_control_detection$stage,
-          pending_control_detection$stage, "vertebrate_control_detection"
-        )
-      }
-
-      #########################################################################
       ### 7. Detection after population dynamics
       #########################################################################
       if (nrow(points)) {
@@ -3051,17 +2312,13 @@ INApestVertebratePoint <- function(
         si <- si + 1L
         snap <- points
         snap$perm <- perm; snap$timestep <- timestep
-        front <- c("perm", "timestep", .iv_point_reserved)
-        snapshots[[si]] <- snap[, c(front, setdiff(names(snap), front)), drop = FALSE]
+        snapshots[[si]] <- snap[, c("perm", "timestep", "id", "parent_id", "x", "y", "stage", "birth_timestep", "have_info", "detected", "managing", "last_known_timestep"), drop = FALSE]
       }
 
       stage_end <- tabulate(points$stage, nbins = Nstages)
       sumi <- sumi + 1L
       row <- data.frame(
         perm = perm, timestep = timestep, n_start = n_start,
-        n_control_deaths = n_control_deaths,
-        n_control_detections = n_control_detections,
-        control_cost = control_cost,
         n_management_deaths = n_management_deaths,
         n_stage_deaths = n_stage_deaths,
         n_stage_transitions = n_stage_transitions,
@@ -3089,48 +2346,47 @@ INApestVertebratePoint <- function(
 
   out <- list(
     ModelName = ModelName,
-    PointHistory = if (length(snapshots)) .iv_rbind_fill(snapshots) else data.frame(),
+    PointHistory = if (length(snapshots)) do.call(rbind, snapshots) else data.frame(),
     EventLog = if (length(events)) do.call(rbind, events) else data.frame(),
-    FinalPoints = if (length(final_points)) .iv_rbind_fill(final_points) else data.frame(),
-    InfoSites = if (length(info_results)) .iv_rbind_fill(info_results) else data.frame(),
-    ContactHistory = if (length(contacts)) .iv_rbind_fill(contacts) else data.frame(),
-    InteractionEvents = if (length(interaction_events)) .iv_rbind_fill(interaction_events) else data.frame(),
+    FinalPoints = if (length(final_points)) do.call(rbind, final_points) else data.frame(),
+    InfoSites = if (length(info_results)) do.call(rbind, info_results) else data.frame(),
     Summary = if (length(summaries)) do.call(rbind, summaries) else data.frame()
   )
-  class(out) <- c("INApestVertebratePoint", "INApestPointTransitionMatrix", "list")
+  class(out) <- c("INApestPointTransitionMatrix", "list")
 
   if (SaveResults) {
     if (is.na(OutputDir)) OutputDir <- ""
     if (nzchar(OutputDir) && !dir.exists(OutputDir)) dir.create(OutputDir, recursive = TRUE)
-    saveRDS(out, file.path(OutputDir, paste0(ModelName, "_VertebratePointResults.rds")))
+    saveRDS(out, file.path(OutputDir, paste0(ModelName, "_PointTransitionMatrixResults.rds")))
   }
   out
 }
 
 
 ###############################################################################
-### Generic INApest point-transition pathogen facade
-###
-### The engine above is the validated standalone extension of the current
-### INApestPointTransitionMatrix engine. With Vertebrate = NULL its biological
-### population dynamics follow the parent point-transition model. The facade
-### below exposes only the generic pathogen interaction to ordinary INApest use.
+### Minimal two-stage YLH-style example (not run automatically)
 ###############################################################################
+if (FALSE) {
+  # Stage 1 = primary nest; stage 2 = main nest.
+  # Main nests produce new primary nests; primary nests progress to main nests.
+  A <- matrix(c(
+    0.10, 1.50,
+    0.80, 0.00
+  ), nrow = 2, byrow = TRUE)
 
-.INApestPointTransitionMatrix_engine <- INApestVertebratePoint
-
-INApestPointTransitionMatrix <- function(..., Pathogen = NULL) {
-  if (!is.null(Pathogen) && !inherits(Pathogen, "INApestPointPathogenInteraction"))
-    stop("Pathogen must be NULL or created by INApestPointPathogenInteraction().")
-
-  vertebrate_spec <- if (is.null(Pathogen)) NULL else list(Interaction = Pathogen)
-  out <- .INApestPointTransitionMatrix_engine(..., Vertebrate = vertebrate_spec)
-
-  if (!is.null(Pathogen)) {
-    out$PathogenEvents <- out$InteractionEvents
-  } else {
-    out$PathogenEvents <- data.frame()
-  }
-  class(out) <- unique(c("INApestPointTransitionMatrix", class(out)))
-  out
+  fit <- INApestPointTransitionMatrix(
+    Nperm = 10,
+    Ntimesteps = 6,
+    Nstages = 2,
+    Weights = c(1, 1),
+    Transition = A,
+    InitialPoints = data.frame(x = 0, y = 0, stage = 2),
+    SDDkernel = INApestPointKernelExponential(1000),
+    TransitionKernels = list(INApestPointKernelFixed(50)),
+    DetectionProb = c(0.05, 0.20), DetectionSD = 0,
+    ManageProb = 0, MortalityProb = 0,
+    FecundityReduction = 0,
+    SpreadReduction = 0,
+    Seed = 1
+  )
 }
