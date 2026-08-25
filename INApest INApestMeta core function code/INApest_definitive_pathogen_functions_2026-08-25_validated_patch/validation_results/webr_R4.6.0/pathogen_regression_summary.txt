@@ -1,0 +1,23 @@
+INApest pathogen regression validation summary
+Date/time: 2026-08-25 02:46:51 UTC
+Release root: /work/INApest_definitive_pathogen_functions_2026-08-25
+R version: R version 4.6.0 (2026-04-24)
+Platform: wasm32-unknown-emscripten
+Tests: 10 total; 10 PASS; 0 FAIL; 0 SKIP
+
+Important evidence boundary:
+- Test 09 checks Pathogen=NULL equivalence within the current release. It is not a comparison to a historical pre-pathogen source baseline.
+- Test 10 records whether a true multi-worker PSOCK path was available. A single-worker fallback can validate wrapper logic but is not evidence of multi-worker parallel execution.
+- The supplied historical test_Pathogen_NULL_and_parallel.R is not run directly because the release bundle does not contain its baseline/INApestMeta.r dependency and it refers to older development filenames.
+
+Per-test results:
+01_binary_mechanisms                        PASS
+02_meta_mlu_mechanisms_integration          PASS
+03_point_mechanisms                         PASS
+04_point_transition_mechanisms              PASS
+05_node_transition_mechanisms               PASS
+06_detection_information_trigger            PASS
+07_parent_function_api                      PASS
+08_parallel_function_api                    PASS
+09_meta_null_equivalence                    PASS
+10_meta_serial_parallel_wrapper_parity      PASS

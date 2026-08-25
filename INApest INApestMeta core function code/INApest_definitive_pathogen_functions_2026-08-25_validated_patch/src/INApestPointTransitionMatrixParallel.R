@@ -45,6 +45,7 @@
 INApestPointTransitionMatrixParallel <- function(
   ModelName = "INApestPointTransitionMatrixParallel",
   Nperm,
+  Pathogen = NULL,
   ...,
   Cores = max(1L, parallel::detectCores(logical = TRUE) - 1L),
   Backend = c("psock", "fork"),
@@ -65,6 +66,7 @@ INApestPointTransitionMatrixParallel <- function(
   if (.Platform$OS.type == "windows" && Backend == "fork") stop("Backend = 'fork' is not available on Windows; use 'psock'.")
 
   args <- list(...)
+  args$Pathogen <- Pathogen
   args$Nperm <- NULL; args$ModelName <- NULL; args$Seed <- NULL
   args$OutputDir <- NULL; args$SaveResults <- NULL; args$DoProgress <- NULL
   streams <- .ipptmp_make_streams(Nperm, Seed)

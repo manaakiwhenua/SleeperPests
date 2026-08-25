@@ -21,8 +21,8 @@
 ###########################################################################
 
 #######################################################################
-###Serial implementation of the INApestMeta metapopulation model.
-###The stochastic permutation loop is run with base R lapply().
+###This version implements parallel processing with a PSOCK cluster and parallel::parLapply for the permutation loop.
+###See file "ParallelSetup.r" for notes on steps for setting up parallel processing
 #######################################################################
 
 
@@ -571,7 +571,7 @@ INApestPathogenOutputs <- function(PathogenStateResults) {
 }
 
 
-INApestMeta = function(
+INApestMetaParallel = function(
 ModelName, #Name for storing results to file 
 Nperm,                  #Number of permutations per parameter combination
 Ntimesteps,                 #Simulation duration timesteps can be any length of time
@@ -628,10 +628,11 @@ if (anyDuplicated(names(LocalDynamicsArgs)))
 force(LocalDynamics)
 force(LocalDynamicsArgs)
 UserLocalDynamicsArgs <- LocalDynamicsArgs
-if(!is.null(Pathogen) && !inherits(Pathogen, "INApestPathogen")) stop("Pathogen must be NULL or an object returned by INApestPathogen()")
-UsePathogen <- !is.null(Pathogen)
+PathogenOriginal <- Pathogen
+if(!is.null(PathogenOriginal) && !inherits(PathogenOriginal, "INApestPathogen")) stop("Pathogen must be NULL or an object returned by INApestPathogen()")
+UsePathogen <- !is.null(PathogenOriginal)
 if(UsePathogen) {
-  PathogenEngine <- Pathogen$Engine
+  PathogenEngine <- PathogenOriginal$Engine
   PathogenContext <- list(n_nodes = nrow(SDDprob), Ntimesteps = Ntimesteps)
   PathogenEngine$Validate(PathogenContext)
   force(PathogenEngine); force(PathogenContext)
@@ -718,6 +719,10 @@ if(is.null(MortalitySD) == T)
 ###Start of simulation
 ###########################################################
     
+detected_cores <- parallel::detectCores()
+if (is.na(detected_cores)) detected_cores <- 2L
+n_cores <- max(1L, min(Nperm, detected_cores - 1L))
+
 ###Run one stochastic realisation. Function arguments and local helpers are
 ###captured in this closure, avoiding fragile manual worker export lists.
 PermutationWorker <- function(i_perm)
@@ -794,8 +799,7 @@ InitBio[InitBio > NodeK] = NodeK[InitBio > NodeK]
 
 # initialise the population
 N <- InitBio
-if(UsePathogen)
-  PathogenState <- PathogenEngine$Initial(N, PathogenContext)
+if(UsePathogen) PathogenState <- PathogenEngine$Initial(N, PathogenContext)
 if(sum(N) == 0 && OngoingExternalInvasion == F)
   warning("No initial populations and no future external invasions")
 
@@ -1115,8 +1119,6 @@ if(length(InfoDecayNodes) > 0)
   N[N > NodeK] = NodeK[N > NodeK] 
   }
 
-  ###Reconcile persistent pathogen state with host demography and update pathogen process.
-  ###Ordinary host losses thin pathogen classes; ordinary host gains enter S.
   if(UsePathogen)
     {
     PathogenState <- PathogenEngine$Reconcile(PathogenState, N, PathogenContext)
@@ -1174,17 +1176,24 @@ if(length(InfoDecayNodes) > 0)
  DetectedResultsLoop[,timestep] = HaveInfo*Invaded 
  }
  if(UsePathogen)
-   return(list(Invasion = InvasionResultsLoop, Population = PopulationResultsLoop,
-               Managing = ManagingResultsLoop, Detected = DetectedResultsLoop,
-               PathogenState = PathogenStateResultsLoop,
-               PathogenDetected = PathogenDetectedResultsLoop))
+   return(list(Invasion = InvasionResultsLoop, Population = PopulationResultsLoop, Managing = ManagingResultsLoop, Detected = DetectedResultsLoop, PathogenState = PathogenStateResultsLoop, PathogenDetected = PathogenDetectedResultsLoop))
  simplify2array(list(InvasionResultsLoop, PopulationResultsLoop, ManagingResultsLoop, DetectedResultsLoop), higher = TRUE)
 }
 
-###Run stochastic realisations serially in permutation order.
-###This is deliberately the same worker body used by INApestMetaParallel,
-###so model logic remains aligned between serial and parallel implementations.
-PermutationResults <- lapply(seq_len(Nperm), PermutationWorker)
+###Use a common PSOCK/parLapply architecture across parallel INApest variants.
+###Static scheduling and L'Ecuyer-CMRG worker streams support reproducible
+###parallel simulations when the caller fixes the R seed.
+if(n_cores == 1L)
+  {
+  PermutationResults <- lapply(seq_len(Nperm), PermutationWorker)
+  } else {
+  cluster <- parallel::makeCluster(n_cores, type = "PSOCK")
+  on.exit(if(inherits(cluster, "cluster")) parallel::stopCluster(cluster), add = TRUE)
+  parallel::clusterSetRNGStream(cluster)
+  PermutationResults <- parallel::parLapply(cluster, seq_len(Nperm), PermutationWorker)
+  parallel::stopCluster(cluster)
+  cluster <- NULL
+  }
 if(!UsePathogen) {
   PermOut <- simplify2array(PermutationResults, higher = TRUE)
   if(length(dim(PermOut)) == 3) dim(PermOut) = c(dim(PermOut),1)
@@ -1198,14 +1207,11 @@ if(!UsePathogen) {
   ManagingResults <- simplify2array(lapply(PermutationResults, `[[`, "Managing"), higher = TRUE)
   DetectedResults <- simplify2array(lapply(PermutationResults, `[[`, "Detected"), higher = TRUE)
   if(Nperm == 1L) {
-    dim(InvasionResults) <- c(nrow(SDDprob), Ntimesteps, 1L)
-    dim(PopulationResults) <- c(nrow(SDDprob), Ntimesteps, 1L)
-    dim(ManagingResults) <- c(nrow(SDDprob), Ntimesteps, 1L)
-    dim(DetectedResults) <- c(nrow(SDDprob), Ntimesteps, 1L)
+    dim(InvasionResults) <- c(nrow(SDDprob), Ntimesteps, 1L); dim(PopulationResults) <- c(nrow(SDDprob), Ntimesteps, 1L)
+    dim(ManagingResults) <- c(nrow(SDDprob), Ntimesteps, 1L); dim(DetectedResults) <- c(nrow(SDDprob), Ntimesteps, 1L)
   }
   PathogenStates <- PathogenEngine$States
-  PathogenStateResults <- array(0L, dim = c(nrow(SDDprob), length(PathogenStates), Ntimesteps, Nperm),
-                                dimnames = list(NULL, PathogenStates, NULL, NULL))
+  PathogenStateResults <- array(0L, dim = c(nrow(SDDprob), length(PathogenStates), Ntimesteps, Nperm), dimnames = list(NULL, PathogenStates, NULL, NULL))
   PathogenDetectedResults <- array(0L, dim = c(nrow(SDDprob), Ntimesteps, Nperm))
   for(pp in seq_len(Nperm)) {
     PathogenStateResults[,,,pp] <- PermutationResults[[pp]]$PathogenState

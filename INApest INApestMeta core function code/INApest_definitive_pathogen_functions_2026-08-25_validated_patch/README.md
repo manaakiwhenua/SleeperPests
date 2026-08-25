@@ -42,7 +42,7 @@ The pathogen component is optional. The intended contract is that absence of a p
 
 ## Validation status
 
-See `VALIDATION_STATUS.md`. All 15 source files passed the supplied structural source audit. The full current pathogen family has **not** been executed end-to-end in R in this session because a working native R runtime was unavailable and the available webR launcher failed before R initialization. The included R regression tests are therefore supplied for execution, not reported as fresh PASS results.
+See `VALIDATION_STATUS.md` and `VALIDATION_FIXES_2026-08-25.md`. A fresh webR run under **R 4.6.0** exposed four small implementation/API defects in the as-uploaded consolidated build. After minimal corrections, the consolidated 10-block regression suite passed **10/10**, and all 15 corrected source files passed the structural source audit. webR could not provide a genuine multi-worker PSOCK check, so true multi-worker parallel validation remains outstanding.
 
 ## Provenance
 

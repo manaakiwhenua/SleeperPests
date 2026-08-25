@@ -628,10 +628,11 @@ if (anyDuplicated(names(LocalDynamicsArgs)))
 force(LocalDynamics)
 force(LocalDynamicsArgs)
 UserLocalDynamicsArgs <- LocalDynamicsArgs
-if(!is.null(Pathogen) && !inherits(Pathogen, "INApestPathogen")) stop("Pathogen must be NULL or an object returned by INApestPathogen()")
-UsePathogen <- !is.null(Pathogen)
+PathogenOriginal <- Pathogen
+if(!is.null(PathogenOriginal) && !inherits(PathogenOriginal, "INApestPathogen")) stop("Pathogen must be NULL or an object returned by INApestPathogen()")
+UsePathogen <- !is.null(PathogenOriginal)
 if(UsePathogen) {
-  PathogenEngine <- Pathogen$Engine
+  PathogenEngine <- PathogenOriginal$Engine
   PathogenContext <- list(n_nodes = nrow(SDDprob), Ntimesteps = Ntimesteps)
   PathogenEngine$Validate(PathogenContext)
   force(PathogenEngine); force(PathogenContext)
@@ -1175,7 +1176,7 @@ if(length(InfoDecayNodes) > 0)
  DetectedResultsLoop[,timestep] = HaveInfo*Invaded 
  }
  if(UsePathogen)
-   return(list(Invasion = InvasionResultsLoop, Population = PopulationResultsLoop, Managing = ManagingResultsLoop, Detected = DetectedResultsLoop, PathogenState = PathogenStateResultsLoop))
+   return(list(Invasion = InvasionResultsLoop, Population = PopulationResultsLoop, Managing = ManagingResultsLoop, Detected = DetectedResultsLoop, PathogenState = PathogenStateResultsLoop, PathogenDetected = PathogenDetectedResultsLoop))
  simplify2array(list(InvasionResultsLoop, PopulationResultsLoop, ManagingResultsLoop, DetectedResultsLoop), higher = TRUE)
 }
 

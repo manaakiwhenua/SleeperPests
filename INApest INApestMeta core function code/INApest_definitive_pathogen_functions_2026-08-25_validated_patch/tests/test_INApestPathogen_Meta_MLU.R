@@ -107,7 +107,7 @@ if(file.exists('INApestMetaMultipleLandUsePathogen.r')) {
     EnvEstabProb=0,Survival=1,K=matrix(100,2,2),PropaguleProduction=0,PropaguleEstablishment=0,
     IncursionStartPop=1,SDDprob=diag(2),SEAM=0,LDDprob=diag(2),LDDrate=0,
     OngoingExternalInvasion=FALSE,OngoingExternalInfo=FALSE,OutputDir=paste0(tmp,'/'),DoPlots=FALSE)
-  path_mlu <- INApestPathogen('SIS',Beta=c(0,0),RecoveryProb=0,InitialInfected=matrix(c(2,0,0,0),2,2))
+  path_mlu <- INApestPathogen('SIS',Beta=matrix(0,2,2),RecoveryProb=0,InitialInfected=matrix(c(2,0,0,0),2,2))
   do.call(INApestMetaMultipleLandUse,c(base_mlu,list(Pathogen=path_mlu)))
   hs <- readRDS(file.path(tmp,'mlu_path_PathogenStateLargeOut.rds'))
   pop <- readRDS(file.path(tmp,'mlu_path_PopulationLargeOut.rds'))

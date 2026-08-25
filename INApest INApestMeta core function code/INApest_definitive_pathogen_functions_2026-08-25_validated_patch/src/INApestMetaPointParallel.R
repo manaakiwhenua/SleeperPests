@@ -84,6 +84,7 @@
 INApestMetaPointParallel <- function(
   ModelName = "INApestMetaPointParallel",
   Nperm,
+  Pathogen = NULL,
   ...,
   Cores = max(1L, parallel::detectCores(logical = TRUE) - 1L),
   Backend = c("psock", "fork"),
@@ -110,6 +111,7 @@ INApestMetaPointParallel <- function(
     stop("Backend = 'fork' is not available on Windows; use 'psock'.")
 
   args <- list(...)
+  args$Pathogen <- Pathogen
   # Parallel wrapper owns these serial arguments to prevent duplicate writes,
   # progress interleaving and nested permutation loops.
   args$Nperm <- NULL; args$ModelName <- NULL; args$Seed <- NULL

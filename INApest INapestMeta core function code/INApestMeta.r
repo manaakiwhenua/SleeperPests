@@ -628,10 +628,11 @@ if (anyDuplicated(names(LocalDynamicsArgs)))
 force(LocalDynamics)
 force(LocalDynamicsArgs)
 UserLocalDynamicsArgs <- LocalDynamicsArgs
-if(!is.null(Pathogen) && !inherits(Pathogen, "INApestPathogen")) stop("Pathogen must be NULL or an object returned by INApestPathogen()")
-UsePathogen <- !is.null(Pathogen)
+PathogenOriginal <- Pathogen
+if(!is.null(PathogenOriginal) && !inherits(PathogenOriginal, "INApestPathogen")) stop("Pathogen must be NULL or an object returned by INApestPathogen()")
+UsePathogen <- !is.null(PathogenOriginal)
 if(UsePathogen) {
-  PathogenEngine <- Pathogen$Engine
+  PathogenEngine <- PathogenOriginal$Engine
   PathogenContext <- list(n_nodes = nrow(SDDprob), Ntimesteps = Ntimesteps)
   PathogenEngine$Validate(PathogenContext)
   force(PathogenEngine); force(PathogenContext)

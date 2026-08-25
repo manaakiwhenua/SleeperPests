@@ -1,0 +1,4 @@
+webR R version: R version 4.6.0 (2026-04-24)
+parallel::detectCores(): NA
+runner_error: none
+webR_output_dir: /work/INApest_pathogen_validation_20260825_024650

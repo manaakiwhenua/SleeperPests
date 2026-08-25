@@ -198,7 +198,7 @@ local.dynamics.transition.matrix.pathogen <- function(
         na<-min(slots[j],rbinom(1,nt,cp[j])); aq<-.iptm_take(arrq,na); additions[j,]<-aq
         for(q in which(aq>0)) accepted_source[,q] <- accepted_source[,q] + .iptm_take(flows[,j,q],aq[q])
       }
-      internal_source <- matrix(0L,n_nodes,P); for(q in seq_len(P)) internal_source[,q]<-rowSums(flows[,,q]); blocked<-pmax(0L,internal_source-accepted_source)
+      internal_source <- matrix(0L,n_nodes,P); for(q in seq_len(P)) internal_source[,q]<-rowSums(flows[,,q]); blocked<-pmax(internal_source-accepted_source,0L); storage.mode(blocked)<-"integer"
     }
     for(i in seq_len(n_nodes)) {
       bprob<-bm[i,s-1L]; bsurv<-vapply(blocked[i,],function(z) if(bprob<=0) z else if(bprob>=1) 0L else rbinom(1,z,1-bprob),integer(1)); state[i,s-1L,]<-staymat[i,]+bsurv; state[i,s,]<-state[i,s,]+additions[i,]; capacity_above[i]<-total_pop[i]+sum(additions[i,])*stage_weight[i]
