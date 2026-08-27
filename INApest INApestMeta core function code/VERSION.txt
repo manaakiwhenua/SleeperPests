@@ -1,0 +1,7 @@
+INApest core source definitive release
+Release date: 2026-08-26
+Source files: 15 active pathogen-capable core files
+Serial/current-source status: validated
+Host-engine status: 28/28 PASS
+True-PSOCK pre-fix baseline: 6/19 PASS
+True-PSOCK post-fix status: pending v2 native-R rerun

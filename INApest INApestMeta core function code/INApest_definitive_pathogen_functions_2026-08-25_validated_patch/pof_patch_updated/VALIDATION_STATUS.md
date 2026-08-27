@@ -46,3 +46,7 @@ The high-replication report demonstration script is supplied as `tests/report_be
 ## Earlier supporting disease-behaviour evidence
 
 Earlier development validation also exercised generic epidemiological behaviours such as epidemic thresholds/stochastic fade-out, infectious-period effects, contact formulation, movement, seasonal effects, waning immunity and qualitative migration/flyway/reseeding behaviour. These are supporting evidence for the architecture, but should remain clearly distinguished from the fresh regression of this corrected consolidated build.
+
+## PoF integration patch
+
+A subsequent narrow proof-of-freedom integration patch added `INApestPathogenPoF.R`, serial transition-matrix pathogen-detection persistence, and exposure of the existing point resolver. All core source files pass the structural audit after these changes. Deterministic binary, SEIR, stage/land-use aggregation, and point-surveillance mathematical benchmarks pass. `tests/test_pathogen_pof_integration_patch.R` is included for fresh R execution; the current Node/webR launcher fails before R initialisation in this environment, so that new R regression is not claimed as executed here.

@@ -1,6 +1,6 @@
 from pathlib import Path
 import re, hashlib
-root=Path('/mnt/data/INApest_definitive_2026-08-25/src')
+root=Path(__file__).resolve().parents[1] / 'src'
 expected={
 'INApest.R':['INApest <- function','Pathogen'],
 'INApestParallel.R':['INApestParallel <- function'],

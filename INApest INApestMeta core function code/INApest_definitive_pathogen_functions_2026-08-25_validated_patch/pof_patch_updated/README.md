@@ -51,3 +51,12 @@ See `PROVENANCE.md` for exact GitHub blob SHAs and notes on which release files 
 ## Pathogen detection can trigger information
 
 All pathogen-capable models now use the common `INApestPathogen()` fields `DetectionProb` and `DetectionTriggersInfo`. The default `DetectionTriggersInfo = FALSE` preserves earlier behaviour. When TRUE, detection of infectious pathogen state creates local information in the parent INApest model. In abundance models a per-infected-host detection probability is aggregated as `1 - (1 - p)^I`; binary occupancy uses `p` when pathogen is present; point models draw detection per infectious point. Initial pathogen detection can seed information before timestep 1, while later detections affect management from the next timestep under the existing INApest information/management timing.
+
+## Pathogen proof-of-freedom companion integration (2026-08-25)
+
+This revised bundle also includes `src/INApestPathogenPoF.R` and the narrow source changes required to integrate PoF with the validated pathogen outputs. See `PATHOGEN_POF_INTEGRATION_PATCH.md`.
+
+Key additions:
+- serial `INApestMetaTransitionMatrix` now saves `PathogenDetectedLargeOut.rds`;
+- `INApestPointPathogenInteraction()` exposes `ResolvePoint` so PoF and simulation share the exact point parameter-resolution contract;
+- PoF accepts in-memory objects or standard saved-output filename stems / `OutputDir + ModelName` specifications.
