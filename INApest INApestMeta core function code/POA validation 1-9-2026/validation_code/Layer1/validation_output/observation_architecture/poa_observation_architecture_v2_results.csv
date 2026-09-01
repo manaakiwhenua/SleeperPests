@@ -1,0 +1,30 @@
+"test_id","group","description","status","detail","elapsed_seconds"
+"A01","contract","HaveInfo is state, not observational evidence","PASS","state/evidence separation retained",0.09
+"A02","contract","Background and InfoTriggered event streams remain separate","PASS","event streams separated",0
+"A03","contract","Legacy persistent DetectedResults is labelled legacy state","PASS","legacy state not promoted to explicit event",0
+"A04","contract","Same-round background detection cannot activate InfoTriggered search","PASS","pre-round gate applied",0.03
+"B01","likelihood","Background-only zero detection matches exact Bayes","PASS","exact Bayes reproduced",0.14
+"B02","likelihood","InfoTriggered zero detection is gated by prior information","PASS","targeted Bayes reproduced",0.03
+"B03","likelihood","Combined q multiplies Background and InfoTriggered pathways","PASS","combined q reproduced",0
+"B04","likelihood","Abundance likelihood uses per-individual detection","PASS","q=(1-p)^N",0.01
+"B05","likelihood","MLU partition preserves likelihood","PASS","MLU partition consistent",0.02
+"B06","likelihood","Stage partition preserves likelihood","PASS","stage partition consistent",0.03
+"B07","likelihood","Point independent model uses information strata","PASS","point pre-info strata respected",0.05
+"R01","recorded","Likelihood auto-wires recorded Background probabilities","PASS","auto-wired recorded p",0.03
+"R02","recorded","Recorded particle-specific detectability is retained","PASS","particle-level DetectionSD outcomes preserved",0
+"R03","recorded","Recorded InfoTriggered p remains pre-information gated","PASS","recorded target p gated correctly",0
+"R04","recorded","Recorded MLU probabilities combine across land uses","PASS","MLU recorded p exact",0
+"R05","recorded","Recorded stage probabilities combine across stages","PASS","TM recorded p exact",0
+"R06","recorded","Recorded point probabilities are evaluated per point","PASS","point-specific p exact",0
+"R07","recorded","Combined auto likelihood uses both recorded streams","PASS","combined recorded likelihood exact",0
+"C01","sequential","Sequential likelihood rejects legacy persistent detection state","PASS","unsafe propagation blocked",0.02
+"C02","sequential","Sequential targeted evidence requires explicit targeted events","PASS","target history guard enforced",0
+"C03","compatibility","Deprecated Surveillance alias reproduces Background result","PASS","legacy alias retained",0.01
+"C04","compatibility","HaveInfo alone cannot substitute for pre-surveillance information","PASS","HaveInfo not silently substituted",0
+"C05","compatibility","Serial Meta PoA wrapper is available","PASS","serial Meta wrapper restored",0.02
+"D01","coverage","INApest exposes the v2 contract","PASS","adapter contract present",0
+"D02","coverage","INApestMeta exposes the v2 contract","PASS","adapter contract present",0
+"D03","coverage","INApestMetaMultipleLandUse exposes the v2 contract","PASS","adapter contract present",0
+"D04","coverage","INApestMetaTransitionMatrix exposes the v2 contract","PASS","adapter contract present",0
+"D05","coverage","INApestMetaPoint exposes the v2 contract","PASS","adapter contract present",0
+"D06","coverage","INApestPointTransitionMatrix exposes the v2 contract","PASS","adapter contract present",0

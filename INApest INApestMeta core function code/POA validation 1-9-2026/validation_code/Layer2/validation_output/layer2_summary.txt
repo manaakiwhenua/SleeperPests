@@ -1,0 +1,18 @@
+INApest PoA Layer 2 exact internal behavioural validation
+Date/time: 2026-09-01 09:20:16 NZST
+R: R version 4.4.1 (2024-06-14 ucrt)
+Platform: x86_64-w64-mingw32
+Tests PASS: 10 / 10
+Tests FAIL: 0
+Maximum asserted numeric error: 0.0001269672
+
+L2-01 | PASS | single zero-detection round matches closed-form Bayes | posterior 0.952380952381; SSe 0.8
+L2-02 | PASS | three repeated zero-detection rounds reproduce recursive Bayes | recursive posterior sequence reproduced
+L2-03 | PASS | reinvasion between rounds matches exact finite-state update | 10% reinvasion exact
+L2-04 | PASS | extinction plus reinvasion matches exact finite-state transition | reinvasion 0.2 + extinction 0.3 exact
+L2-05 | PASS | two surveillance pathways retain separate and combined exact SSe | Background SSe 0.6; targeted SSe 0.25; combined SSe 0.7
+L2-06 | PASS | compatible-history propagation matches exact management-feedback benchmark | exact posterior=0.8; naive all-history posterior=0.9090909091 correctly rejected
+L2-07 | PASS | high-PoA finite-particle approximation converges without false certainty | exact=0.99943069241; 200k error=1.35329e-07
+L2-08 | PASS | unsupported posterior class stops instead of becoming certainty | guard triggered: Likelihood update retained positive posterior mass for the present class at timestep 1 but no realised matching particles are available to propagate that class. Increase Nperm or shorten the conditioning horizon.
+L2-09 | PASS | simulation-mode zero-detection conditioning agrees with exact Bayes | observed=0.9522539852; exact=0.9523809524
+L2-10 | PASS | positive binary detection drives exact absence posterior to zero | positive detection posterior PoA = 0

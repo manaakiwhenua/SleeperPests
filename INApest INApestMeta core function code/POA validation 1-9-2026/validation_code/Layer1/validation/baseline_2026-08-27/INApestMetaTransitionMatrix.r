@@ -1411,10 +1411,7 @@ OngoingExternalInfo = F,   ##Option to include ongoing communication from extern
 OutputDir = NA,		      #Directory for storing results
 DoPlots = TRUE,	     #Option to omit printing of line graphs.Default is to print.
 Pathogen = NULL, #Optional INApestPathogen object
-InitialPathogenState = NULL, #Optional nodes x demographic stages x pathogen states array
-InfoTriggeredDetectionProb = 0, #Additional per-individual stage-specific detection under pre-existing information
-InfoTriggeredDetectionSD = NULL, #Optional uncertainty for information-triggered detection
-ReturnResults = FALSE #Return in-memory results while retaining legacy saved outputs
+InitialPathogenState = NULL #Optional nodes x demographic stages x pathogen states array
 )
 {
 if(!is.function(LocalDynamics))
@@ -1604,12 +1601,6 @@ InvasionResults = array(dim = c(nrow(SDDprob),Ntimesteps,Nperm))
 ###Declare array tracking detection status 
 ###of individual nodes in each timestep of each realisation
 DetectedResults = InvasionResults
-BackgroundDetectedResults = array(0L,dim=c(nrow(SDDprob),Ntimesteps,Nperm))
-InfoTriggeredDetectedResults = array(0L,dim=c(nrow(SDDprob),Ntimesteps,Nperm))
-BackgroundDetectionProbabilityResults = array(0,dim=c(nrow(SDDprob),Nstages,Ntimesteps,Nperm))
-InfoTriggeredDetectionProbabilityResults = array(0,dim=c(nrow(SDDprob),Nstages,Ntimesteps,Nperm))
-InformationStateBeforeSurveillanceResults = array(0L,dim=c(nrow(SDDprob),Ntimesteps,Nperm))
-HaveInfoResults = array(0L,dim=c(nrow(SDDprob),Ntimesteps,Nperm))
 
 ###Declare array for tracking management adoption status 
 ###of individual nodes in each timestep of each realisation
@@ -1682,38 +1673,6 @@ if (is.null(DetectionSD)) {
                           nrow = n_nodes, ncol = Nstages)
   }
 }
-
-# --- Information-triggered detection SD and shape validation ---
-.InfoTriggeredTMShapeOK <- function(x) {
-  d <- dim(x)
-  if(is.null(d)) return(length(x) == 1 || length(x) == Nstages)
-  if(length(d) == 2) return(all(d == c(n_nodes,Nstages)))
-  if(length(d) == 3) return(all(d == c(n_nodes,Nstages,Ntimesteps)))
-  FALSE
-}
-if(!.InfoTriggeredTMShapeOK(InfoTriggeredDetectionProb))
-  stop("InfoTriggeredDetectionProb must be scalar, length Nstages, nodes x stages, or nodes x stages x Ntimesteps")
-if(any(!is.finite(InfoTriggeredDetectionProb)) || any(InfoTriggeredDetectionProb < 0) || any(InfoTriggeredDetectionProb > 1))
-  stop("InfoTriggeredDetectionProb values must be between 0 and 1")
-if (is.null(InfoTriggeredDetectionSD)) {
-  if (is.matrix(InfoTriggeredDetectionProb)) {
-    stage_means <- colMeans(InfoTriggeredDetectionProb, na.rm = TRUE)
-    InfoTriggeredDetectionSD <- matrix(stage_means / 10, nrow=n_nodes, ncol=Nstages, byrow=TRUE)
-  } else {
-    InfoTriggeredDetectionSD <- matrix(mean(InfoTriggeredDetectionProb, na.rm=TRUE)/10, nrow=n_nodes, ncol=Nstages)
-  }
-}
-.InfoTriggeredTMSDShapeOK <- function(x) {
-  d <- dim(x)
-  if(is.null(d)) return(length(x) == 1 || length(x) == Nstages)
-  if(length(d) == 2) return(all(d == c(n_nodes,Nstages)))
-  FALSE
-}
-if(!.InfoTriggeredTMSDShapeOK(InfoTriggeredDetectionSD))
-  stop("InfoTriggeredDetectionSD must be scalar, length Nstages, or nodes x stages; time variation belongs in InfoTriggeredDetectionProb")
-if(any(!is.finite(InfoTriggeredDetectionSD)) || any(InfoTriggeredDetectionSD < 0))
-  stop("InfoTriggeredDetectionSD must contain finite non-negative values")
-UseInfoTriggeredSurveillance <- any(InfoTriggeredDetectionProb != 0) || any(InfoTriggeredDetectionSD != 0)
 
 # --- Mortality SD ---
 if (is.null(MortalitySD)) {
@@ -1902,25 +1861,6 @@ if (length(dim(DetectionProb)) == 3 && all(dim(DetectionProb)[1:2] == c(n_nodes,
   }
 }
 
-###Randomly assign information-triggered detection probabilities. This is an
-###additive observation pathway; when disabled no additional RNG is consumed.
-if(UseInfoTriggeredSurveillance) {
-  if (!is.array(InfoTriggeredDetectionProb) && (length(InfoTriggeredDetectionProb) == 1 || length(InfoTriggeredDetectionProb) == Nstages)) {
-    NodeInfoTriggeredDetectionProb <- array(NA, dim=c(n_nodes,Nstages,Ntimesteps))
-    for (s in 1:Nstages) for (t in 1:Ntimesteps)
-      NodeInfoTriggeredDetectionProb[,s,t] <- pmax(0,pmin(1,rnorm(n_nodes,
-        mean=if(length(InfoTriggeredDetectionProb)==1) InfoTriggeredDetectionProb else InfoTriggeredDetectionProb[s],
-        sd=if(is.matrix(InfoTriggeredDetectionSD)) InfoTriggeredDetectionSD[,s] else if(length(InfoTriggeredDetectionSD)==1) InfoTriggeredDetectionSD else InfoTriggeredDetectionSD[s])))
-  } else if (is.matrix(InfoTriggeredDetectionProb) && all(dim(InfoTriggeredDetectionProb)==c(n_nodes,Nstages))) {
-    NodeInfoTriggeredDetectionProb <- array(NA,dim=c(n_nodes,Nstages,Ntimesteps))
-    for(t in 1:Ntimesteps) NodeInfoTriggeredDetectionProb[,,t] <- pmax(0,pmin(1,matrix(rnorm(n_nodes*Nstages,
-      mean=as.vector(InfoTriggeredDetectionProb),sd=as.vector(InfoTriggeredDetectionSD)),nrow=n_nodes,ncol=Nstages)))
-  } else if (length(dim(InfoTriggeredDetectionProb))==3 && all(dim(InfoTriggeredDetectionProb)==c(n_nodes,Nstages,Ntimesteps))) {
-    NodeInfoTriggeredDetectionProb <- array(NA,dim=dim(InfoTriggeredDetectionProb))
-    for(t in 1:Ntimesteps) NodeInfoTriggeredDetectionProb[,,t] <- pmax(0,pmin(1,matrix(rnorm(n_nodes*Nstages,
-      mean=as.vector(InfoTriggeredDetectionProb[,,t]),sd=as.vector(InfoTriggeredDetectionSD)),nrow=n_nodes,ncol=Nstages)))
-  }
-}
 
 
 ###Randomly assign probability of mangement adoption upon detection of infestation
@@ -2313,30 +2253,30 @@ PopulationResults[, timestep, perm] <- weighted_population
    }
  }
 
- ###Two surveillance streams over the stage-structured population.
- InfoBeforeSurveillance = as.integer(HaveInfo != 0)
- InformationStateBeforeSurveillanceResults[,timestep,perm] = InfoBeforeSurveillance
- BackgroundDetectionProbabilityResults[,,timestep,perm] = NodeDetectionProb[,,timestep]
- DetectionProbPerStage <- 1 - (1 - NodeDetectionProb[,,timestep])^N
- ProbDetectNode <- 1 - apply(1 - DetectionProbPerStage, 1, prod)
- BackgroundDetection <- rbinom(n=nrow(SDDprob),size=1,prob=ProbDetectNode)
- InfoTriggeredDetection <- integer(nrow(SDDprob))
- if(UseInfoTriggeredSurveillance) {
-   InfoTriggeredDetectionProbabilityResults[,,timestep,perm] = NodeInfoTriggeredDetectionProb[,,timestep]
-   InfoDetectionProbPerStage <- 1 - (1 - NodeInfoTriggeredDetectionProb[,,timestep])^N
-   ProbInfoDetectNode <- 1 - apply(1 - InfoDetectionProbPerStage, 1, prod)
-   InfoTriggeredDetection <- rbinom(n=nrow(SDDprob),size=1,prob=ProbInfoDetectNode*InfoBeforeSurveillance)
- }
- BackgroundDetectedResults[,timestep,perm] = BackgroundDetection
- InfoTriggeredDetectedResults[,timestep,perm] = InfoTriggeredDetection
- HostDetectionEvidence = pmax(BackgroundDetection,InfoTriggeredDetection)
- if(UseInfoPersistence == T) {
-   KnownPresence = which(HostDetectionEvidence == 1)
-   if(length(KnownPresence) > 0) LastKnownPresence[KnownPresence] = timestep
- }
- HaveInfo[HaveInfo==0] = HostDetectionEvidence[HaveInfo==0]
- HaveInfoResults[,timestep,perm] = HaveInfo
- ###Legacy DetectedResults remains the persistent known-present state.
+ ###Select new nodes where infestation detected
+ # Probability of detection per node per stage
+ DetectionProbPerStage <- 1 - (1 - NodeDetectionProb[,,timestep])^N  # element-wise OK: both nodes x stages
+ 
+ # Combine stages to get probability of detecting at least one stage
+ ProbDetectNode <- 1 - apply(1 - DetectionProbPerStage, 1, prod)  # multiply across stages
+ 
+ # Sample new detections per node
+ NewHaveInfo <- rbinom(n = nrow(SDDprob), size = 1, prob = ProbDetectNode)
+ 
+ 
+ ###Record newly detected infestations as known local presence
+ if(UseInfoPersistence == T)
+   {
+   KnownPresence = which(NewHaveInfo == 1)
+   if(length(KnownPresence) > 0)
+     LastKnownPresence[KnownPresence] = timestep
+   }
+ 
+ ###Add newly detected infestations to info vector
+ ###Only zero values updated here so information can refresh nodes that lost information
+ HaveInfo[HaveInfo==0] = NewHaveInfo[HaveInfo==0]  
+ 
+ ###Record detection status
  DetectedResults[,timestep,perm] = HaveInfo*Invaded 
  }
 }
@@ -2366,12 +2306,6 @@ if(!is.null(Pathogen)) {
 }
 saveRDS(InvasionResults, paste0(FileNameStem,"InvasionLargeOut.rds"))
 saveRDS(DetectedResults, paste0(FileNameStem,"DetectedLargeOut.rds"))
-saveRDS(BackgroundDetectedResults, paste0(FileNameStem,"BackgroundDetectedLargeOut.rds"))
-saveRDS(InfoTriggeredDetectedResults, paste0(FileNameStem,"InfoTriggeredDetectedLargeOut.rds"))
-saveRDS(InformationStateBeforeSurveillanceResults, paste0(FileNameStem,"InformationStateBeforeSurveillanceLargeOut.rds"))
-saveRDS(HaveInfoResults, paste0(FileNameStem,"HaveInfoLargeOut.rds"))
-saveRDS(BackgroundDetectionProbabilityResults, paste0(FileNameStem,"BackgroundDetectionProbabilityLargeOut.rds"))
-saveRDS(InfoTriggeredDetectionProbabilityResults, paste0(FileNameStem,"InfoTriggeredDetectionProbabilityLargeOut.rds"))
 
 ##########################################################
 ###Store annual node-level invasion probs for heat maps
@@ -2617,18 +2551,6 @@ lines(Quantiles[,1],Yvals[,1],lwd = 3,col = 2)
 lines(Quantiles[,1],Yvals[,3],lwd = 3,col = 2)
 dev.off()
 }
-if(ReturnResults) {
-  ResultObject <- list(ModelName=ModelName,PopulationResults=PopulationResults,PopulationStageResults=PopulationStageResults,
-    InvasionResults=InvasionResults,ManagingResults=ManagingResults,DetectedResults=DetectedResults,
-    BackgroundDetectedResults=BackgroundDetectedResults,InfoTriggeredDetectedResults=InfoTriggeredDetectedResults,
-    BackgroundDetectionProbabilityResults=BackgroundDetectionProbabilityResults,InfoTriggeredDetectionProbabilityResults=InfoTriggeredDetectionProbabilityResults,
-    InformationStateBeforeSurveillanceResults=InformationStateBeforeSurveillanceResults,HaveInfoResults=HaveInfoResults,
-    InvasionProb=InvasionProb)
-  if(!is.null(Pathogen)) { ResultObject$PathogenStageResults<-PathogenStageResults; ResultObject$PathogenDeathResults<-PathogenDeathResults; ResultObject$NewInfectionResults<-NewInfectionResults; ResultObject$PathogenDetectedResults<-PathogenDetectedResults }
-  class(ResultObject)<-c("INApestMetaTransitionMatrix","list")
-  return(invisible(ResultObject))
-}
-invisible(NULL)
 }
 
 

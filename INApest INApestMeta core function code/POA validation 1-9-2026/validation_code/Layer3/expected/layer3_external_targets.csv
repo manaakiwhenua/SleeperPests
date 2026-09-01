@@ -1,0 +1,22 @@
+stage,test_id,paper,quantity,published_target,independent_calculation,abs_difference,tolerance,evidence_level,notes
+3A,L3A-01,Ramsey et al. 2023,posterior PoA,0.9090909090909091,0.9090909090909091,0.0,1e-12,exact published example,
+3A,L3A-02,Ramsey et al. 2023,posterior PoA,0.9090909090909091,0.9090909090909092,1.1102230246251565e-16,1e-12,exact published example,
+3A,L3A-03,Ramsey et al. 2023,required SSe,0.53,0.5263157894736836,0.0036842105263164004,0.005,published rounded example,exact required SSe for target 0.95
+3A,L3A-04,Ramsey et al. 2023,required SSe,0.91,0.909090909090909,0.0009090909090910815,0.005,published rounded example,exact required SSe for target 0.99
+3B,L3B-01,Ward et al. 2016,survey 1 posterior PoE,0.312,0.312,0.0,0.0005,published table/equation reproduction,implied effective prior=0.278456904580
+3B,L3B-02,Ward et al. 2016,survey 2 posterior PoE,0.611,0.611,0.0,0.0005,published table/equation reproduction,implied effective prior=0.310719987526
+3B,L3B-03,Ward et al. 2016,survey 3 posterior PoE,0.855,0.8549999999999999,1.1102230246251565e-16,0.0005,published table/equation reproduction,implied effective prior=0.610665091427
+3B,L3B-04,Ward et al. 2016,survey 4 posterior PoE,0.957,0.957,0.0,0.0005,published table/equation reproduction,implied effective prior=0.854556770213
+3C,L3C-01,Ward et al. 2016,baited vial on-line cell detection,0.7,0.6976715693661839,0.0023284306338160476,0.005,spatial kernel reproduction,
+3C,L3C-02,Ward et al. 2016,visual search on-line cell detection,0.75,0.7499223131381447,7.768686185527507e-05,0.005,spatial kernel reproduction,
+3C,L3C-03,Ward et al. 2016,sniffer dog on-line cell detection,0.9,0.9056937050102407,0.0056937050102406905,0.01,spatial kernel reproduction,
+3D,L3D-01,Anderson et al. 2017,Stage I posterior freedom,0.95,0.9518629317378298,0.0018629317378298094,0.005,published worked scenario,Se=0.882000000000
+3D,L3D-02,Anderson et al. 2017,probability at least one of 10 MZ remains infested,0.4,0.4012630607616213,0.001263060761621304,0.005,published worked scenario,
+3E,L3E-01-Blackwater,Anderson et al. 2022,Blackwater occupied cells 2022,8,8,0,0,published growth-rule reproduction,
+3E,L3E-01-Eastern_shore_Virginia,Anderson et al. 2022,Eastern shore Virginia occupied cells 2022,11,11,0,0,published growth-rule reproduction,
+3E,L3E-01-Maryland,Anderson et al. 2022,Maryland occupied cells 2022,16,16,0,0,published growth-rule reproduction,
+3E,L3E-01-Delaware,Anderson et al. 2022,Delaware occupied cells 2022,18,18,0,0,published growth-rule reproduction,
+3E,L3E-02,Anderson et al. 2022,Eastern shore Virginia public-only sensitivity approximation,0.33,0.2846985969119198,0.04530140308808023,0.06,"supporting consistency, not full reproduction",published zone sensitivity also reflects full model/uncertainty
+3E,L3E-03,Anderson et al. 2022,Maryland public-only sensitivity approximation,0.4,0.38574634653731454,0.014253653462685478,0.03,"supporting consistency, not full reproduction",published zone sensitivity also reflects full model/uncertainty
+3E,L3E-04,Anderson et al. 2022,Delaware public-only sensitivity approximation,0.43,0.42204873745695926,0.007951262543040738,0.02,"supporting consistency, not full reproduction",published zone sensitivity also reflects full model/uncertainty
+3E,L3E-06,Anderson et al. 2022,equivalent cumulative SSe implied by prior 0.01 and PoA 0.75,0.9966329966329966,0.9966329966329966,0.0,1e-12,published summary compatibility,

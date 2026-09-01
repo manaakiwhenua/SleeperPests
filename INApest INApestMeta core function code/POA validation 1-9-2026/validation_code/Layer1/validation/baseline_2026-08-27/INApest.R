@@ -13,7 +13,7 @@
   if (is.function(x)) {
     z <- x(timestep = timestep, Ntimesteps = Ntimesteps)
   } else if (is.matrix(x)) {
-    if (!all(dim(x) == c(n, Ntimesteps))) stop(name, " matrix must have dimensions nodes x Ntimesteps")
+    if (!identical(dim(x), c(n, Ntimesteps))) stop(name, " matrix must have dimensions nodes x Ntimesteps")
     z <- x[, timestep]
   } else if (length(x) == 1L) {
     z <- rep(x, n)
@@ -37,11 +37,11 @@
 
 .inapest_connectivity <- function(x, timestep, n, Ntimesteps, name) {
   if (is.matrix(x)) {
-    if (!all(dim(x) == c(n, n))) stop(name, " matrix must be nodes x nodes")
+    if (!identical(dim(x), c(n, n))) stop(name, " matrix must be nodes x nodes")
     return(x)
   }
   if (is.array(x) && length(dim(x)) == 3L) {
-    if (!all(dim(x) == c(n, n, Ntimesteps))) stop(name, " 3D array must be nodes x nodes x Ntimesteps")
+    if (!identical(dim(x), c(n, n, Ntimesteps))) stop(name, " 3D array must be nodes x nodes x Ntimesteps")
     return(x[, , timestep])
   }
   if (length(x) == 1L && is.numeric(x)) return(matrix(as.numeric(x), n, n))
@@ -80,25 +80,17 @@ INApest <- function(
   Pathogen = NULL,
   SaveResults = TRUE,
   Seed = NULL,
-  InformationAcquisition = NULL,
-  InfoTriggeredDetectionProb = 0,
-  InfoTriggeredDetectionSD = NULL
+  InformationAcquisition = NULL
 ) {
   if (!is.null(Seed)) set.seed(Seed)
   n <- if (is.matrix(SDDprob)) nrow(SDDprob) else if (is.array(SDDprob)) dim(SDDprob)[1] else stop("SDDprob must be a matrix or 3D array")
   if (Nperm < 1L || Nperm != floor(Nperm)) stop("Nperm must be a positive integer")
   if (Ntimesteps < 1L || Ntimesteps != floor(Ntimesteps)) stop("Ntimesteps must be a positive integer")
-  if (is.array(SDDprob) && length(dim(SDDprob)) == 3L && !all(dim(SDDprob) == c(n, n, Ntimesteps))) stop("SDDprob 3D array must have dimensions nodes x nodes x Ntimesteps")
+  if (is.array(SDDprob) && length(dim(SDDprob)) == 3L && !identical(dim(SDDprob), c(n, n, Ntimesteps))) stop("SDDprob 3D array must have dimensions nodes x nodes x Ntimesteps")
   if (is.matrix(SDDprob) && ncol(SDDprob) != n) stop("SDDprob matrix must be square")
   if (!(length(LDDprob) == 1L || is.matrix(LDDprob) || (is.array(LDDprob) && length(dim(LDDprob)) == 3L))) stop("Invalid LDDprob")
 
   if (is.null(DetectionSD)) DetectionSD <- mean(DetectionProb, na.rm = TRUE) / 10
-  if (is.null(InfoTriggeredDetectionSD)) {
-    InfoTriggeredDetectionSD <- if (is.function(InfoTriggeredDetectionProb)) 0 else mean(InfoTriggeredDetectionProb, na.rm = TRUE) / 10
-  }
-  UseInfoTriggeredSurveillance <- is.function(InfoTriggeredDetectionProb) || is.function(InfoTriggeredDetectionSD) ||
-    any(as.numeric(InfoTriggeredDetectionProb) != 0, na.rm = TRUE) ||
-    any(as.numeric(InfoTriggeredDetectionSD) != 0, na.rm = TRUE)
   if (is.null(ManageSD)) ManageSD <- mean(ManageProb, na.rm = TRUE) / 10
   if (is.null(EradicationSD)) EradicationSD <- mean(EradicationProb, na.rm = TRUE) / 10
   if (is.null(SpreadReductionSD)) SpreadReductionSD <- (1 - mean(SpreadReduction, na.rm = TRUE)) / 10
@@ -129,12 +121,6 @@ INApest <- function(
 
   InvasionResults <- array(0L, dim = c(n, Ntimesteps, Nperm))
   DetectedResults <- array(0L, dim = c(n, Ntimesteps, Nperm))
-  BackgroundDetectedResults <- array(0L, dim = c(n, Ntimesteps, Nperm))
-  InfoTriggeredDetectedResults <- array(0L, dim = c(n, Ntimesteps, Nperm))
-  BackgroundDetectionProbabilityResults <- array(0, dim = c(n, Ntimesteps, Nperm))
-  InfoTriggeredDetectionProbabilityResults <- array(0, dim = c(n, Ntimesteps, Nperm))
-  InformationStateBeforeSurveillanceResults <- array(0L, dim = c(n, Ntimesteps, Nperm))
-  HaveInfoResults <- array(0L, dim = c(n, Ntimesteps, Nperm))
   ManagingResults <- array(0L, dim = c(n, Ntimesteps, Nperm))
   PathogenPresentResults <- array(0L, dim = c(n, Ntimesteps, Nperm))
   PathogenHostExtinctionResults <- array(0L, dim = c(n, Ntimesteps, Nperm))
@@ -237,7 +223,7 @@ INApest <- function(
       if (length(decay)) HaveInfo[decay] <- stats::rbinom(length(decay), 1L, NodeInfoRetentionProb[decay])
 
       if (is.matrix(SEAM)) {
-        if (!all(dim(SEAM) == c(n, n))) stop("SEAM must be nodes x nodes")
+        if (!identical(dim(SEAM), c(n, n))) stop("SEAM must be nodes x nodes")
         pinfo <- .inapest_clip01(SEAM * Detected)
         RandSEAM <- matrix(stats::rbinom(n * n, 1L, as.vector(pinfo)), n, n)
         InfoTransferred <- as.integer(colSums(RandSEAM) > 0)
@@ -278,34 +264,11 @@ INApest <- function(
       PathogenHostExtinctionResults[, timestep, perm] <- PathogenHostExtinction
       PathogenDetectedResults[, timestep, perm] <- PathogenDetected
 
-      # Host-surveillance observation round. Information available before either
-      # host-surveillance stream is frozen so a background detection cannot
-      # activate targeted surveillance retrospectively in the same round.
-      InfoBeforeSurveillance <- as.integer(HaveInfo != 0L)
-      InformationStateBeforeSurveillanceResults[, timestep, perm] <- InfoBeforeSurveillance
-
-      BackgroundDetectionProbabilityResults[, timestep, perm] <- NodeDetectionProb
-      BackgroundDetection <- stats::rbinom(n, 1L, Invaded * NodeDetectionProb)
-      InfoTriggeredDetection <- integer(n)
-      if (UseInfoTriggeredSurveillance) {
-        NodeInfoTriggeredDetectionProb <- .inapest_prob_draw(
-          .inapest_resolve(InfoTriggeredDetectionProb, timestep, n, Ntimesteps, "InfoTriggeredDetectionProb"),
-          .inapest_resolve(InfoTriggeredDetectionSD, timestep, n, Ntimesteps, "InfoTriggeredDetectionSD"), n
-        )
-        InfoTriggeredDetectionProbabilityResults[, timestep, perm] <- NodeInfoTriggeredDetectionProb
-        InfoTriggeredDetection <- stats::rbinom(
-          n, 1L, Invaded * NodeInfoTriggeredDetectionProb * InfoBeforeSurveillance
-        )
-      }
-      BackgroundDetectedResults[, timestep, perm] <- BackgroundDetection
-      InfoTriggeredDetectedResults[, timestep, perm] <- InfoTriggeredDetection
-
-      HostDetectionEvidence <- pmax(BackgroundDetection, InfoTriggeredDetection)
+      NewHostDetection <- stats::rbinom(n, 1L, Invaded * NodeDetectionProb)
       if (HostTriggersInfo) {
-        if (UseInfoPersistence) LastKnownPresence[HostDetectionEvidence == 1L] <- timestep
-        HaveInfo[HaveInfo == 0L] <- HostDetectionEvidence[HaveInfo == 0L]
+        if (UseInfoPersistence) LastKnownPresence[NewHostDetection == 1L] <- timestep
+        HaveInfo[HaveInfo == 0L] <- NewHostDetection[HaveInfo == 0L]
       }
-      HaveInfoResults[, timestep, perm] <- HaveInfo
       DetectedResults[, timestep, perm] <- HaveInfo * Invaded
     }
   }
@@ -318,12 +281,6 @@ INApest <- function(
     InvasionResults = InvasionResults,
     ManagingResults = ManagingResults,
     DetectedResults = DetectedResults,
-    BackgroundDetectedResults = BackgroundDetectedResults,
-    InfoTriggeredDetectedResults = InfoTriggeredDetectedResults,
-    BackgroundDetectionProbabilityResults = BackgroundDetectionProbabilityResults,
-    InfoTriggeredDetectionProbabilityResults = InfoTriggeredDetectionProbabilityResults,
-    InformationStateBeforeSurveillanceResults = InformationStateBeforeSurveillanceResults,
-    HaveInfoResults = HaveInfoResults,
     InvasionProb = InvasionProb,
     PathogenPresentResults = PathogenPresentResults,
     PathogenHostExtinctionResults = PathogenHostExtinctionResults,
@@ -339,12 +296,6 @@ INApest <- function(
     saveRDS(ManagingResults, paste0(stem, "InfoLargeOut.rds"))
     saveRDS(InvasionResults, paste0(stem, "InvasionLargeOut.rds"))
     saveRDS(DetectedResults, paste0(stem, "DetectedLargeOut.rds"))
-    saveRDS(BackgroundDetectedResults, paste0(stem, "BackgroundDetectedLargeOut.rds"))
-    saveRDS(InfoTriggeredDetectedResults, paste0(stem, "InfoTriggeredDetectedLargeOut.rds"))
-    saveRDS(BackgroundDetectionProbabilityResults, paste0(stem, "BackgroundDetectionProbabilityLargeOut.rds"))
-    saveRDS(InfoTriggeredDetectionProbabilityResults, paste0(stem, "InfoTriggeredDetectionProbabilityLargeOut.rds"))
-    saveRDS(InformationStateBeforeSurveillanceResults, paste0(stem, "InformationStateBeforeSurveillanceLargeOut.rds"))
-    saveRDS(HaveInfoResults, paste0(stem, "HaveInfoLargeOut.rds"))
     saveRDS(InvasionProb, paste0(stem, "InvasionProb.rds"))
     if (!is.null(Pathogen)) {
       saveRDS(PathogenPresentResults, paste0(stem, "PathogenPresentLargeOut.rds"))

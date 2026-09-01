@@ -1,0 +1,11 @@
+"test_id","description","status","detail","elapsed_seconds"
+"L2-01","single zero-detection round matches closed-form Bayes","PASS","posterior 0.952380952381; SSe 0.8",0.28
+"L2-02","three repeated zero-detection rounds reproduce recursive Bayes","PASS","recursive posterior sequence reproduced",0.05
+"L2-03","reinvasion between rounds matches exact finite-state update","PASS","10% reinvasion exact",0.02
+"L2-04","extinction plus reinvasion matches exact finite-state transition","PASS","reinvasion 0.2 + extinction 0.3 exact",0.01
+"L2-05","two surveillance pathways retain separate and combined exact SSe","PASS","Background SSe 0.6; targeted SSe 0.25; combined SSe 0.7",0.02
+"L2-06","compatible-history propagation matches exact management-feedback benchmark","PASS","exact posterior=0.8; naive all-history posterior=0.9090909091 correctly rejected",0.01
+"L2-07","high-PoA finite-particle approximation converges without false certainty","PASS","exact=0.99943069241; 200k error=1.35329e-07",2.03
+"L2-08","unsupported posterior class stops instead of becoming certainty","PASS","guard triggered: Likelihood update retained positive posterior mass for the present class at timestep 1 but no realised matching particles are available to propagate that class. Increase Nperm or shorten the conditioning horizon.",0
+"L2-09","simulation-mode zero-detection conditioning agrees with exact Bayes","PASS","observed=0.9522539852; exact=0.9523809524",0.53
+"L2-10","positive binary detection drives exact absence posterior to zero","PASS","positive detection posterior PoA = 0",0.02

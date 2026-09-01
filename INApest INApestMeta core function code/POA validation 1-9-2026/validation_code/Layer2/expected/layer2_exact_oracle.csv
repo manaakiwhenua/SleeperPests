@@ -1,0 +1,30 @@
+test_id,quantity,exact_value,formula,note
+L2-01,posterior_poa,0.9523809523809523,0.8 / (0.8 + 0.2*0.2),single zero-detection round
+L2-01,background_sse,0.8,1 - 0.2,
+L2-02,posterior_round_1,0.9523809523809523,0.8 / (0.8 + 0.2*0.2^1),
+L2-02,posterior_round_2,0.9900990099009901,0.8 / (0.8 + 0.2*0.2^2),
+L2-02,posterior_round_3,0.998003992015968,0.8 / (0.8 + 0.2*0.2^3),
+L2-03,posterior_round_1,0.9523809523809523,0.8 / (0.8 + 0.2*0.2),
+L2-03,prior_round_2,0.8571428571428571,posterior_round_1 * (1 - 0.1),
+L2-03,posterior_round_2,0.967741935483871,prior_round_2 / (prior_round_2 + (1-prior_round_2)*0.2),
+L2-04,posterior_round_1,0.8536585365853658,0.7 / (0.7 + 0.3*0.4),
+L2-04,prior_round_2,0.726829268292683,post1*(1-0.2) + (1-post1)*0.3,
+L2-04,posterior_round_2,0.869311551925321,prior2 / (prior2 + (1-prior2)*0.4),
+L2-05,background_sse,0.6,1 - 0.4,
+L2-05,info_triggered_sse,0.25,"1 - mean(1,0.5)",
+L2-05,combined_sse,0.7,"1 - mean(0.4,0.2)",
+L2-05,posterior_poa,0.7692307692307692,0.5 / (0.5 + 0.5*0.3),
+L2-06,posterior_round_1,0.6666666666666666,0.5 / (0.5 + 0.5*0.5),
+L2-06,prior_round_2_compatible_history,0.6666666666666666,posterior_round_1; detected-present histories are incompatible,
+L2-06,posterior_round_2,0.8,(2/3) / ((2/3) + (1/3)*0.5),
+L2-06,naive_prior_round_2,0.8333333333333333,post1 + (1-post1)*0.5,wrong comparator: propagates detected histories
+L2-06,naive_posterior_round_2,0.9090909090909091,(5/6) / ((5/6)+(1/6)*0.5),wrong comparator: should NOT match PoA core
+L2-07,alpha_n1,0.7071067811865476,sqrt(2)/2,
+L2-07,mean_q_present,0.5690622538544736,alpha*0.8 + (1-alpha)*0.8^20,
+L2-07,exact_posterior_poa,0.9994306924100158,0.999 / (0.999 + 0.001*mean_q_present),
+L2-07,approx_posterior_N1000,0.9994286658216099,alpha_hat=22/31; prior=0.999,absolute error=2.02658840587e-06
+L2-07,approx_posterior_N10000,0.9994284115125004,alpha_hat=71/100; prior=0.999,absolute error=2.28089751542e-06
+L2-07,approx_posterior_N50000,0.9994295781423502,alpha_hat=158/223; prior=0.999,absolute error=1.11426766558e-06
+L2-07,approx_posterior_N200000,0.9994308277387297,alpha_hat=316/447; prior=0.999,absolute error=1.35328713902e-07
+L2-09,exact_posterior_poa,0.9523809523809523,0.8 / (0.8 + 0.2*0.2),simulation-mode target
+L2-10,posterior_poa,0.0,"P(detection|absent)=0, therefore posterior absence=0",

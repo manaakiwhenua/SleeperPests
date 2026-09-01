@@ -1,0 +1,11 @@
+PASS: independent finite-state fixtures
+{'test_id': 'L2-03', 'quantity': 'posterior_round_1', 'observed': 0.9523809523809524, 'expected': 0.9523809523809523, 'abs_error': 1.1102230246251565e-16, 'status': 'PASS'}
+{'test_id': 'L2-03', 'quantity': 'prior_round_2', 'observed': 0.8571428571428572, 'expected': 0.8571428571428571, 'abs_error': 1.1102230246251565e-16, 'status': 'PASS'}
+{'test_id': 'L2-03', 'quantity': 'posterior_round_2', 'observed': 0.967741935483871, 'expected': 0.967741935483871, 'abs_error': 0.0, 'status': 'PASS'}
+{'test_id': 'L2-04', 'quantity': 'posterior_round_1', 'observed': 0.8536585365853657, 'expected': 0.8536585365853658, 'abs_error': 1.1102230246251565e-16, 'status': 'PASS'}
+{'test_id': 'L2-04', 'quantity': 'prior_round_2', 'observed': 0.7268292682926829, 'expected': 0.726829268292683, 'abs_error': 1.1102230246251565e-16, 'status': 'PASS'}
+{'test_id': 'L2-04', 'quantity': 'posterior_round_2', 'observed': 0.869311551925321, 'expected': 0.869311551925321, 'abs_error': 0.0, 'status': 'PASS'}
+{'test_id': 'L2-06', 'quantity': 'posterior_round_1', 'observed': 0.6666666666666666, 'expected': 0.6666666666666666, 'abs_error': 0.0, 'status': 'PASS'}
+{'test_id': 'L2-06', 'quantity': 'prior_round_2', 'observed': 0.6666666666666666, 'expected': 0.6666666666666666, 'abs_error': 0.0, 'status': 'PASS'}
+{'test_id': 'L2-06', 'quantity': 'posterior_round_2', 'observed': 0.8, 'expected': 0.8, 'abs_error': 0.0, 'status': 'PASS'}
+{'test_id': 'L2-08', 'quantity': 'unsupported_present_class', 'observed': 1, 'expected': 1, 'abs_error': 0, 'status': 'PASS'}

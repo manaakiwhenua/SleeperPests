@@ -1,0 +1,18 @@
+"test_id","architecture","description","status","detail","elapsed_seconds"
+"E01","INApest","serial target stream + probability bookkeeping","PASS","serial contract passed",0.02
+"E02","INApest","target stream is inactive without pre-existing information","PASS","pre-info gate passed",0.17
+"E03","INApest","same-round background detection does not trigger targeted search","PASS","same-round rule passed",0
+"E04","INApestParallel","parallel wrapper combines new outputs","PASS","parallel contract passed",0.1
+"E05","INApestMeta","serial target stream + probability bookkeeping","PASS","serial contract passed",0.02
+"E06","INApestMeta","target stream inactive without pre-info","PASS","pre-info gate passed",0.45
+"E07","INApestMetaParallel","parallel target stream + probability bookkeeping","PASS","parallel contract passed",0
+"E07b","INApestMeta","targeted-off probability bookkeeping is explicit zero","PASS","targeted-off zero contract passed",0.0199999999999999
+"E08","INApestMetaMultipleLandUse","serial node-event / land-use probability contract","PASS","serial MLU contract passed",0.03
+"E09","INApestMetaParallelMultipleLandUse","parallel node-event / land-use probability contract","PASS","parallel MLU contract passed",0.03
+"E10","INApestMetaTransitionMatrix","serial node-event / stage-probability contract","PASS","serial TM contract passed",0.0600000000000001
+"E11","INApestMetaTransitionMatrixParallel","parallel node-event / stage-probability contract","PASS","parallel TM contract passed",0.22
+"E12","INApestMetaPoint","serial point observation fields","PASS","serial point contract passed",0.05
+"E13","INApestMetaPoint","target stream inactive without pre-info","PASS","pre-info gate passed",0.23
+"E14","INApestMetaPointParallel","parallel point observation fields","PASS","parallel point contract passed",0.02
+"E15","INApestPointTransitionMatrix","serial point-transition observation fields","PASS","serial point-TM contract passed",0.0900000000000001
+"E16","INApestPointTransitionMatrixParallel","parallel point-transition observation fields","PASS","parallel point-TM contract passed",0.47

@@ -1,0 +1,36 @@
+INApest PoA observation architecture v2 validation
+Date/time: 2026-09-01 09:20:09 NZST
+R: R version 4.4.1 (2024-06-14 ucrt)
+Platform: x86_64-w64-mingw32
+PASS: 29 / 29
+FAIL: 0
+
+A01 | PASS | HaveInfo is state, not observational evidence
+A02 | PASS | Background and InfoTriggered event streams remain separate
+A03 | PASS | Legacy persistent DetectedResults is labelled legacy state
+A04 | PASS | Same-round background detection cannot activate InfoTriggered search
+B01 | PASS | Background-only zero detection matches exact Bayes
+B02 | PASS | InfoTriggered zero detection is gated by prior information
+B03 | PASS | Combined q multiplies Background and InfoTriggered pathways
+B04 | PASS | Abundance likelihood uses per-individual detection
+B05 | PASS | MLU partition preserves likelihood
+B06 | PASS | Stage partition preserves likelihood
+B07 | PASS | Point independent model uses information strata
+R01 | PASS | Likelihood auto-wires recorded Background probabilities
+R02 | PASS | Recorded particle-specific detectability is retained
+R03 | PASS | Recorded InfoTriggered p remains pre-information gated
+R04 | PASS | Recorded MLU probabilities combine across land uses
+R05 | PASS | Recorded stage probabilities combine across stages
+R06 | PASS | Recorded point probabilities are evaluated per point
+R07 | PASS | Combined auto likelihood uses both recorded streams
+C01 | PASS | Sequential likelihood rejects legacy persistent detection state
+C02 | PASS | Sequential targeted evidence requires explicit targeted events
+C03 | PASS | Deprecated Surveillance alias reproduces Background result
+C04 | PASS | HaveInfo alone cannot substitute for pre-surveillance information
+C05 | PASS | Serial Meta PoA wrapper is available
+D01 | PASS | INApest exposes the v2 contract
+D02 | PASS | INApestMeta exposes the v2 contract
+D03 | PASS | INApestMetaMultipleLandUse exposes the v2 contract
+D04 | PASS | INApestMetaTransitionMatrix exposes the v2 contract
+D05 | PASS | INApestMetaPoint exposes the v2 contract
+D06 | PASS | INApestPointTransitionMatrix exposes the v2 contract

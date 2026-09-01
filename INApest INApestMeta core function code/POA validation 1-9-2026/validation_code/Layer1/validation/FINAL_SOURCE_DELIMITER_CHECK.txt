@@ -1,0 +1,16 @@
+PASS | INApest.R | balanced
+PASS | INApestMeta.r | balanced
+PASS | INApestMetaMultipleLandUse.r | balanced
+PASS | INApestMetaParallel.r | balanced
+PASS | INApestMetaParallelMultipleLandUse.r | balanced
+PASS | INApestMetaPoint.R | balanced
+PASS | INApestMetaPointParallel.R | balanced
+PASS | INApestMetaTransitionMatrix.r | balanced
+PASS | INApestMetaTransitionMatrixParallel.r | balanced
+PASS | INApestParallel.R | balanced
+PASS | INApestPathogen.R | balanced
+PASS | INApestPathogenTransitionMatrix.R | balanced
+PASS | INApestPoA.R | balanced
+PASS | INApestPointPathogen.R | balanced
+PASS | INApestPointTransitionMatrix.R | balanced
+PASS | INApestPointTransitionMatrixParallel.R | balanced

@@ -1,0 +1,9 @@
+Static correction check after native-R engine failures E03/E05/E06/E07
+Date: 2026-08-31
+PASS - INApest matrix/array dimension validation now compares dimension values rather than integer/double storage mode.
+PASS - INApestMeta workers return named result lists; no packed simplify2array worker return remains.
+PASS - INApestMetaParallel workers return named result lists; no packed simplify2array worker return remains.
+PASS - Meta serial/parallel binding explicitly restores nodes x timesteps x permutations dimensions.
+PASS - Targeted-surveillance probability arrays initialise to explicit zero when the optional pathway is off.
+PASS - delimiter/static syntax scan on INApest.R, INApestMeta.r, INApestMetaParallel.r, INApestPoA.R, validation script.
+Native-R execution required to confirm runtime correction.

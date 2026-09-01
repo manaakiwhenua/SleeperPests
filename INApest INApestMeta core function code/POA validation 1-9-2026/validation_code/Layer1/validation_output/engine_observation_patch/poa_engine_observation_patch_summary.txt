@@ -1,0 +1,24 @@
+INApest PoA engine observation patch runtime validation
+Date/time: 2026-09-01 09:20:12 NZST
+R: R version 4.4.1 (2024-06-14 ucrt)
+Platform: x86_64-w64-mingw32
+PASS: 17 / 17
+FAIL: 0
+
+E01 | PASS | INApest | serial target stream + probability bookkeeping
+E02 | PASS | INApest | target stream is inactive without pre-existing information
+E03 | PASS | INApest | same-round background detection does not trigger targeted search
+E04 | PASS | INApestParallel | parallel wrapper combines new outputs
+E05 | PASS | INApestMeta | serial target stream + probability bookkeeping
+E06 | PASS | INApestMeta | target stream inactive without pre-info
+E07 | PASS | INApestMetaParallel | parallel target stream + probability bookkeeping
+E07b | PASS | INApestMeta | targeted-off probability bookkeeping is explicit zero
+E08 | PASS | INApestMetaMultipleLandUse | serial node-event / land-use probability contract
+E09 | PASS | INApestMetaParallelMultipleLandUse | parallel node-event / land-use probability contract
+E10 | PASS | INApestMetaTransitionMatrix | serial node-event / stage-probability contract
+E11 | PASS | INApestMetaTransitionMatrixParallel | parallel node-event / stage-probability contract
+E12 | PASS | INApestMetaPoint | serial point observation fields
+E13 | PASS | INApestMetaPoint | target stream inactive without pre-info
+E14 | PASS | INApestMetaPointParallel | parallel point observation fields
+E15 | PASS | INApestPointTransitionMatrix | serial point-transition observation fields
+E16 | PASS | INApestPointTransitionMatrixParallel | parallel point-transition observation fields

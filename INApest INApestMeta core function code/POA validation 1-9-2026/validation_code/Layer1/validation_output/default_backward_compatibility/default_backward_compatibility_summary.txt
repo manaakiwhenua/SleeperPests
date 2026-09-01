@@ -1,0 +1,11 @@
+Default-path seeded backward compatibility
+R: R version 4.4.1 (2024-06-14 ucrt)
+PASS: 6 / 6
+FAIL: 0
+
+BC01 | PASS | INApest
+BC02 | PASS | INApestMeta
+BC03 | PASS | INApestMetaMultipleLandUse
+BC04 | PASS | INApestMetaTransitionMatrix
+BC05 | PASS | INApestMetaPoint
+BC06 | PASS | INApestPointTransitionMatrix

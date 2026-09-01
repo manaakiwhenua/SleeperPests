@@ -1,0 +1,34 @@
+INApest PoA Layer 3 external published validation
+Date/time: 2026-09-01 09:20:17 NZST
+R: R version 4.4.1 (2024-06-14 ucrt)
+Platform: x86_64-w64-mingw32
+PASS: 21
+SUPPORTED: 3
+REVIEW / public-data boundary: 1
+FAIL: 0
+
+L3A-01 | PASS | 3A | Prior 0.5 + SSe 0.9 gives PoA > 0.90 | PoA 0.909090909091
+L3A-02 | PASS | 3A | Prior 0.8 + SSe 0.6 gives the same PoA > 0.90 | PoA 0.909090909091
+L3A-03 | PASS | 3A | Prior 0.9 requires SSe about 0.53 for target PoA 0.95 | exact SSe 0.526315789; PoA 0.950000000
+L3A-04 | PASS | 3A | Prior 0.9 requires SSe about 0.91 for target PoA 0.99 | exact SSe 0.909090909; PoA 0.990000000
+L3B-01 | PASS | 3B | March 2013 published median SSe/PoE row | SSe 0.149; effective prior 0.278457; reproduced PoE 0.312
+L3B-02 | PASS | 3B | October 2013 published median SSe/PoE row | SSe 0.713; effective prior 0.310720; reproduced PoE 0.611
+L3B-03 | PASS | 3B | November 2013 published median SSe/PoE row | SSe 0.734; effective prior 0.610665; reproduced PoE 0.855
+L3B-04 | PASS | 3B | February 2014 published median SSe/PoE row | SSe 0.736; effective prior 0.854557; reproduced PoE 0.957
+L3B-05 | PASS | 3B | published PERT prior plus first-survey median SSe approximates first PoE independently | PERT median prior 0.281859 -> PoE 0.315633 vs published 0.312
+L3B-06 | PASS | 3B | between-survey effective priors show only small downward reintroduction discounts | effective discounts 0.004102604, 0.000548132, 0.000518397 consistent with the paper's very-low reintroduction assumption; not treated as an exact hazard reconstruction
+L3C-01 | PASS | 3C | bait overlapping half-normal detection kernel reproduces published same-cell probability | calculated 0.69767157; published approximately 0.70
+L3C-02 | PASS | 3C | visual overlapping half-normal detection kernel reproduces published same-cell probability | calculated 0.74992231; published approximately 0.75
+L3C-03 | PASS | 3C | dog overlapping half-normal detection kernel reproduces published same-cell probability | calculated 0.90569371; published approximately 0.90
+L3C-04 | PASS | 3C | spatial kernel sensitivity can be passed unchanged to the PoA likelihood layer | spatial SSe 0.74992231 -> PoA 0.79995028
+L3D-01 | PASS | 3D | published one-year Stage-I calibration reaches approximately 0.95 freedom | Se 0.882; posterior 0.95186293
+L3D-02 | PASS | 3D | ten independent 0.95-free management zones imply about 0.40 residual risk | exact residual risk 0.401263061; whole-area freedom 0.598736939
+L3D-03 | PASS | 3D | published recursive Eq. 3/4 is reproduced over repeated negative surveys | four-period recurrence ends at 0.651245711
+L3D-04 | PASS | 3D | reintroduction discount can be inserted between published Bayesian updates | round1 0.85365854; 1% discounted prior 0.84512195; round2 0.93170207
+L3E-01 | PASS | 3E | published occupied-cell growth rule reproduces all four 2022 zone values | Blackwater 8; Virginia 11; Maryland 16; Delaware 18
+L3E-02 | SUPPORTED | 3E | Virginia public-only sensitivity is close to published full-model zone sensitivity | published 0.33000; simplified public-data approximation 0.28470
+L3E-03 | SUPPORTED | 3E | Maryland public-only sensitivity is close to published full-model zone sensitivity | published 0.40000; simplified public-data approximation 0.38575
+L3E-04 | SUPPORTED | 3E | Delaware public-only sensitivity is close to published full-model zone sensitivity | published 0.43000; simplified public-data approximation 0.42205
+L3E-05 | PASS | 3E | Blackwater correctly requires active surveillance beyond the public-only component | public-only 0.216257 vs published full-model 0.90; large gap is expected from concentrated active surveillance
+L3E-06 | PASS | 3E | published 0.01 prior to 0.75 PoA is exactly representable by an equivalent cumulative SSe | equivalent cumulative SSe 0.996632997 reproduces published mean PoA 0.75
+L3E-07 | REVIEW | 3E | full raw-data replication boundary is explicit | The paper publishes code, parameters and summary outcomes but states that the underlying USDA surveillance data are not openly available. Therefore the exact 2015-2020 spatial PoA trajectory cannot be independently rerun from public data; no synthetic substitute is treated as validation.

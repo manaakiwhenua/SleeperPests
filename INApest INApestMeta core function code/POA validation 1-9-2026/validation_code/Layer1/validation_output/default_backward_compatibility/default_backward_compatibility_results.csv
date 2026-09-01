@@ -1,0 +1,7 @@
+"test_id","architecture","status","detail","elapsed_seconds"
+"BC01","INApest","PASS","seeded legacy fields identical",0.03
+"BC02","INApestMeta","PASS","seeded legacy files identical",0.52
+"BC03","INApestMetaMultipleLandUse","PASS","seeded legacy files identical",0.0599999999999999
+"BC04","INApestMetaTransitionMatrix","PASS","seeded legacy files identical",0.3
+"BC05","INApestMetaPoint","PASS","seeded biological point outputs identical",0.12
+"BC06","INApestPointTransitionMatrix","PASS","seeded biological point-TM outputs identical",0.17

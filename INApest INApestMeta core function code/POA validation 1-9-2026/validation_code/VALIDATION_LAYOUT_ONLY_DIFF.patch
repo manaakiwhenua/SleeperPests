@@ -1,0 +1,62 @@
+# Validation consolidation path-only changes
+# These diffs show the only modifications made when moving the validated scripts into the two-folder frozen layout.
+
+--- /mnt/data/_poa_extract/engine/INApest_PoA_patch/validation/validate_PoA_observation_architecture_v2.R	2026-08-31 04:34:11.000000000 +0000
++++ /mnt/data/POA_validation_source/validation_code/Layer1/validation/validate_PoA_observation_architecture_v2.R	2026-08-31 21:16:57.889849518 +0000
+@@ -10,8 +10,9 @@
+ args <- commandArgs(trailingOnly=TRUE)
+ root <- if(length(args)) normalizePath(args[1L], mustWork=TRUE) else normalizePath(getwd(), mustWork=TRUE)
+ source_file <- file.path(root, "source", "INApestPoA.R")
++if(!file.exists(source_file)) source_file <- file.path(root, "..", "..", "definitive_source", "INApestPoA.R")
+ if(!file.exists(source_file)) source_file <- file.path(root, "INApestPoA.R")
+-if(!file.exists(source_file)) stop("PoA source not found beneath: ", root)
++if(!file.exists(source_file)) stop("PoA source not found for validation root: ", root)
+ source(source_file, local=.GlobalEnv)
+ 
+ out_dir <- file.path(root, "validation_output", "observation_architecture")
+--- /mnt/data/_poa_extract/engine/INApest_PoA_patch/validation/validate_PoA_engine_observation_patch.R	2026-08-31 05:05:13.000000000 +0000
++++ /mnt/data/POA_validation_source/validation_code/Layer1/validation/validate_PoA_engine_observation_patch.R	2026-08-31 21:16:57.890052005 +0000
+@@ -8,7 +8,7 @@
+ ###############################################################################
+ args <- commandArgs(trailingOnly=TRUE)
+ root <- if(length(args)) normalizePath(args[1L],mustWork=TRUE) else normalizePath(getwd(),mustWork=TRUE)
+-src <- file.path(root,"source"); if(!dir.exists(src)) src <- root
++src <- file.path(root,"source"); if(!dir.exists(src)) src <- file.path(root,"..","..","definitive_source"); if(!dir.exists(src)) src <- root
+ out_dir <- file.path(root,"validation_output","engine_observation_patch");dir.create(out_dir,recursive=TRUE,showWarnings=FALSE)
+ 
+ results<-list();k<-0L
+--- /mnt/data/_poa_extract/engine/INApest_PoA_patch/validation/validate_default_backward_compatibility.R	2026-08-31 04:38:58.000000000 +0000
++++ /mnt/data/POA_validation_source/validation_code/Layer1/validation/validate_default_backward_compatibility.R	2026-08-31 21:16:57.890118467 +0000
+@@ -4,7 +4,7 @@
+ ### biological/legacy output fields only.
+ ###############################################################################
+ args<-commandArgs(trailingOnly=TRUE);root<-if(length(args))normalizePath(args[1],mustWork=TRUE)else normalizePath(getwd(),mustWork=TRUE)
+-base_dir<-file.path(root,"validation","baseline_2026-08-27");patch_dir<-file.path(root,"source");out_dir<-file.path(root,"validation_output","default_backward_compatibility");dir.create(out_dir,recursive=TRUE,showWarnings=FALSE)
++base_dir<-file.path(root,"validation","baseline_2026-08-27");patch_dir<-file.path(root,"source");if(!dir.exists(patch_dir))patch_dir<-file.path(root,"..","..","definitive_source");out_dir<-file.path(root,"validation_output","default_backward_compatibility");dir.create(out_dir,recursive=TRUE,showWarnings=FALSE)
+ res<-list();k<-0L
+ run<-function(id,arch,fun){k<<-k+1L;status<-"PASS";detail<-"";t0<-proc.time()[3];tryCatch({detail<-fun()},error=function(e){status<<-"FAIL";detail<<-conditionMessage(e)});res[[k]]<<-data.frame(test_id=id,architecture=arch,status=status,detail=as.character(detail),elapsed_seconds=proc.time()[3]-t0,stringsAsFactors=FALSE);cat(id,status,arch,"\n")}
+ assert_equal<-function(a,b,msg){z<-all.equal(a,b,check.attributes=TRUE);if(!isTRUE(z))stop(msg,": ",paste(z,collapse=" | "),call.=FALSE)}
+--- /mnt/data/_poa_extract/l2/INApest_PoA_Layer2/validation/validate_PoA_layer2_exact_internal.R	2026-08-31 05:17:08.000000000 +0000
++++ /mnt/data/POA_validation_source/validation_code/Layer2/validation/validate_PoA_layer2_exact_internal.R	2026-08-31 21:16:57.890195916 +0000
+@@ -23,7 +23,8 @@
+ args <- commandArgs(trailingOnly=TRUE)
+ root <- if(length(args)) normalizePath(args[1L], mustWork=TRUE) else normalizePath(getwd(), mustWork=TRUE)
+ source_file <- file.path(root, "source", "INApestPoA.R")
+-if(!file.exists(source_file)) stop("PoA source not found beneath: ", root)
++if(!file.exists(source_file)) source_file <- file.path(root, "..", "..", "definitive_source", "INApestPoA.R")
++if(!file.exists(source_file)) stop("PoA source not found for validation root: ", root)
+ source(source_file, local=.GlobalEnv)
+ 
+ out_dir <- file.path(root, "validation_output")
+--- /mnt/data/_poa_extract/l3/INApest_PoA_Layer3/validation/validate_PoA_layer3_external.R	2026-08-31 21:09:31.000000000 +0000
++++ /mnt/data/POA_validation_source/validation_code/Layer3/validation/validate_PoA_layer3_external.R	2026-08-31 21:16:57.890404208 +0000
+@@ -19,7 +19,8 @@
+ args <- commandArgs(trailingOnly=TRUE)
+ root <- if(length(args)) normalizePath(args[1L], mustWork=TRUE) else normalizePath(getwd(), mustWork=TRUE)
+ source_file <- file.path(root,"source","INApestPoA.R")
+-if(!file.exists(source_file)) stop("PoA source not found beneath: ",root)
++if(!file.exists(source_file)) source_file <- file.path(root,"..","..","definitive_source","INApestPoA.R")
++if(!file.exists(source_file)) stop("PoA source not found for validation root: ",root)
+ source(source_file,local=.GlobalEnv)
+ out_dir <- file.path(root,"validation_output"); dir.create(out_dir,showWarnings=FALSE,recursive=TRUE)
+ 
