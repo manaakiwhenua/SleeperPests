@@ -1,13 +1,13 @@
 ###############################################################################
-### INApestVertebrateNode -- stage-structured vertebrate node simulation engine
+### INApestVertebrateNodePathogen -- vertebrate node host-pathogen engine
 ###
-### Extends the node x life-stage architecture with animal-specific mechanisms.
-### The optional Vertebrate list supplies Birth, HomeRange, Control and Interaction
-### components while retaining the underlying Transition Matrix population,
-### dispersal, surveillance, information and management machinery.
+### Couples the stage-structured Vertebrate Node host model to the validated
+### generic pathogen process. Pathogen state is carried with hosts through stage
+### survival, progression and movement, while pathogen mortality feeds back to
+### host abundance and pathogen detection can inform response.
 ###
-### Use this architecture when animal-specific spatial response, social structure
-### or control changes the question; Vertebrate = NULL preserves parent behaviour.
+### The host model can still use Birth, HomeRange, Control and Interaction
+### modules; pathogen-specific transport is supplied by the companion support file.
 ###############################################################################
 
 # Keep probability values within the valid range from 0 to 1.
@@ -1419,7 +1419,7 @@ relative_occupancy <- rep(1, n_pops)
   t(n)
 }
 
-INApestVertebrateNode = function(
+INApestVertebrateNodePathogen = function(
 ModelName = "INApestVertebrateNode",            # Model and output name
 Nperm,                                          # Number of stochastic simulation runs
 Ntimesteps,                                     # Timesteps in each simulation
@@ -1461,6 +1461,10 @@ BlockedTransitionMortality = 0,                 # Mortality when stage progressi
 OngoingExternalInvasion = F,                    # Allow new host incursions after initialisation
 OngoingExternalInfo = F,                        # Allow new external information after initialisation
 Vertebrate = NULL,                              # Optional Birth/HomeRange/Control/Interaction modules
+Pathogen = NULL,                                # Optional pathogen process specification
+InitialPathogenState = NULL,                    # Starting node x stage x pathogen-state counts
+StageMixing = NULL,                             # Demographic-stage mixing used for pathogen transmission
+ExternalPathogenStateProb = NULL,               # Pathogen-state distribution for external host arrivals
 OutputDir = NA,                                 # Directory for saved outputs
 DoPlots = TRUE,                                 # Legacy plotting option; plotting is post-processing
 InfoTriggeredDetectionProb = 0,                 # Detection probability where information already exists
@@ -1471,11 +1475,14 @@ DoProgress = TRUE                               # Print simulation progress to t
 {
 
 # ---------------------------------------------------------------------------
-# Set up and validate the vertebrate node simulation.
+# Set up and validate the coupled vertebrate host-pathogen simulation.
 # ---------------------------------------------------------------------------
 if (!exists(".iv_validate_vertebrate", mode = "function"))
   stop("INApestVertebrateHelpers.R must be sourced before INApestVertebrateNode().")
 .iv_validate_vertebrate(Vertebrate)
+if(!is.null(Pathogen) && !inherits(Pathogen, "INApestPathogen")) stop("Pathogen must be NULL or created by INApestPathogen().")
+if(is.null(Pathogen) && !is.null(InitialPathogenState)) stop("InitialPathogenState requires Pathogen.")
+if(!is.null(Pathogen) && !exists(".iv_node_pathogen_transport",mode="function")) stop("INApestVertebrateNodePathogenSupport.R must be sourced before pathogen-enabled runs.")
 BirthModule <- .iv_module(Vertebrate, "Birth")
 HomeRangeModule <- .iv_module(Vertebrate, "HomeRange")
 ControlModule <- .iv_module(Vertebrate, "Control")
@@ -1485,6 +1492,11 @@ if(!is.function(LocalDynamics))
 # Force the argument before any parallel worker closure is created. This keeps
 # the selected default or user-supplied function as an explicit model input.
 force(LocalDynamics)
+HostLocalDynamics <- LocalDynamics
+if(!is.null(Pathogen)) {
+  if(!identical(LocalDynamics,.iv_local_dynamics_transition_matrix)) stop("Pathogen-enabled Vertebrate Node currently requires the validated default LocalDynamics.")
+  LocalDynamics <- .iv_node_pathogen_transport
+}
 # Validate the host-engine contract before starting stochastic simulation.
 n_nodes <- nrow(SDDprob)
 if(!is.numeric(Nperm) || length(Nperm)!=1L || !is.finite(Nperm) || Nperm<1 || Nperm!=floor(Nperm)) stop("Nperm must be a positive integer")
@@ -1767,6 +1779,16 @@ ManagingResults = InvasionResults
 ControlDeathResults = array(0, dim = c(nrow(SDDprob), Nstages, Ntimesteps, Nperm))
 ControlDetectionResults = array(0, dim = c(nrow(SDDprob), Ntimesteps, Nperm))
 ControlCostResults = matrix(0, nrow = Ntimesteps, ncol = Nperm)
+PathogenStageResults <- PathogenDeathResults <- NewInfectionResults <- PathogenIntroducedResults <- PathogenExternalResults <- PathogenDetectedResults <- NULL
+if(!is.null(Pathogen)) {
+  .vp_states <- Pathogen$States; .vp_P <- length(.vp_states); .vp_nodes <- nrow(SDDprob)
+  PathogenStageResults <- array(0L,dim=c(.vp_nodes,Nstages,.vp_P,Ntimesteps,Nperm),dimnames=list(NULL,NULL,.vp_states,NULL,NULL))
+  PathogenDeathResults <- array(0L,dim=c(.vp_nodes,Nstages,Ntimesteps,Nperm))
+  NewInfectionResults <- array(0L,dim=c(.vp_nodes,Nstages,Ntimesteps,Nperm))
+  PathogenIntroducedResults <- array(0L,dim=c(.vp_nodes,Nstages,Ntimesteps,Nperm))
+  PathogenExternalResults <- array(0L,dim=c(.vp_nodes,Nstages,.vp_P,Ntimesteps,Nperm),dimnames=list(NULL,NULL,.vp_states,NULL,NULL))
+  PathogenDetectedResults <- array(0L,dim=c(.vp_nodes,Ntimesteps,Nperm))
+}
 
 # Validate the socioeconomic information-transfer network when supplied.
 if(is.matrix(SEAM) == T)
@@ -1894,7 +1916,7 @@ if (is.null(MortalitySD)) {
     
 
 # ---------------------------------------------------------------------------
-# Run independent stochastic vertebrate histories.
+# Run independent stochastic host-pathogen histories.
 # ---------------------------------------------------------------------------
 for (perm in 1:Nperm) 
 { 
@@ -1957,6 +1979,7 @@ InitBio <- floor(InitBio)
 
 # Set the working host abundance and initialise pathogen state when present.
 N <- InitBio
+if(!is.null(Pathogen)) PathogenStageState <- INApestPathogenStageState(N,Pathogen,InitialPathogenState,Ntimesteps)
 if(sum(N) == 0 && OngoingExternalInvasion == F)
   warning("No initial populations and no future external invasions")
 
@@ -2172,7 +2195,7 @@ if(UseInfoPersistence == T)
   # run simulation
 
   # ---------------------------------------------------------------------------
-  # Advance stage dynamics and vertebrate response processes through time.
+  # Advance vertebrate, pathogen, information and response processes through time.
   # ---------------------------------------------------------------------------
   for (timestep in 1:Ntimesteps) 
     { 
@@ -2365,7 +2388,21 @@ if(UseInfoPersistence == T)
   } else if(TransitionMovementConfigured) {
     stop("Custom LocalDynamics must accept 'transition_sddprob', 'transition_lddprob' and 'transition_lddrate' arguments (or ...) when transition movement is active")
   }
-  N <- do.call(LocalDynamics, LocalDynamicsArgs)
+  if(!is.null(Pathogen)) {
+  LocalDynamicsArgs$pathogen_state <- PathogenStageState
+  LocalDynamicsArgs$Pathogen <- Pathogen
+  LocalDynamicsArgs$timestep <- timestep
+  LocalDynamicsArgs$Ntimesteps <- Ntimesteps
+  LocalDynamicsArgs$StageMixing <- StageMixing
+}
+LocalDynamicsResult <- do.call(LocalDynamics,LocalDynamicsArgs)
+if(is.null(Pathogen)) {
+  N <- LocalDynamicsResult
+} else {
+  if(!is.list(LocalDynamicsResult) || is.null(LocalDynamicsResult$N) || is.null(LocalDynamicsResult$PathogenState)) stop("Pathogen transport LocalDynamics must return N and PathogenState.")
+  N <- LocalDynamicsResult$N
+  PathogenStageState <- LocalDynamicsResult$PathogenState
+}
   } 
  # Apply programmed stopping after last known local presence
 NodeInfoPersistenceSteps = InfoPersistenceSteps
@@ -2402,6 +2439,7 @@ if(length(InfoDecayNodes) > 0)
   }
  
  
+ if(!is.null(Pathogen)) N_before_external_pathogen <- N
  # Add invasion resulting from colonisation from external sources
  if(OngoingExternalInvasion == T)
   {
@@ -2416,6 +2454,12 @@ if(length(InfoDecayNodes) > 0)
 	  N[,1] = N[,1]+ExternalInvasion*IncursionStartPop
  
   }
+
+  if(!is.null(Pathogen)) {
+  .vp_ext <- .iv_node_external_pathogen(PathogenStageState,N_before_external_pathogen,N,ExternalPathogenStateProb,Pathogen,timestep,Ntimesteps)
+  PathogenStageState <- .vp_ext$State
+  if(!is.null(.vp_ext$External)) PathogenExternalResults[,,,timestep,perm] <- .vp_ext$External
+}
 
   # Optional aggregate social/contact/disease-state interaction. The hook can
   # redistribute the existing node x class population but cannot change array
@@ -2434,8 +2478,18 @@ if(length(InfoDecayNodes) > 0)
     )
     }
   
+  if(!is.null(Pathogen)) PathogenStageState <- .iptm_reconcile(PathogenStageState,N)
   # Ensure all stage populations are integers
   N <- floor(N)
+  if(!is.null(Pathogen)) {
+    PathogenStageState <- .iptm_reconcile(PathogenStageState,N)
+    .vp_step <- .iptm_pathogen_step(PathogenStageState,Pathogen,timestep,Ntimesteps,StageMixing)
+    PathogenStageState <- .vp_step$State
+    N <- apply(PathogenStageState,c(1,2),sum)
+    .vp_deaths <- .vp_step$Deaths; .vp_newinf <- .vp_step$NewInfections; .vp_intro <- .vp_step$Introduced
+  } else {
+    .vp_deaths <- .vp_newinf <- .vp_intro <- NULL
+  }
  
 # Add nodes with information resulting from external sources
  if(OngoingExternalInfo == T)
@@ -2467,6 +2521,12 @@ PopulationResults[, timestep, perm] <- weighted_population
  
  # Record stage populations
  PopulationStageResults[,,timestep,perm] = N
+ if(!is.null(Pathogen)) {
+   PathogenStageResults[,,,timestep,perm] <- PathogenStageState
+   PathogenDeathResults[,,timestep,perm] <- .vp_deaths
+   NewInfectionResults[,,timestep,perm] <- .vp_newinf
+   PathogenIntroducedResults[,,timestep,perm] <- .vp_intro
+ }
 
  # Freeze information available before this round's surveillance.
  # Routine control detections occurred earlier but are deliberately not registered
@@ -2511,6 +2571,15 @@ PopulationResults[, timestep, perm] <- weighted_population
  HaveInfoResults[,timestep,perm] <- HaveInfo
 
  # Legacy DetectedResults remains the persistent known-present state.
+ if(!is.null(Pathogen)) {
+   PathogenDetectedNow <- .iv_node_pathogen_detect(PathogenStageState,Pathogen,timestep,Ntimesteps)
+   PathogenDetectedResults[,timestep,perm] <- PathogenDetectedNow
+   if(isTRUE(Pathogen$DetectionTriggersInfo) && any(PathogenDetectedNow==1L)) {
+     .vp_known <- which(PathogenDetectedNow==1L)
+     HaveInfo[.vp_known] <- 1
+     if(UseInfoPersistence == T) LastKnownPresence[.vp_known] <- timestep
+   }
+ }
  DetectedResults[,timestep,perm] = HaveInfo*Invaded 
  }
 }
@@ -2547,6 +2616,14 @@ if(SaveResults) {
   saveRDS(ControlDeathResults, paste0(FileNameStem,"VertebrateControlDeaths.rds"))
   saveRDS(ControlDetectionResults, paste0(FileNameStem,"VertebrateControlDetections.rds"))
   saveRDS(ControlCostResults, paste0(FileNameStem,"VertebrateControlCost.rds"))
+if(!is.null(Pathogen)) {
+  saveRDS(PathogenStageResults,paste0(FileNameStem,"PathogenStageLargeOut.rds"))
+  saveRDS(PathogenDeathResults,paste0(FileNameStem,"PathogenDeathLargeOut.rds"))
+  saveRDS(NewInfectionResults,paste0(FileNameStem,"NewInfectionLargeOut.rds"))
+  saveRDS(PathogenIntroducedResults,paste0(FileNameStem,"PathogenIntroducedLargeOut.rds"))
+  saveRDS(PathogenExternalResults,paste0(FileNameStem,"PathogenExternalLargeOut.rds"))
+  saveRDS(PathogenDetectedResults,paste0(FileNameStem,"PathogenDetectedLargeOut.rds"))
+}
 }
 
 ##########################################################
@@ -2827,7 +2904,17 @@ out <- list(
   ControlDeathResults = ControlDeathResults,
   ControlCostResults = ControlCostResults
 )
-class(out) <- c("INApestVertebrateNode", "list")
+if(!is.null(Pathogen)) {
+  out$PathogenStage <- PathogenStageResults
+  out$PathogenDeaths <- PathogenDeathResults
+  out$NewInfections <- NewInfectionResults
+  out$PathogenIntroduced <- PathogenIntroducedResults
+  out$PathogenExternal <- PathogenExternalResults
+  out$PathogenDetected <- PathogenDetectedResults
+  class(out) <- c("INApestVertebrateNodePathogen","INApestVertebrateNode","list")
+} else {
+  class(out) <- c("INApestVertebrateNode","list")
+}
 invisible(out)
 }
 
