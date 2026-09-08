@@ -1,4 +1,4 @@
-###############################################################################
+##############################################################################
 ### INApestMeta -- abundance-by-location invasion simulation engine
 ###
 ### INApestMeta replaces binary occupancy with host/pest abundance at each
@@ -10,7 +10,7 @@
 ### surveillance determines what is known, informed nodes may be managed, and
 ### management can alter mortality, fecundity and spread. An optional SIS/SIR/
 ### SEIR pathogen process can be coupled to the node-level host abundance.
-###############################################################################
+##############################################################################
 
 # Default abundance-node local growth, dispersal and establishment process.
 local.dynamics <- function(
