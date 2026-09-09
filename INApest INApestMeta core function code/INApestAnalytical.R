@@ -16287,3 +16287,408 @@ INApestAnalytical <- function(...) {
   ans$HeadlineEstimands<-list(PathogenGrowthRate=ans$PathogenGrowthRate,HostEndPopulation=ans$EndHostPopulation%||%ans$HostEndPopulationDiseaseFree,EndActivePathogen=ans$EndActivePathogenFiniteMean%||%ans$EndActivePathogen,PathogenEscapeProbability=ans$EscapeProbability)
   ans
 }
+
+###############################################################################
+### Current-source Meta dispersal compatibility refresh -- 9 September 2026
+###
+### The definitive 4-Sep abundance engine routes each realised propagule by:
+###   1. an integer SDD/LDD split;
+###   2. optional management thinning of the LDD branch; and
+###   3. direct multinomial allocation using the raw source-row probabilities,
+###      with residual row mass representing movement outside the modelled area.
+###
+### The previous rare-parent analytical helper instead formed
+### floor(k * rowSum) represented movers and then row-normalised destinations.
+### That former rule is not equivalent when a source row sums to less than one.
+###
+### For a Poisson number of propagules, the definitive routing contract gives
+### independent Poisson thinning to every represented destination.  The expected
+### recruitment probability at destination j can therefore be integrated exactly:
+###
+###   mu_j = lambda * [(1-r) SDD_ij + r keep LDD_ij]
+###   E[1-exp(-alpha_j A_j)] = 1-exp[-mu_j(1-exp(-alpha_j))]
+###
+### where A_j is the routed arrival count.  These overrides update only the
+### current-source Meta rare-parent mean/recruitment helpers.  They do not alter
+### the independent mathematical or pathogen-specific analytical machinery.
+###############################################################################
+
+.ina_meta_validate_direct_route <- function(P, n, name) {
+  P <- as.matrix(P)
+  if (!all(dim(P) == c(n, n))) stop(name, " must be nodes x nodes")
+  if (any(!is.finite(P)) || any(P < 0))
+    stop(name, " must contain finite non-negative probabilities")
+  rs <- rowSums(P)
+  if (any(rs > 1 + 1e-10))
+    stop(name, " source-row probabilities must sum to at most 1")
+  if (any(rs > 1)) P <- sweep(P, 1L, pmax(1, rs), `/`)
+  P
+}
+
+.ina_meta_direct_route_recruit_probability <- function(mu, alpha) {
+  mu <- pmax(0, as.numeric(mu))
+  alpha <- pmax(0, as.numeric(alpha))
+  1 - exp(-mu * (1 - exp(-alpha)))
+}
+
+meta_single_parent_recruit_means <- function(
+    SDDprob, LDDprob = 0, LDDrate = 0,
+    EnvEstabProb = 1, K,
+    PropaguleProduction, PropaguleEstablishment,
+    SpreadReduction = 0, FecundityReduction = 0) {
+  SDD <- as.matrix(SDDprob); n <- nrow(SDD)
+  SDD <- .ina_meta_validate_direct_route(SDD, n, "SDDprob")
+  LDD <- .ina_mat(LDDprob, n, "LDDprob")
+  LDD <- .ina_meta_validate_direct_route(LDD, n, "LDDprob")
+
+  r <- as.numeric(LDDrate)
+  if (length(r) != 1L || !is.finite(r) || r < 0 || r > 1)
+    stop("LDDrate must be one finite probability in [0,1]")
+
+  env <- .ina_recycle(EnvEstabProb, n, "EnvEstabProb")
+  cap <- .ina_recycle(K, n, "K")
+  prod <- .ina_recycle(PropaguleProduction, n, "PropaguleProduction")
+  pe <- .ina_recycle(PropaguleEstablishment, n, "PropaguleEstablishment")
+  g <- .ina_recycle(SpreadReduction, n, "SpreadReduction")
+  f <- .ina_recycle(FecundityReduction, n, "FecundityReduction")
+  .ina_fr_validate(f)
+  if (any(!is.finite(g)) || any(g < 0 | g > 1))
+    stop("SpreadReduction must be in [0,1]")
+
+  alpha <- pe * env
+  out <- list(matrix(0, n, n), matrix(0, n, n))
+
+  for (i in seq_len(n)) {
+    free <- cap
+    free[i] <- pmax(0, free[i] - 1)
+    for (M in 0:1) {
+      lambda <- pmax(0, prod[i] * (1 - f[i] * M))
+      keep <- pmin(1, pmax(0, 1 - g[i] * M))
+      mu <- lambda * ((1 - r) * SDD[i, ] + r * keep * LDD[i, ])
+      prec <- .ina_meta_direct_route_recruit_probability(mu, alpha)
+      out[[M + 1L]][i, ] <- free * prec
+    }
+  }
+
+  attr(out, "note") <- paste(
+    "Definitive 4-Sep direct per-propagule routing with residual outside loss;",
+    "Poisson thinning integrated exactly for one-parent expected recruitment"
+  )
+  out
+}
+
+meta_single_parent_operator <- function(
+    SDDprob, LDDprob = 0, LDDrate = 0,
+    EnvEstabProb = 1, Survival = 1, K,
+    PropaguleProduction, PropaguleEstablishment,
+    ManageProb = 0, MortalityProb = 0,
+    SpreadReduction = 0, FecundityReduction = 0) {
+  SDD <- as.matrix(SDDprob); n <- nrow(SDD)
+  s <- .ina_recycle(Survival, n, "Survival")
+  a <- .ina_recycle(ManageProb, n, "ManageProb")
+  m <- .ina_recycle(MortalityProb, n, "MortalityProb")
+  if (any(!is.finite(a)) || any(a < 0 | a > 1))
+    stop("ManageProb must be in [0,1]")
+  if (any(!is.finite(m)) || any(m < 0 | m > 1))
+    stop("MortalityProb must be in [0,1]")
+
+  mus <- meta_single_parent_recruit_means(
+    SDDprob, LDDprob, LDDrate, EnvEstabProb, K,
+    PropaguleProduction, PropaguleEstablishment,
+    SpreadReduction, FecundityReduction)
+
+  G <- matrix(0, n, n)
+  for (i in seq_len(n)) {
+    for (M in 0:1) {
+      pm <- if (M == 0L) 1 - a[i] else a[i]
+      if (pm <= 0) next
+      q <- s[i] * (1 - m[i] * M)
+      if (q <= 0) next
+      descendants <- mus[[M + 1L]][i, ]
+      descendants[i] <- descendants[i] + 1
+      G[, i] <- G[, i] + pm * q * descendants
+    }
+  }
+  attr(G, "note") <- paste(
+    "One-parent Meta mean operator aligned to definitive 4-Sep direct",
+    "per-propagule SDD/LDD routing and residual outside loss"
+  )
+  G
+}
+
+###############################################################################
+### Current-source MLU and Transition-Matrix dispersal compatibility refresh
+### 9 September 2026
+###
+### Native current-source probes showed that the same 4-Sep routing change that
+### affected Meta also affects the low-count MLU and Transition-Matrix paths
+### when a dispersal source row sums to less than one.
+###
+### Definitive simulation contract shared by these engines:
+###   * realised propagules are integer counts;
+###   * each propagule is assigned to SDD or LDD;
+###   * LDD can be thinned by management;
+###   * each retained propagule is allocated directly using the raw source-row
+###     probabilities; and
+###   * residual row mass is an explicit outside-landscape destination.
+###
+### Because the source propagule count is Poisson, direct routing is Poisson
+### thinning.  This lets the MLU expected recruitment probability be evaluated
+### directly, and lets the Transition-Matrix seedbank expectation be integrated
+### over independent Poisson SDD and LDD arrival counts.
+###
+### These are append-only analytical overrides.  They do NOT alter any
+### simulation-engine source.  Density-dependent transition dispersal retains
+### the previous analytical pathway because the required stage weights are not
+### exposed by the public analytical interface.
+###############################################################################
+
+# -----------------------------------------------------------------------------
+# Multiple Land Use: simulator-faithful one-parent mean operator
+# -----------------------------------------------------------------------------
+mlu_single_parent_operator <- function(
+    SDDprob, LDDprob = 0, LDDrate = 0, EnvEstabProb = 1,
+    Survival = 1, K, PropaguleProduction, PropaguleEstablishment,
+    ManageProb = 0, MortalityProb = 0, SpreadReduction = 0,
+    current_code = FALSE, FecundityReduction = 0) {
+
+  SDD <- as.matrix(SDDprob); n <- nrow(SDD)
+  SDD <- .ina_meta_validate_direct_route(SDD, n, "SDDprob")
+  LDD <- .ina_mat(LDDprob, n, "LDDprob")
+  LDD <- .ina_meta_validate_direct_route(LDD, n, "LDDprob")
+
+  K <- as.matrix(K)
+  if (nrow(K) != n) stop("K must be nodes x land uses")
+  L <- ncol(K)
+
+  r <- as.numeric(LDDrate)
+  if (length(r) != 1L || !is.finite(r) || r < 0 || r > 1)
+    stop("LDDrate must be one finite probability in [0,1]")
+
+  s <- .ina_recycle(Survival, n, "Survival")
+  prod <- .ina_recycle(PropaguleProduction, n, "PropaguleProduction")
+  env <- .ina_recycle(EnvEstabProb, n, "EnvEstabProb")
+  pe <- .ina_recycle(PropaguleEstablishment, n, "PropaguleEstablishment")
+  A <- .mlu_matrix(ManageProb, n, L, "ManageProb")
+  Mort <- .mlu_matrix(MortalityProb, n, L, "MortalityProb")
+  Gr <- .mlu_matrix(SpreadReduction, n, L, "SpreadReduction")
+  F <- .mlu_matrix(FecundityReduction, n, L, "FecundityReduction")
+
+  if (any(!is.finite(A)) || any(A < 0 | A > 1))
+    stop("ManageProb must be in [0,1]")
+  if (any(!is.finite(Mort)) || any(Mort < 0 | Mort > 1))
+    stop("MortalityProb must be in [0,1]")
+  if (any(!is.finite(Gr)) || any(Gr < 0 | Gr > 1))
+    stop("SpreadReduction must be in [0,1]")
+  .ina_fr_validate(F)
+
+  alpha <- env * pe
+  idx <- function(i, l) (i - 1L) * L + l
+  G <- matrix(0, n * L, n * L)
+
+  for (i in seq_len(n)) {
+    # The simulator samples management independently by land use.  Enumerating
+    # these states preserves the existing one-parent analytical treatment.
+    st <- .mlu_management_states(A[i, ])
+
+    for (l in seq_len(L)) {
+      src <- idx(i, l)
+
+      for (z in seq_len(nrow(st$M))) {
+        Mv <- st$M[z, ]
+        pm <- st$p[z]
+        if (pm <= 0) next
+
+        # Mortality/survival is applied before local reproduction.  Conditional
+        # on parent survival, the surviving parent remains in its source type.
+        q <- s[i] * (1 - Mort[i, l] * Mv[l])
+        if (q <= 0) next
+
+        # With a one-parent lineage only its occupied land use contributes to
+        # fecundity and to the population-share-weighted LDD keep probability.
+        lambda <- pmax(0, prod[i] * (1 - F[i, l] * Mv[l]))
+        keep <- pmin(1, pmax(0, 1 - Gr[i, l] * Mv[l]))
+
+        # Direct routing + Poisson thinning gives the mean arrivals at each
+        # represented destination.  Missing row mass is outside-landscape loss.
+        mu <- lambda * ((1 - r) * SDD[i, ] + r * keep * LDD[i, ])
+        prec <- .ina_meta_direct_route_recruit_probability(mu, alpha)
+
+        # In the simulator total recruits are allocated without replacement
+        # among currently free land-use slots.  The expected share in land use
+        # h is therefore exactly its number of free slots times prec[j].
+        for (j in seq_len(n)) {
+          free <- pmax(0, K[j, ])
+          if (j == i) free[l] <- pmax(0, free[l] - 1)
+          for (h in seq_len(L)) {
+            G[idx(j, h), src] <- G[idx(j, h), src] +
+              pm * q * free[h] * prec[j]
+          }
+        }
+
+        G[src, src] <- G[src, src] + pm * q
+      }
+    }
+  }
+
+  attr(G, "note") <- paste(
+    "One-parent MLU mean operator aligned to definitive 4-Sep direct",
+    "per-propagule routing with residual outside loss; current_code is retained",
+    "for API compatibility but no longer selects the obsolete row-normalised rule"
+  )
+  G
+}
+
+# -----------------------------------------------------------------------------
+# Transition Matrix: direct-routing one-parent recruit means
+# -----------------------------------------------------------------------------
+.ina_transition_single_parent_recruit_means_current <- function(
+    Transition, Nstages, SDDprob, LDDprob = 0, LDDrate = 0,
+    EnvEstabProb = 1, PropaguleEstablishment = 1,
+    SpreadReduction = 0, K = 1, SeedbankK = 1,
+    FecundityReduction = 0) {
+
+  SDD <- as.matrix(SDDprob); n <- nrow(SDD); S <- as.integer(Nstages)
+  SDD <- .ina_meta_validate_direct_route(SDD, n, "SDDprob")
+  LDD <- .ina_mat(LDDprob, n, "LDDprob")
+  LDD <- .ina_meta_validate_direct_route(LDD, n, "LDDprob")
+
+  A <- .transition_list(Transition, n, S)
+  env <- pmin(1, pmax(0, .ina_recycle(EnvEstabProb, n, "EnvEstabProb")))
+  pe <- .ina_recycle(PropaguleEstablishment, n, "PropaguleEstablishment")
+  cap <- .ina_recycle(K, n, "K")
+  sb <- .ina_recycle(SeedbankK, n, "SeedbankK")
+  g <- .ina_recycle(SpreadReduction, n, "SpreadReduction")
+
+  if (is.matrix(FecundityReduction) &&
+      all(dim(FecundityReduction) == c(n, S))) {
+    F <- FecundityReduction
+  } else if (length(FecundityReduction) == 1L) {
+    F <- matrix(FecundityReduction, n, S)
+  } else if (length(FecundityReduction) == S) {
+    F <- matrix(rep(FecundityReduction, each = n), n, S)
+  } else if (length(FecundityReduction) == n && n != S) {
+    F <- matrix(rep(FecundityReduction, S), n, S)
+  } else {
+    stop(paste(
+      "FecundityReduction must resolve to scalar, stage vector, node vector,",
+      "or nodes x stages"))
+  }
+  .ina_fr_validate(F)
+
+  r <- as.numeric(LDDrate)
+  if (length(r) != 1L || !is.finite(r) || r < 0 || r > 1)
+    stop("LDDrate must be one finite probability in [0,1]")
+  if (any(!is.finite(g)) || any(g < 0 | g > 1))
+    stop("SpreadReduction must be in [0,1]")
+
+  unrestricted <- all(is.finite(pe) & pe >= 1)
+  B <- n * S
+  idx <- function(i, s) (i - 1L) * S + s
+  out <- list(matrix(0, B, B), matrix(0, B, B))
+
+  for (i in seq_len(n)) for (k in 2:S) {
+    fec0 <- A[[i]][1L, k]
+    if (!is.finite(fec0) || fec0 <= 0) next
+    src <- idx(i, k)
+
+    # Maternal natural-dispersal footprint follows the definitive simulator.
+    # With one reproductive parent in source node i, this is deterministic.
+    if (unrestricted) {
+      acc <- rep(1, n)
+    } else {
+      coverage <- numeric(n)
+      positive <- cap > 0
+      coverage[positive] <-
+        pe[i] * cap[i] * SDD[i, positive] / cap[positive]
+      acc <- pmin(1, pmax(0, -expm1(-coverage)))
+    }
+
+    for (M in 0:1) {
+      lambda <- pmax(0, fec0 * (1 - F[i, k] * M))
+      keep <- pmin(1, pmax(0, 1 - g[i] * M))
+      meanj <- numeric(n)
+
+      for (j in seq_len(n)) {
+        # A Poisson source count thinned into SDD/LDD, destination j and
+        # outside loss produces independent Poisson Pin_j and Qin_j counts.
+        muS <- lambda * (1 - r) * SDD[i, j]
+        muL <- lambda * r * keep * LDD[i, j]
+        supS <- .meta_poisson_support(muS)
+        supL <- .meta_poisson_support(muL)
+
+        er <- 0
+        for (uu in seq_along(supS$k)) {
+          u <- supS$k[uu]; pu <- supS$p[uu]
+          if (pu == 0) next
+          for (vv in seq_along(supL$k)) {
+            v <- supL$k[vv]; pv <- supL$p[vv]
+            if (pv == 0) next
+            er <- er + pu * pv * .ina_transition_recruit_mean_given_arrivals(
+              u, v, j, sb[j], env, acc, unrestricted)
+          }
+        }
+        meanj[j] <- er
+      }
+
+      out[[M + 1L]][idx(seq_len(n), 1L), src] <- meanj
+    }
+  }
+
+  attr(out, "note") <- paste(
+    "Definitive 4-Sep Transition-Matrix direct per-propagule routing with",
+    "residual outside loss; SDD/LDD arrival marginals integrated as independent",
+    "Poisson thinnings before the exact seedbank recruitment expectation"
+  )
+  out
+}
+
+# -----------------------------------------------------------------------------
+# Transition Matrix static/current mean operator
+# -----------------------------------------------------------------------------
+# The established wrapper deliberately preserved the older static operator.
+# Once sub-stochastic rows are allowed that operator is no longer source-faithful.
+# For density-independent dispersal, build the static operator from the same
+# Parent/Recruit decomposition now used by the dynamic current-source pathway.
+.transition_operator_pre_direct_route_20260909 <- transition_operator
+transition_operator <- function(
+    Transition, Nstages, SDDprob, LDDprob = 0, LDDrate = 0,
+    EnvEstabProb = 1, PropaguleEstablishment = 1,
+    ManageProb = 0, MortalityProb = 0, SpreadReduction = 0,
+    DispersalDensityFactor = 0, K = 1, SeedbankK = 1,
+    FecundityReduction = 0) {
+
+  if (!is.na(DispersalDensityFactor) && DispersalDensityFactor != 0) {
+    return(.transition_operator_pre_direct_route_20260909(
+      Transition, Nstages, SDDprob, LDDprob, LDDrate,
+      EnvEstabProb, PropaguleEstablishment, ManageProb, MortalityProb,
+      SpreadReduction, DispersalDensityFactor, K, SeedbankK,
+      FecundityReduction))
+  }
+
+  step <- .ina_transition_branch_step(
+    Transition, Nstages, SDDprob, LDDprob, LDDrate,
+    EnvEstabProb, PropaguleEstablishment,
+    DetectionProb = 0,
+    ManageProb = ManageProb,
+    MortalityProb = MortalityProb,
+    SpreadReduction = SpreadReduction,
+    SEAM = 0,
+    InfoRetentionProb = 1,
+    DispersalDensityFactor = DispersalDensityFactor,
+    K = K,
+    SeedbankK = SeedbankK,
+    FecundityReduction = FecundityReduction)
+
+  G <- .ina_branch_mean_operator(step, mode = "all_informed")
+  attr(G, "components") <- transition_components(
+    Transition, Nstages, SDDprob, LDDprob, LDDrate,
+    EnvEstabProb, PropaguleEstablishment, ManageProb, MortalityProb,
+    SpreadReduction, DispersalDensityFactor, K, SeedbankK,
+    FecundityReduction)
+  attr(G, "note") <- paste(
+    "Transition mean operator aligned to the definitive 4-Sep integer",
+    "per-propagule dispersal and seedbank recruitment contract"
+  )
+  G
+}
