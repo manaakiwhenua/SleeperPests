@@ -1,15 +1,13 @@
 ###############################################################################
-### INApestMeta -- abundance-by-location invasion simulation engine
+### INApestMetaParallel -- parallel abundance-by-location simulation engine
 ###
-### INApestMeta replaces binary occupancy with host/pest abundance at each
-### spatial node. Local populations survive and reproduce, propagules move by
-### short- and long-distance pathways, and establishment is limited by habitat
-### and carrying capacity.
+### Uses the INApestMeta biological, information, response and optional pathogen
+### processes, but evaluates independent stochastic permutations with a PSOCK
+### worker pool when more than one core is requested.
 ###
-### The simulation keeps biological state separate from information and response:
-### surveillance determines what is known, informed nodes may be managed, and
-### management can alter mortality, fecundity and spread. An optional SIS/SIR/
-### SEIR pathogen process can be coupled to the node-level host abundance.
+### Parallelisation changes execution only; it does not define a new biological
+### architecture. Results are combined back into the standard node x timestep x
+### permutation histories used by INApestMeta.
 ###############################################################################
 
 # Default abundance-node local growth, dispersal and establishment process.
@@ -569,7 +567,7 @@ INApestPathogenOutputs <- function(PathogenStateResults) {
 }
 
 
-INApestMeta = function(
+INApestMetaParallel = function(
 ModelName,                                      # Model and output name
 Nperm,                                          # Number of stochastic simulation runs
 Ntimesteps,                                     # Timesteps in each simulation
@@ -607,6 +605,8 @@ OngoingExternalInvasion = F,                    # Allow new host incursions afte
 OngoingExternalInfo = F,                        # Allow new external information after initialisation
 OutputDir = NA,                                 # Directory for saved outputs
 DoPlots = TRUE,                                 # Legacy plotting option; plotting is post-processing
+Cores = NULL,                                   # Number of worker processes
+Seed = NULL,                                    # Random seed for reproducible simulations
 ExternalPathogenStateProb = NULL,               # Pathogen-state distribution for external host arrivals
 InformationAcquisition = NULL,                  # Local evidence used for information: host, pathogen or both
 InfoTriggeredDetectionProb = 0,                 # Detection probability where information already exists
@@ -789,11 +789,30 @@ if(is.null(MortalitySD) == T)
 ### Start of simulation
 ###########################################################
     
+detected_cores <- parallel::detectCores()
+if (is.na(detected_cores)) detected_cores <- 2L
+if (is.null(Cores)) {
+  n_cores <- max(1L, min(Nperm, detected_cores - 1L))
+} else {
+  if(!is.numeric(Cores) || length(Cores)!=1L || !is.finite(Cores) || Cores < 1 || Cores != floor(Cores)) stop("Cores must be a positive integer or NULL")
+  n_cores <- max(1L, min(Nperm, as.integer(Cores)))
+}
+if(!is.null(Seed)) {
+  if(!is.numeric(Seed) || length(Seed)!=1L || !is.finite(Seed)) stop("Seed must be one finite number or NULL")
+  set.seed(as.integer(Seed))
+}
+
 # Run one stochastic realisation. Function arguments and local helpers are
 # captured in this closure, avoiding fragile manual worker export lists.
+# Capture the LocalDynamicsArgs resolver explicitly in the current function
+# environment. PSOCK workers start in clean R sessions and therefore cannot
+# rely on a helper that exists only in the master global environment.
+LocalDynamicsArgsResolver <- .resolve_INApest_LocalDynamicsArgs
+force(LocalDynamicsArgsResolver)
+
 
 # ---------------------------------------------------------------------------
-# Run one complete stochastic host-pathogen history.
+# Run one complete stochastic host-pathogen history on a worker.
 # ---------------------------------------------------------------------------
 PermutationWorker <- function(i_perm)
   {
@@ -874,8 +893,7 @@ InitBio[InitBio > NodeK] = NodeK[InitBio > NodeK]
 
 # Set the working host abundance and initialise pathogen state when present.
 N <- InitBio
-if(UsePathogen)
-  PathogenState <- PathogenEngine$Initial(N, PathogenContext)
+if(UsePathogen) PathogenState <- PathogenEngine$Initial(N, PathogenContext)
 if(sum(N) == 0 && OngoingExternalInvasion == F)
   warning("No initial populations and no future external invasions")
 
@@ -1198,7 +1216,7 @@ for(timestep in 1:Ntimesteps)
     CoreLocalDynamicsArgs$nodefecundityreduction <- NodeFecundityReduction
   else if (any(NodeFecundityReduction * Managing > 0))
     stop("Custom LocalDynamics must accept a 'nodefecundityreduction' argument (or ...) when FecundityReduction is active")
-  ResolvedLocalDynamicsArgs <- .resolve_INApest_LocalDynamicsArgs(
+  ResolvedLocalDynamicsArgs <- LocalDynamicsArgsResolver(
       UserLocalDynamicsArgs, timestep = timestep, Ntimesteps = Ntimesteps
     )
     if (length(ResolvedLocalDynamicsArgs)) {
@@ -1275,8 +1293,6 @@ if(length(InfoDecayNodes) > 0)
 
   # Synchronise accepted external host immigrants with pathogen state. NULL
   # retains the historical assumption that all ordinary host gains are S.
-  # A named state distribution assigns only the actually accepted increase
-  # after the unchanged host carrying-capacity calculation.
   if(UsePathogen)
     {
     if(is.null(ExternalPathogenStateProbResolved)) {
@@ -1382,17 +1398,23 @@ if(length(InfoDecayNodes) > 0)
  Result
 }
 
-# Run stochastic realisations serially in permutation order.
-# This is deliberately the same worker body used by INApestMetaParallel,
-# so model logic remains aligned between serial and parallel implementations.
+# Use a common PSOCK/parLapply architecture across parallel INApest variants.
+# Static scheduling and L'Ecuyer-CMRG worker streams support reproducible
+# parallel simulations when the caller fixes the R seed.
+if(n_cores == 1L)
+  {
+  PermutationResults <- lapply(seq_len(Nperm), PermutationWorker)
+  } else {
+  cluster <- parallel::makeCluster(n_cores, type = "PSOCK")
+  on.exit(if(inherits(cluster, "cluster")) parallel::stopCluster(cluster), add = TRUE)
+  if (is.null(Seed)) parallel::clusterSetRNGStream(cluster) else parallel::clusterSetRNGStream(cluster, iseed=as.integer(Seed))
+  PermutationResults <- parallel::parLapply(cluster, seq_len(Nperm), PermutationWorker)
+  parallel::stopCluster(cluster)
+  cluster <- NULL
+  }
 
 # ---------------------------------------------------------------------------
-# Run all independent stochastic permutations.
-# ---------------------------------------------------------------------------
-PermutationResults <- lapply(seq_len(Nperm), PermutationWorker)
-
-# ---------------------------------------------------------------------------
-# Combine permutation histories into standard result arrays.
+# Combine worker histories into standard result arrays.
 # ---------------------------------------------------------------------------
 BindMeta3 <- function(field)
   {
@@ -1415,8 +1437,7 @@ InfoTriggeredDetectionProbabilityResults <- BindMeta3("InfoTriggeredDetectionPro
 if(UsePathogen)
   {
   PathogenStates <- PathogenEngine$States
-  PathogenStateResults <- array(0L, dim = c(nrow(SDDprob), length(PathogenStates), Ntimesteps, Nperm),
-                                dimnames = list(NULL, PathogenStates, NULL, NULL))
+  PathogenStateResults <- array(0L, dim = c(nrow(SDDprob), length(PathogenStates), Ntimesteps, Nperm), dimnames = list(NULL, PathogenStates, NULL, NULL))
   PathogenDetectedResults <- array(0L, dim = c(nrow(SDDprob), Ntimesteps, Nperm))
   for(pp in seq_len(Nperm))
     {
@@ -1424,6 +1445,7 @@ if(UsePathogen)
     PathogenDetectedResults[,,pp] <- PermutationResults[[pp]]$PathogenDetected
     }
   }
+
 ###########################################################
 ### End of Simulation
 ###########################################################
@@ -1711,7 +1733,7 @@ if(ReturnResults)
     ResultObject$PathogenStateResults <- PathogenStateResults
     ResultObject$PathogenDetectedResults <- PathogenDetectedResults
     }
-  class(ResultObject) <- c("INApestMeta","list")
+  class(ResultObject) <- c("INApestMetaParallel","list")
   return(invisible(ResultObject))
   }
 invisible(NULL)
