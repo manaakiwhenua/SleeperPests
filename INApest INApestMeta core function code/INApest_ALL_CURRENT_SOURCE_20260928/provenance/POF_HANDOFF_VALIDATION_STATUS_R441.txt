@@ -1,0 +1,11 @@
+INApest PoF biocontrol/multi-target native validation
+Date: 2026-09-24
+R: R version 4.4.1 (2024-06-14 ucrt)
+Platform: x86_64-w64-mingw32
+Blocks passed: 4/4
+OVERALL: PASS
+
+Freeze note:
+- TEST_04 validation fixture corrected before final full-suite run: no-release specification changed from the invalid scalar Release=0/default to Release=NULL.
+- This fixture correction does not alter PoF mathematics, pest/pathogen/biocontrol biology, or engine event order.
+- Final complete suite subsequently passed 4/4 under native Windows R 4.4.1.

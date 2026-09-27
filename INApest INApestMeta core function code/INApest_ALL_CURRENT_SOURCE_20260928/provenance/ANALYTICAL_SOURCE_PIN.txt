@@ -1,0 +1,16 @@
+Canonical core analytical source
+--------------------------------
+File: INApestAnalytical.R
+Repository: manaakiwhenua/SleeperPests
+Pinned commit: 6e4b9f032bec9001bf7241a9d59625894c776f9b
+Git blob: 2a217a157e036be20b581517ceacfe066a686719
+SHA-256: 49238e62a9f4c99445072d08356ca33081c60b37f1a4b268b328794990d163c5
+Status: accepted/frozen analytical source line.
+
+This session could verify the immutable GitHub blob and SHA but could not export the project-library raw bytes directly. Run either GET_PINNED_INApestAnalytical.ps1 or .sh after extraction to place the exact canonical file in R/ and verify its SHA-256.
+
+Later biocontrol analytical scientific parent
+----------------------------------------------
+Checkpoint: BCAN_v11_FROZEN_20260924.zip
+SHA-256: 6a87b84d72ce927d565518878a970367bb9e92b1e17d558862c12d5fcf165c3d
+Role: frozen biocontrol analytical/scientific analysis checkpoint; it does not replace the production simulation-engine source set or the canonical INApestAnalytical.R source identity above.

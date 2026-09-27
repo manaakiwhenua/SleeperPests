@@ -1,0 +1,48 @@
+--- /mnt/data/INApest_PoF_Biocontrol_Multitarget_v0.1_2026-09-24/provenance/INApestVertebratePointParallel_PARENT_2026-09-19.R	2026-09-23 21:52:20.450502970 +0000
++++ /mnt/data/INApest_PoF_Biocontrol_Multitarget_v0.1_2026-09-24/patches/INApestVertebratePointParallel_PoF_patch.R	2026-09-23 22:04:12.820879177 +0000
+@@ -53,7 +53,8 @@
+ .ivpp_relabel <- function(x, perm) {
+   for (nm in c(
+     "PointHistory", "EventLog", "FinalPoints", "InfoSites", "ContactHistory",
+-    "InteractionEvents", "ControlObservationHistory", "Summary"
++    "InteractionEvents", "ControlObservationHistory", "Summary",
++    "BiocontrolHistory", "BiocontrolPointEvents"
+   )) {
+     if (is.data.frame(x[[nm]]) && "perm" %in% names(x[[nm]]))
+       x[[nm]]$perm <- rep(perm, nrow(x[[nm]]))
+@@ -159,7 +160,7 @@
+     env <- environment(serial_fun)
+     nms <- ls(env, all.names = TRUE)
+     engine_symbols <- nms[grepl(
+-      "^(\\.ipp_|\\.ipptm_|\\.iv_|\\.INApestPointTransitionMatrix_engine$|INApestPoint|INApestSpatial|INApestHabitat|INApestVertebratePoint$)",
++      "^(\\.ipp_|\\.ipptm_|\\.iv_|\\.ibp_|\\.INApestPointTransitionMatrix_engine$|INApestPoint|INApestSpatial|INApestHabitat|INApestVertebratePoint$|INApestPointBiocontrol|INApestBiocontrolPoint)",
+       nms
+     )]
+     if (length(engine_symbols))
+@@ -191,6 +192,8 @@
+     InteractionEvents = .ivpp_rbind(xs, "InteractionEvents"),
+     ControlObservationHistory = .ivpp_rbind(xs, "ControlObservationHistory"),
+     Summary = .ivpp_rbind(xs, "Summary"),
++    BiocontrolHistory = .ivpp_rbind(xs, "BiocontrolHistory"),
++    BiocontrolPointEvents = .ivpp_rbind(xs, "BiocontrolPointEvents"),
+     ParallelMeta = list(
+       Nperm = Nperm, Cores = Cores, Backend = backend_used,
+       Seed = Seed, elapsed_seconds = elapsed
+@@ -209,6 +212,17 @@
+             out$ControlObservationHistory$id), , drop = FALSE
+     ]
+ 
++  if (nrow(out$BiocontrolHistory))
++    out$BiocontrolHistory <- out$BiocontrolHistory[
++      order(out$BiocontrolHistory$perm, out$BiocontrolHistory$timestep,
++            out$BiocontrolHistory$agent, out$BiocontrolHistory$node, out$BiocontrolHistory$stage),
++      , drop = FALSE
++    ]
++  if (nrow(out$BiocontrolPointEvents) && all(c("perm", "timestep") %in% names(out$BiocontrolPointEvents)))
++    out$BiocontrolPointEvents <- out$BiocontrolPointEvents[
++      order(out$BiocontrolPointEvents$perm, out$BiocontrolPointEvents$timestep), , drop = FALSE
++    ]
++
+   class(out) <- c("INApestVertebratePointParallel", "INApestVertebratePoint",
+                   "INApestPointTransitionMatrix", "list")
+ 

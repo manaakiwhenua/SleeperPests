@@ -1,0 +1,210 @@
+###############################################################################
+### INApestMetaPointParallel -- parallel explicit-point simulation wrapper
+###
+### Runs independent MetaPoint permutations on serial, PSOCK or fork workers and
+### combines point histories, event logs and summary tables. It does not define a
+### new biological architecture; each worker calls INApestMetaPoint unchanged.
+###############################################################################
+
+# Create reproducible random-number streams for MetaPoint workers.
+.ipp_parallel_make_streams <- function(Nperm, Seed = NULL) {
+  old_kind <- RNGkind()
+  old_seed_exists <- exists(".Random.seed", envir = .GlobalEnv, inherits = FALSE)
+  if (old_seed_exists) old_seed <- get(".Random.seed", envir = .GlobalEnv)
+  on.exit({
+    do.call(RNGkind, as.list(old_kind))
+    if (old_seed_exists) assign(".Random.seed", old_seed, envir = .GlobalEnv)
+    else if (exists(".Random.seed", envir = .GlobalEnv, inherits = FALSE)) rm(".Random.seed", envir = .GlobalEnv)
+  }, add = TRUE)
+
+  RNGkind("L'Ecuyer-CMRG")
+  if (!is.null(Seed)) set.seed(Seed)
+  else set.seed(sample.int(.Machine$integer.max, 1L))
+
+  streams <- vector("list", Nperm)
+  streams[[1L]] <- .Random.seed
+  if (Nperm > 1L) {
+    for (i in 2:Nperm)
+      streams[[i]] <- parallel::nextRNGStream(streams[[i - 1L]])
+  }
+  streams
+}
+
+# Relabel permutation identifiers in one MetaPoint worker result.
+.ipp_parallel_relabel <- function(x, perm) {
+  for (nm in c("PointHistory", "EventLog", "FinalPoints", "InfoSites", "Summary", "PathogenEvents", "BiocontrolHistory", "BiocontrolPointEvents")) {
+    if (is.data.frame(x[[nm]]) && "perm" %in% names(x[[nm]]))
+      x[[nm]]$perm <- rep(perm, nrow(x[[nm]]))
+  }
+  x
+}
+
+# Combine a named data-frame output across MetaPoint workers.
+.ipp_parallel_rbind <- function(xs, name) {
+  parts <- lapply(xs, `[[`, name)
+  parts <- parts[vapply(parts, is.data.frame, logical(1))]
+  if (!length(parts)) return(data.frame())
+  nonempty <- parts[vapply(parts, ncol, integer(1)) > 0L]
+  if (!length(nonempty)) return(data.frame())
+  out <- do.call(rbind, nonempty)
+  rownames(out) <- NULL
+  out
+}
+
+# Combine complete MetaPoint worker results into one result object.
+.ipp_parallel_combine <- function(xs, ModelName, class_name, meta) {
+  out <- list(
+    ModelName = ModelName,
+    PointHistory = .ipp_parallel_rbind(xs, "PointHistory"),
+    EventLog = .ipp_parallel_rbind(xs, "EventLog"),
+    FinalPoints = .ipp_parallel_rbind(xs, "FinalPoints"),
+    InfoSites = .ipp_parallel_rbind(xs, "InfoSites"),
+    Summary = .ipp_parallel_rbind(xs, "Summary"),
+    PathogenEvents = .ipp_parallel_rbind(xs, "PathogenEvents"),
+    BiocontrolHistory = .ipp_parallel_rbind(xs, "BiocontrolHistory"),
+    BiocontrolPointEvents = .ipp_parallel_rbind(xs, "BiocontrolPointEvents"),
+    ParallelMeta = meta
+  )
+  if (nrow(out$PointHistory)) out$PointHistory <- out$PointHistory[order(out$PointHistory$perm, out$PointHistory$timestep, out$PointHistory$id), , drop = FALSE]
+  if (nrow(out$EventLog)) out$EventLog <- out$EventLog[order(out$EventLog$perm, out$EventLog$timestep), , drop = FALSE]
+  if (nrow(out$FinalPoints)) out$FinalPoints <- out$FinalPoints[order(out$FinalPoints$perm, out$FinalPoints$id), , drop = FALSE]
+  if (nrow(out$Summary)) out$Summary <- out$Summary[order(out$Summary$perm, out$Summary$timestep), , drop = FALSE]
+  if (nrow(out$PathogenEvents)) out$PathogenEvents <- out$PathogenEvents[order(out$PathogenEvents$perm, out$PathogenEvents$timestep), , drop = FALSE]
+  class(out) <- c(class_name, "list")
+  out
+}
+
+# Identify engine symbols that PSOCK workers need exported.
+.ipp_parallel_engine_symbols <- function(fun, transition = FALSE) {
+  env <- environment(fun)
+  nms <- ls(env, all.names = TRUE)
+  pat <- if (transition)
+    "^(\\.ipp_|\\.ipptm_|INApestPointKernel|INApestPointTransitionMatrix$)"
+  else
+    "^(\\.ipp_|\\.ibp_|INApestPointKernel|INApestMetaPoint$|INApestPointBiocontrol|INApestBiocontrolPoint)"
+  nms[grepl(pat, nms)]
+}
+
+INApestMetaPointParallel <- function(
+  ModelName = "INApestMetaPointParallel",       # Model and output name
+  Nperm,                                        # Number of stochastic simulation runs
+  Pathogen = NULL,                              # Optional point pathogen interaction
+  ...,                                          # Additional arguments forwarded to the underlying engine
+  Cores = max(1L, parallel::detectCores(logical = TRUE) - 1L), # Number of worker processes
+  Backend = c("psock", "fork"),                 # Parallel backend: PSOCK or fork
+  Seed = NULL,                                  # Random seed for reproducible simulations
+  Export = NULL,                                # Additional objects exported to workers
+  OutputDir = NA,                               # Directory for saved outputs
+  SaveResults = FALSE,                          # Save standard simulation outputs to disk
+  DoProgress = TRUE,                            # Print simulation progress to the console
+  InitialPointGenerator = NULL                  # Optional function(global permutation) returning starting points
+) {
+
+  # ---------------------------------------------------------------------------
+  # Set up and validate the parallel point run.
+  # ---------------------------------------------------------------------------
+  if (!exists("INApestMetaPoint", mode = "function", inherits = TRUE))
+    stop("INApestPoint() is not available. Source INApestMetaPoint.R first.")
+  if (!requireNamespace("parallel", quietly = TRUE))
+    stop("The base/recommended 'parallel' package is required.")
+
+  if (!is.numeric(Nperm) || length(Nperm) != 1L || Nperm < 1L || Nperm != floor(Nperm))
+    stop("Nperm must be a positive integer.")
+  Nperm <- as.integer(Nperm)
+
+  if (!is.numeric(Cores) || length(Cores) != 1L || Cores < 1L || Cores != floor(Cores))
+    stop("Cores must be a positive integer.")
+  Cores <- min(as.integer(Cores), Nperm)
+  Backend <- match.arg(Backend)
+  if (.Platform$OS.type == "windows" && Backend == "fork")
+    stop("Backend = 'fork' is not available on Windows; use 'psock'.")
+
+  args <- list(...)
+  args$Pathogen <- Pathogen
+  args$InitialPointGenerator <- InitialPointGenerator
+  # Parallel wrapper owns these serial arguments to prevent duplicate writes,
+  # progress interleaving and nested permutation loops.
+  args$Nperm <- NULL; args$ModelName <- NULL; args$Seed <- NULL
+  args$OutputDir <- NULL; args$SaveResults <- NULL; args$DoProgress <- NULL
+
+  streams <- .ipp_parallel_make_streams(Nperm, Seed)
+  serial_fun <- get("INApestMetaPoint", mode = "function", inherits = TRUE)
+
+  worker <- function(i, model_fun, base_args, rng_stream, model_name) {
+    assign(".Random.seed", rng_stream[[i]], envir = .GlobalEnv)
+
+    # Preserve the global permutation identity inside a one-permutation worker.
+    if (is.function(base_args$InitialPointGenerator)) {
+      original_generator <- base_args$InitialPointGenerator
+      global_perm <- i
+      base_args$InitialPointGenerator <- local({
+        f <- original_generator
+        g <- global_perm
+        function(perm) f(perm = g)
+      })
+    }
+    call_args <- c(base_args, list(
+      ModelName = paste0(model_name, "_perm", i),
+      Nperm = 1L,
+      SaveResults = FALSE,
+      DoProgress = FALSE,
+      Seed = NULL
+    ))
+    ans <- do.call(model_fun, call_args)
+    .ipp_parallel_relabel(ans, i)
+  }
+
+  if (DoProgress)
+
+    # ---------------------------------------------------------------------------
+    # Run independent point permutations using the selected backend.
+    # ---------------------------------------------------------------------------
+    message("Running ", Nperm, " permutations with ", Cores, " worker", if (Cores == 1L) "" else "s", " (", if (Cores == 1L) "serial fallback" else Backend, ").")
+
+  t0 <- proc.time()[[3L]]
+  if (Cores == 1L) {
+    xs <- lapply(seq_len(Nperm), worker, model_fun = serial_fun, base_args = args, rng_stream = streams, model_name = ModelName)
+    backend_used <- "serial"
+  } else if (Backend == "fork") {
+    xs <- parallel::mclapply(
+      seq_len(Nperm), worker,
+      model_fun = serial_fun, base_args = args, rng_stream = streams, model_name = ModelName,
+      mc.cores = Cores, mc.set.seed = FALSE
+    )
+    backend_used <- "fork"
+  } else {
+    cl <- parallel::makeCluster(Cores, type = "PSOCK")
+    on.exit(parallel::stopCluster(cl), add = TRUE)
+    engine_env <- environment(serial_fun)
+    engine_symbols <- .ipp_parallel_engine_symbols(serial_fun, transition = FALSE)
+    if (length(engine_symbols)) parallel::clusterExport(cl, engine_symbols, envir = engine_env)
+    if (length(Export)) parallel::clusterExport(cl, Export, envir = parent.frame())
+    parallel::clusterExport(cl, c(".ipp_parallel_relabel"), envir = environment())
+    xs <- parallel::parLapply(
+      cl, seq_len(Nperm), worker,
+      model_fun = serial_fun, base_args = args, rng_stream = streams, model_name = ModelName
+    )
+    parallel::stopCluster(cl)
+    on.exit(NULL, add = FALSE)
+    backend_used <- "psock"
+  }
+  elapsed <- proc.time()[[3L]] - t0
+
+  out <- .ipp_parallel_combine(
+    xs, ModelName, "INApestMetaPointParallel",
+    list(Nperm = Nperm, Cores = Cores, Backend = backend_used, Seed = Seed, elapsed_seconds = elapsed)
+  )
+
+  if (SaveResults) {
+    if (is.na(OutputDir)) OutputDir <- ""
+    if (nzchar(OutputDir) && !dir.exists(OutputDir)) dir.create(OutputDir, recursive = TRUE)
+    saveRDS(out, file.path(OutputDir, paste0(ModelName, "_MetaPointParallelResults.rds")))
+  }
+  if (DoProgress) message("Parallel INApestMetaPoint simulation complete in ", round(elapsed, 2), " s.")
+  out
+}
+
+###############################################################################
+### Backwards compatibility
+###############################################################################
+INApestPointParallel <- INApestMetaPointParallel
