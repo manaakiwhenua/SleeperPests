@@ -1,0 +1,31 @@
+INApest ObservationHistory eight-architecture native validation
+Checkpoint: v1.0 frozen candidate
+Date: 29 September 2026
+Native R: R 4.4.1 (Windows x64)
+
+STATUS: PASS (user-reported after executing the supplied eight-architecture native validation runner)
+
+Reported result in the validation session: "All pass".
+The runner used the v0.2 candidate source whose SHA-256 is identical to the canonical
+INApestAnalytical.R included in this frozen release:
+07d6a36a21eee4a7ef47c6a1c433629f329e324d0181e1da05798651e97696b3
+
+Validated gate scope:
+- Binary: PASS
+- Meta: PASS
+- Multiple Land Use: PASS
+- Transition Matrix: PASS
+- MetaPoint: PASS
+- Point Transition Matrix: PASS
+- Vertebrate Node: PASS
+- Vertebrate Point: PASS
+- Dynamic-information neutral parity for six standard architectures: PASS
+- Point-family observation-history regression suite: PASS
+- Common NULL/zero-detection/monotonicity gates: PASS
+
+Evidence note:
+The exact NATIVE_VALIDATION_CONSOLE.txt generated on the user's Windows machine was
+not uploaded into this chat. This status file therefore records the reported PASS
+without fabricating a console transcript. Re-running RUN_NATIVE_VALIDATION.ps1 in
+this release will generate a local NATIVE_VALIDATION_CONSOLE.txt against the final
+canonical filename INApestAnalytical.R.

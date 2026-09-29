@@ -1,0 +1,21 @@
+INApest ObservationHistory eight-architecture webR validation
+Frozen release: v1.0
+Runtime: webR 0.6.0 / R 4.6.0
+Date: 29 September 2026
+STATUS: PASS
+
+Final canonical-source rerun (`INApestAnalytical.R`):
+- smoke/runtime: PASS
+- Binary: PASS
+- Meta: PASS
+- Multiple Land Use: PASS
+- Transition Matrix: PASS
+- MetaPoint: PASS
+- Point Transition Matrix: PASS
+- Vertebrate Node: PASS
+- Vertebrate Point: PASS
+- dynamic-information neutral parity for six standard architectures: PASS
+- point-family 10-test observation-history regression: PASS
+- common observation-history gates: PASS
+
+The retained final rerun logs are `validation/WEBR_FINAL_*_LOG.txt`.

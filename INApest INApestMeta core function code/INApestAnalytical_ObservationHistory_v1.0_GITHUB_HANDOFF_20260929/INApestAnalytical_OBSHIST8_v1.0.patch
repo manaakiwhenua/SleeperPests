@@ -1,0 +1,508 @@
+--- /mnt/data/INApest_ObservationHistory_8Arch_v0.2_WEBR_VALIDATED_20260929/INApestAnalytical_PARENT_GITHUB.R	2026-09-29 03:19:27.262564502 +0000
++++ /mnt/data/INApest_ObservationHistory_8Arch_v0.2_WEBR_VALIDATED_20260929/INApestAnalytical_OBSHIST8_v0.2_20260929.R	2026-09-29 03:19:27.261587847 +0000
+@@ -4360,6 +4360,7 @@
+     PointSeed = 1L,
+     OutsideEstablishmentProb = 1,
+     ExtinctionGenerations = 100,
++    ObservationHistory = NULL,
+     ReturnOperators = FALSE) {
+ 
+   .ina_pt_require_point_helpers(FALSE)
+@@ -4569,6 +4570,35 @@
+     }
+   }
+ 
++  observation_history_result <- NULL
++  if (!is.null(ObservationHistory)) {
++    if (programmed_dynamic)
++      stop("ObservationHistory is not yet implemented for programmed InfoPersistenceSteps in INApestMetaPointAnalytical")
++    obs_mask <- .ina_observation_history_mask(ObservationHistory, Ntimesteps)
++    q_obs <- .ina_branch_observation_horizon(
++      pgf_steps, mode, obs_mask, terminal = "any")
++    q_joint <- .ina_branch_observation_horizon(
++      pgf_steps, mode, obs_mask, terminal = "extinct")
++    p_obs <- .ina_pt_initial_event_probability(
++      q_obs, InitialPoints, InitialInfo, initial_type, mode, DetectionProb,
++      DetectionSpatial, Ntimesteps, transition = FALSE)
++    p_joint <- .ina_pt_initial_event_probability(
++      q_joint, InitialPoints, InitialInfo, initial_type, mode, DetectionProb,
++      DetectionSpatial, Ntimesteps, transition = FALSE)
++    p_obs <- .ina_branch_clip(p_obs)
++    p_joint <- .ina_branch_clip(p_joint)
++    observation_history_result <- list(
++      Method = "backward branching PGF with no-detection filters at constrained timesteps",
++      NoDetectionByTimestep = obs_mask,
++      Probability = p_obs,
++      ExtinctionJointProbability = p_joint,
++      ExtinctionConditionalProbability = if (p_obs > 0) p_joint / p_obs else NA_real_,
++      Scope = paste(
++        "ObservationHistory currently constrains only process detections occurring",
++        "at the end of selected timesteps; initial detection is used to initialise",
++        "information state but is not itself part of the observation-history event."))
++  }
++
+   escape <- NULL
+   if (!is.null(analysis_grid)) {
+     first <- .ina_pt_first_moment_escape(operators, state0, exports)
+@@ -4627,6 +4657,7 @@
+     Extinction = list(Method = ext_method,
+                       ProbabilityByHorizon = ext_h,
+                       BranchingFadeoutProbability = ext_e),
++    ObservationHistory = observation_history_result,
+     Escape = escape,
+     Diagnostics = unique(diagnostics),
+     ApproximationScope = c(
+@@ -5134,6 +5165,239 @@
+        method = "exact homogeneous stage-structured survival/transition + Poisson-recruit branching PGF")
+ }
+ 
++###############################################################################
++### Observation-history conditioning extension (29-Sep-2026)
++###
++### Adds finite-horizon conditioning on timesteps at which NO detection is
++### allowed.  This is designed for histories such as post-cutoff surveillance
++### silence.  The event is evaluated by the same one-parent branching PGF used
++### for extinction, with detection branches removed only at constrained steps.
++###
++### ObservationHistory accepted forms:
++###   * logical vector length Ntimesteps: TRUE = require no detection;
++###   * list(NoDetection = logical vector length Ntimesteps);
++###   * data.frame with columns timestep and observation, where observation is
++###     one of "none" / "no_detection" / "silence" / "unconstrained" / "any".
++###
++### Current scope deliberately supports no-detection constraints only.  A
++### positive-detection requirement is not the complement at an intermediate
++### timestep when later information-dependent management is present, and should
++### therefore be added as an explicit state/event extension rather than by
++### subtraction.
++###############################################################################
++
++.ina_observation_history_mask <- function(ObservationHistory, Ntimesteps) {
++  if (is.null(ObservationHistory)) return(NULL)
++  T <- as.integer(Ntimesteps)
++  if (length(T) != 1L || !is.finite(T) || T < 1L)
++    stop("Ntimesteps must be a positive integer")
++
++  if (is.logical(ObservationHistory)) {
++    if (length(ObservationHistory) != T)
++      stop("Logical ObservationHistory must have length Ntimesteps")
++    if (anyNA(ObservationHistory))
++      stop("Logical ObservationHistory cannot contain NA")
++    return(as.logical(ObservationHistory))
++  }
++
++  if (is.list(ObservationHistory) && !is.data.frame(ObservationHistory)) {
++    if (is.null(ObservationHistory$NoDetection))
++      stop("List ObservationHistory currently requires a NoDetection element")
++    x <- ObservationHistory$NoDetection
++    if (!is.logical(x) || length(x) != T || anyNA(x))
++      stop("ObservationHistory$NoDetection must be a non-NA logical vector of length Ntimesteps")
++    return(as.logical(x))
++  }
++
++  if (is.data.frame(ObservationHistory)) {
++    if (!all(c("timestep", "observation") %in% names(ObservationHistory)))
++      stop("Data-frame ObservationHistory requires timestep and observation columns")
++    mask <- rep(FALSE, T)
++    tt <- as.integer(ObservationHistory$timestep)
++    if (anyNA(tt) || any(tt < 1L | tt > T))
++      stop("ObservationHistory$timestep values must be within 1:Ntimesteps")
++    obs <- tolower(trimws(as.character(ObservationHistory$observation)))
++    no <- obs %in% c("none", "no_detection", "no detection", "silence", "silent", "zero")
++    anyok <- obs %in% c("unconstrained", "any", "ignore", "*")
++    if (any(!(no | anyok)))
++      stop("ObservationHistory currently supports only no-detection or unconstrained observations")
++    for (k in seq_along(tt)) mask[tt[k]] <- no[k]
++    return(mask)
++  }
++
++  stop("Unsupported ObservationHistory format")
++}
++
++.ina_branch_step_eval_no_detection_individual <- function(
++    step, qnext, mode = c("none", "all_informed", "dynamic")) {
++  mode <- match.arg(mode)
++  B <- length(step$q0)
++  q0 <- .ina_branch_clip(step$q0)
++  q1 <- .ina_branch_clip(step$q1)
++  a <- .ina_branch_clip(rep_len(as.numeric(step$adoption), B))
++  D <- .ina_branch_clip(rep_len(as.numeric(step$Detection), B))
++  if (length(D) != B) stop("Detection must be scalar or length B")
++
++  branch_value <- function(i, managed, parent_transform, recruit_transform) {
++    qs <- if (!managed) q0[i] else q1[i]
++    if (qs <= 0) return(1)
++    Pm <- if (!managed) step$Parent0[, i] else step$Parent1[, i]
++    Rm <- if (!managed) step$Recruit0[, i] else step$Recruit1[, i]
++    psum <- sum(Pm)
++    local <- 1 - psum / qs + sum((Pm / qs) * parent_transform)
++    mu <- Rm / qs
++    .ina_branch_clip((1 - qs) + qs * local * exp(sum(mu * (recruit_transform - 1))))
++  }
++
++  if (mode != "dynamic") {
++    q <- .ina_branch_clip(qnext)
++    if (length(q) != B) stop("qnext has wrong length for base branching step")
++    # Detection is an end-of-timestep event on every extant parent/recruit.
++    # Multiplication by (1-D) deletes all branches containing a detection.
++    qsilent <- (1 - D) * q
++    out <- numeric(B)
++    for (i in seq_len(B)) {
++      f0 <- branch_value(i, FALSE, qsilent, qsilent)
++      if (mode == "all_informed" && a[i] > 0) {
++        f1 <- branch_value(i, TRUE, qsilent, qsilent)
++        out[i] <- (1 - a[i]) * f0 + a[i] * f1
++      } else out[i] <- f0
++    }
++    return(.ina_branch_clip(out))
++  }
++
++  qnext <- .ina_branch_clip(qnext)
++  if (length(qnext) != 2L * B)
++    stop("qnext has wrong length for dynamic branching step")
++  qU <- qnext[seq_len(B)]
++  qH <- qnext[B + seq_len(B)]
++  IR <- .ina_branch_clip(rep_len(as.numeric(step$Retention), B))
++  C <- as.matrix(step$Transfer)
++  if (!all(dim(C) == c(B, B))) stop("Transfer must be B x B")
++  C[] <- pmin(1, pmax(0, C))
++
++  # Uninformed source: with detection forbidden, every surviving descendant
++  # must evade detection and therefore remains U unless informed by some other
++  # process (none applies to an uninformed source in the current branch step).
++  silentU <- (1 - D) * qU
++  outU <- numeric(B)
++  for (i in seq_len(B))
++    outU[i] <- branch_value(i, FALSE, silentU, silentU)
++
++  # Informed source: retained source information and direct SEAM can still make
++  # descendants H; the common (1-D) factor enforces surveillance silence.
++  outH <- numeric(B)
++  parentH <- (1 - D) * ((1 - IR) * qU + IR * qH)
++  for (i in seq_len(B)) {
++    hchild <- C[i, ]
++    recruitH <- (1 - D) * ((1 - hchild) * qU + hchild * qH)
++    f0 <- branch_value(i, FALSE, parentH, recruitH)
++    f1 <- branch_value(i, TRUE, parentH, recruitH)
++    outH[i] <- (1 - a[i]) * f0 + a[i] * f1
++  }
++  .ina_branch_clip(c(outU, outH))
++}
++
++.ina_branch_step_eval_no_detection_nodeshared <- function(step, qnext) {
++  B <- length(step$q0)
++  type_node <- as.integer(step$SharedInfoNode)
++  if (length(type_node) != B || any(!is.finite(type_node)) || any(type_node < 1L))
++    stop("SharedInfoNode must identify a positive node index for every base type")
++  nodes <- sort(unique(type_node))
++  qnext <- .ina_branch_clip(qnext)
++  if (length(qnext) != 2L * B)
++    stop("qnext has wrong length for dynamic branching step")
++  qU <- qnext[seq_len(B)]; qH <- qnext[B + seq_len(B)]
++  q0 <- .ina_branch_clip(step$q0); q1 <- .ina_branch_clip(step$q1)
++  a <- .ina_branch_clip(rep_len(as.numeric(step$adoption), B))
++  D <- .ina_branch_clip(rep_len(as.numeric(step$Detection), B))
++  IR <- .ina_branch_clip(rep_len(as.numeric(step$Retention), B))
++  C <- as.matrix(step$Transfer)
++  if (!all(dim(C) == c(B, B))) stop("Transfer must be B x B")
++  C[] <- pmin(1, pmax(0, C))
++
++  node_product <- function(i, managed, informed_source) {
++    qs <- if (!managed) q0[i] else q1[i]
++    if (qs <= 0) return(1)
++    Pm <- if (!managed) step$Parent0[, i] else step$Parent1[, i]
++    Rm <- if (!managed) step$Recruit0[, i] else step$Recruit1[, i]
++    ppar <- pmax(0, as.numeric(Pm) / qs)
++    mu <- pmax(0, as.numeric(Rm) / qs)
++    srcnode <- type_node[i]
++    parent_other <- which(ppar > 1e-14 & type_node != srcnode)
++    if (length(parent_other)) return(NA_real_)
++    pabs <- pmax(0, 1 - sum(ppar))
++
++    simple_node_gf <- function(types, x) {
++      rec <- exp(sum(mu[types] * (x - 1)))
++      if (type_node[i] == type_node[types[1L]]) {
++        par <- pabs + sum(ppar[types] * x)
++        rec * par
++      } else rec
++    }
++
++    ans <- 1
++    for (nd in nodes) {
++      types <- which(type_node == nd)
++      noU <- simple_node_gf(types, (1 - D[types]) * qU[types])
++      noH <- simple_node_gf(types, (1 - D[types]) * qH[types])
++      if (!informed_source) {
++        pinfo <- 0
++      } else if (nd == srcnode) {
++        pinfo <- IR[i]
++      } else {
++        pinfo <- C[i, types[1L]]
++      }
++      # Detection is forbidden. Existing/SEAM information can still select the
++      # H continuation, but there is no detection-created H branch.
++      ans <- ans * (pinfo * noH + (1 - pinfo) * noU)
++    }
++    .ina_branch_clip((1 - qs) + qs * ans)
++  }
++
++  outU <- outH <- numeric(B)
++  for (i in seq_len(B)) {
++    u <- node_product(i, FALSE, FALSE)
++    if (is.na(u)) return(NULL)
++    outU[i] <- u
++    h0 <- node_product(i, FALSE, TRUE)
++    h1 <- node_product(i, TRUE, TRUE)
++    if (is.na(h0) || is.na(h1)) return(NULL)
++    outH[i] <- (1 - a[i]) * h0 + a[i] * h1
++  }
++  .ina_branch_clip(c(outU, outH))
++}
++
++.ina_branch_step_eval_observation <- function(
++    step, qnext, mode = c("none", "all_informed", "dynamic"),
++    require_no_detection = FALSE) {
++  mode <- match.arg(mode)
++  if (!isTRUE(require_no_detection))
++    return(.ina_branch_step_eval(step, qnext, mode))
++  if (mode == "dynamic" && !is.null(step$SharedInfoNode)) {
++    z <- .ina_branch_step_eval_no_detection_nodeshared(step, qnext)
++    if (!is.null(z)) return(z)
++  }
++  .ina_branch_step_eval_no_detection_individual(step, qnext, mode)
++}
++
++.ina_branch_observation_horizon <- function(
++    steps, mode, no_detection_mask,
++    terminal = c("any", "extinct")) {
++  terminal <- match.arg(terminal)
++  if (!length(steps)) stop("steps must be non-empty")
++  if (length(no_detection_mask) != length(steps))
++    stop("no_detection_mask must match the number of branching steps")
++  B <- length(steps[[1L]]$q0)
++  nstate <- if (mode == "dynamic") 2L * B else B
++  q <- rep(if (terminal == "any") 1 else 0, nstate)
++  for (tt in rev(seq_along(steps)))
++    q <- .ina_branch_step_eval_observation(
++      steps[[tt]], q, mode,
++      require_no_detection = no_detection_mask[tt])
++  .ina_branch_clip(q)
++}
++
+ INApestPointTransitionMatrixAnalytical <- function(
+     Ntimesteps = 10,
+     Nstages,
+@@ -5189,6 +5453,7 @@
+     PointSeed = 1L,
+     OutsideEstablishmentProb = 1,
+     ExtinctionGenerations = 100,
++    ObservationHistory = NULL,
+     ReturnOperators = FALSE) {
+ 
+   .ina_pt_require_point_helpers(TRUE)
+@@ -5431,6 +5696,35 @@
+     }
+   }
+ 
++  observation_history_result <- NULL
++  if (!is.null(ObservationHistory)) {
++    if (programmed_dynamic)
++      stop("ObservationHistory is not yet implemented for programmed InfoPersistenceSteps in INApestPointTransitionMatrixAnalytical")
++    obs_mask <- .ina_observation_history_mask(ObservationHistory, Ntimesteps)
++    q_obs <- .ina_branch_observation_horizon(
++      pgf_steps, mode, obs_mask, terminal = "any")
++    q_joint <- .ina_branch_observation_horizon(
++      pgf_steps, mode, obs_mask, terminal = "extinct")
++    p_obs <- .ina_pt_initial_event_probability(
++      q_obs, InitialPoints, InitialInfo, initial_type, mode, DetectionProb,
++      DetectionSpatial, Ntimesteps, transition = TRUE, Nstages = Nstages)
++    p_joint <- .ina_pt_initial_event_probability(
++      q_joint, InitialPoints, InitialInfo, initial_type, mode, DetectionProb,
++      DetectionSpatial, Ntimesteps, transition = TRUE, Nstages = Nstages)
++    p_obs <- .ina_branch_clip(p_obs)
++    p_joint <- .ina_branch_clip(p_joint)
++    observation_history_result <- list(
++      Method = "backward branching PGF with no-detection filters at constrained timesteps",
++      NoDetectionByTimestep = obs_mask,
++      Probability = p_obs,
++      ExtinctionJointProbability = p_joint,
++      ExtinctionConditionalProbability = if (p_obs > 0) p_joint / p_obs else NA_real_,
++      Scope = paste(
++        "ObservationHistory currently constrains only process detections occurring",
++        "at the end of selected timesteps; initial detection is used to initialise",
++        "information state but is not itself part of the observation-history event."))
++  }
++
+   escape <- NULL
+   if (!is.null(analysis_grid)) {
+     first <- .ina_pt_first_moment_escape(operators, state0, exports)
+@@ -5506,6 +5800,7 @@
+     Extinction = list(Method = ext_method,
+                       ProbabilityByHorizon = ext_h,
+                       BranchingFadeoutProbability = ext_e),
++    ObservationHistory = observation_history_result,
+     Escape = escape,
+     Diagnostics = unique(diagnostics),
+     ApproximationScope = c(
+@@ -16287,3 +16582,161 @@
+   ans$HeadlineEstimands<-list(PathogenGrowthRate=ans$PathogenGrowthRate,HostEndPopulation=ans$EndHostPopulation%||%ans$HostEndPopulationDiseaseFree,EndActivePathogen=ans$EndActivePathogenFiniteMean%||%ans$EndActivePathogen,PathogenEscapeProbability=ans$EscapeProbability)
+   ans
+ }
++
++###############################################################################
++### Observation-history extension v0.2: remaining INApest host architectures
++### Adds no-detection conditioning to Binary, Meta, MLU, Transition Matrix,
++### Vertebrate Node and Vertebrate Point. MetaPoint and PointTransitionMatrix
++### are implemented above by the validated v0.1 point-family extension.
++###############################################################################
++
++.ina_obshist_get <- function(args, name, default=NULL, required=FALSE) {
++  if (name %in% names(args)) return(args[[name]])
++  if (required) stop("ObservationHistory extension requires ", name)
++  default
++}
++
++.ina_binary_step_eval_observation <- function(step, qnext, mode, require_no_detection=FALSE) {
++  if (!isTRUE(require_no_detection)) return(.ina_binary_step_eval(step, qnext, mode))
++  n <- nrow(step$P); P <- step$P; s <- step$s; a <- step$a; e <- step$e; r <- step$r
++  d <- .ina_branch_clip(step$d)
++  if (mode != "dynamic") {
++    q <- .ina_branch_clip(qnext); qs <- (1-d)*q; out <- numeric(n)
++    for (i in seq_len(n)) {
++      off <- seq_len(n) != i
++      prod0 <- prod(1-P[i,off] + P[i,off]*qs[off])
++      f0 <- (1-s[i]) + s[i]*qs[i]*prod0
++      if (mode == "all_informed") {
++        sm <- s[i]*(1-e[i]); Pm <- P[i,off]*(1-r[i])
++        prod1 <- prod(1-Pm + Pm*qs[off])
++        f1 <- (1-sm) + sm*qs[i]*prod1
++        out[i] <- (1-a[i])*f0 + a[i]*f1
++      } else out[i] <- f0
++    }
++    return(.ina_branch_clip(out))
++  }
++  q <- .ina_branch_clip(qnext); qU <- q[seq_len(n)]; qH <- q[n+seq_len(n)]
++  ir <- step$ir; C <- step$C; outU <- outH <- numeric(n)
++  silentU <- (1-d)*qU
++  for (i in seq_len(n)) {
++    off <- seq_len(n) != i
++    prodU <- prod(1-P[i,off] + P[i,off]*silentU[off])
++    outU[i] <- (1-s[i]) + s[i]*silentU[i]*prodU
++    selfH <- (1-d[i])*((1-ir[i])*qU[i] + ir[i]*qH[i])
++    hc <- .ina_branch_clip(C[i,])
++    childH <- (1-d)*((1-hc)*qU + hc*qH)
++    prod0 <- prod(1-P[i,off] + P[i,off]*childH[off])
++    f0 <- (1-s[i]) + s[i]*selfH*prod0
++    sm <- s[i]*(1-e[i]); Pm <- P[i,off]*(1-r[i])
++    prod1 <- prod(1-Pm + Pm*childH[off])
++    f1 <- (1-sm) + sm*selfH*prod1
++    outH[i] <- (1-a[i])*f0 + a[i]*f1
++  }
++  .ina_branch_clip(c(outU,outH))
++}
++
++.ina_binary_observation_horizon <- function(steps, mode, mask, terminal=c("any","extinct")) {
++  terminal <- match.arg(terminal); n <- nrow(steps[[1]]$P)
++  q <- rep(if (terminal=="any") 1 else 0, if (mode=="dynamic") 2*n else n)
++  for (tt in rev(seq_along(steps))) q <- .ina_binary_step_eval_observation(steps[[tt]],q,mode,mask[tt])
++  q
++}
++
++.ina_obshist_standard_steps <- function(args, Model) {
++  T <- as.integer(.ina_obshist_get(args,"Ntimesteps",10)); InitialState <- .ina_obshist_get(args,"InitialState",required=TRUE)
++  InitialInfo <- .ina_obshist_get(args,"InitialInfo",0); InformationMode <- .ina_obshist_get(args,"InformationMode","auto")
++  ApplyInitialDetection <- isTRUE(.ina_obshist_get(args,"ApplyInitialDetection",TRUE)); SDDprob <- .ina_obshist_get(args,"SDDprob",required=TRUE)
++  LDDprob <- .ina_obshist_get(args,"LDDprob",0); LDDrate <- .ina_obshist_get(args,"LDDrate",0); EnvEstabProb <- .ina_obshist_get(args,"EnvEstabProb",1)
++  Survival <- .ina_obshist_get(args,"Survival",1); K <- .ina_obshist_get(args,"K",NULL); PropaguleProduction <- .ina_obshist_get(args,"PropaguleProduction",NULL)
++  PropaguleEstablishment <- .ina_obshist_get(args,"PropaguleEstablishment",1); Transition <- .ina_obshist_get(args,"Transition",NULL)
++  Nstages <- .ina_obshist_get(args,"Nstages",NULL); SeedbankK <- .ina_obshist_get(args,"SeedbankK",NULL); DetectionProb <- .ina_obshist_get(args,"DetectionProb",0)
++  ManageProb <- .ina_obshist_get(args,"ManageProb",0); EradicationProb <- .ina_obshist_get(args,"EradicationProb",0); MortalityProb <- .ina_obshist_get(args,"MortalityProb",0)
++  SpreadReduction <- .ina_obshist_get(args,"SpreadReduction",0); SEAM <- .ina_obshist_get(args,"SEAM",NULL); InfoRetentionProb <- .ina_obshist_get(args,"InfoRetentionProb",1)
++  InfoPersistenceSteps <- .ina_obshist_get(args,"InfoPersistenceSteps",NA); DispersalDensityFactor <- .ina_obshist_get(args,"DispersalDensityFactor",0)
++  FecundityReduction <- .ina_obshist_get(args,"FecundityReduction",0)
++  if (any(!is.na(as.numeric(InfoPersistenceSteps)))) stop("ObservationHistory is not yet implemented with programmed InfoPersistenceSteps")
++  SDD0 <- if (length(dim(SDDprob))==3L) SDDprob[,,1L] else as.matrix(SDDprob); n <- nrow(SDD0)
++  mode <- .ina_info_mode(InformationMode,ManageProb,InitialInfo,DetectionProb,SEAM,InfoRetentionProb,InfoPersistenceSteps)
++  steps <- vector("list",T)
++  if (Model=="INApest") {
++    for(tt in seq_len(T)) {
++      P <- inapest_edge_prob(.ina_slice_connection(SDDprob,tt,n,T,"SDDprob"),.ina_slice_connection(LDDprob,tt,n,T,"LDDprob"),.ina_slice_node(EnvEstabProb,tt,n,T,"EnvEstabProb"))
++      C <- if(is.null(SEAM)||length(SEAM)==1L) matrix(0,n,n) else as.matrix(SEAM); diag(C)<-0
++      steps[[tt]] <- list(P=P,s=.inapest_recycle(.ina_slice_node(Survival,tt,n,T,"Survival"),n,"Survival"),d=.inapest_recycle(.ina_slice_node(DetectionProb,tt,n,T,"DetectionProb"),n,"DetectionProb"),a=.inapest_recycle(.ina_slice_node(ManageProb,tt,n,T,"ManageProb"),n,"ManageProb"),e=.inapest_recycle(.ina_slice_node(EradicationProb,tt,n,T,"EradicationProb"),n,"EradicationProb"),r=.inapest_recycle(.ina_slice_node(SpreadReduction,tt,n,T,"SpreadReduction"),n,"SpreadReduction"),ir=.inapest_recycle(.ina_slice_node(InfoRetentionProb,tt,n,T,"InfoRetentionProb"),n,"InfoRetentionProb"),C=C)
++    }
++  } else if (Model=="INApestMeta") {
++    if(is.null(K)||is.null(PropaguleProduction)) stop("Meta ObservationHistory requires K and PropaguleProduction")
++    for(tt in seq_len(T)) steps[[tt]] <- .ina_meta_branch_step(.ina_slice_connection(SDDprob,tt,n,T,"SDDprob"),.ina_slice_connection(LDDprob,tt,n,T,"LDDprob"),LDDrate,.ina_slice_node(EnvEstabProb,tt,n,T,"EnvEstabProb"),.ina_slice_node(Survival,tt,n,T,"Survival"),.ina_slice_node(K,tt,n,T,"K"),.ina_slice_node(PropaguleProduction,tt,n,T,"PropaguleProduction"),.ina_slice_node(PropaguleEstablishment,tt,n,T,"PropaguleEstablishment"),.ina_slice_node(DetectionProb,tt,n,T,"DetectionProb"),.ina_slice_node(ManageProb,tt,n,T,"ManageProb"),.ina_slice_node(MortalityProb,tt,n,T,"MortalityProb"),.ina_slice_node(SpreadReduction,tt,n,T,"SpreadReduction"),SEAM,.ina_slice_node(InfoRetentionProb,tt,n,T,"InfoRetentionProb"),.ina_slice_node(FecundityReduction,tt,n,T,"FecundityReduction"))
++  } else if (Model=="INApestMetaTransitionMatrix") {
++    if(is.null(Transition)) stop("Transition ObservationHistory requires Transition"); if(is.null(Nstages)) Nstages<-nrow(as.matrix(Transition)); S<-as.integer(Nstages); if(is.null(K))K<-1;if(is.null(SeedbankK))SeedbankK<-K
++    for(tt in seq_len(T)){Ft<-.ina_slice_fecundity_transition(FecundityReduction,tt,n,S,T,"FecundityReduction");steps[[tt]]<-.ina_transition_branch_step(Transition,S,.ina_slice_connection(SDDprob,tt,n,T,"SDDprob"),.ina_slice_connection(LDDprob,tt,n,T,"LDDprob"),LDDrate,.ina_slice_node(EnvEstabProb,tt,n,T,"EnvEstabProb"),.ina_slice_node(PropaguleEstablishment,tt,n,T,"PropaguleEstablishment"),.ina_slice_stage(DetectionProb,tt,n,S,T,"DetectionProb"),.ina_slice_node(ManageProb,tt,n,T,"ManageProb"),.ina_slice_stage(MortalityProb,tt,n,S,T,"MortalityProb"),.ina_slice_node(SpreadReduction,tt,n,T,"SpreadReduction"),SEAM,.ina_slice_node(InfoRetentionProb,tt,n,T,"InfoRetentionProb"),DispersalDensityFactor,.ina_slice_node(K,tt,n,T,"K"),.ina_slice_node(SeedbankK,tt,n,T,"SeedbankK"),Ft)}
++  } else stop("Unsupported standard ObservationHistory model")
++  list(T=T,n=n,S=Nstages,mode=mode,steps=steps,InitialState=InitialState,InitialInfo=InitialInfo,ApplyInitialDetection=ApplyInitialDetection,DetectionProb=DetectionProb)
++}
++
++.ina_obshist_standard <- function(args, Model, mask) {
++  z <- .ina_obshist_standard_steps(args,Model)
++  if(Model=="INApest") {qC<-.ina_binary_observation_horizon(z$steps,z$mode,mask,"any");qJ<-.ina_binary_observation_horizon(z$steps,z$mode,mask,"extinct")} else {qC<-.ina_branch_observation_horizon(z$steps,z$mode,mask,"any");qJ<-.ina_branch_observation_horizon(z$steps,z$mode,mask,"extinct")}
++  combine <- function(q){if(z$mode=="dynamic") .ina_dynamic_initial_extinction(q,Model,z$T,z$InitialState,z$InitialInfo,z$ApplyInitialDetection,z$DetectionProb,z$n,z$S) else .ina_overall_extinction(q,.ina_dynamic_pgf_initial(Model,z$mode,z$T,z$InitialState,z$InitialInfo,z$ApplyInitialDetection,z$DetectionProb,z$n,z$S))}
++  c(P=combine(qC),Joint=combine(qJ))
++}
++
++.ina_obshist_mlu <- function(args, mask) {
++  T<-as.integer(.ina_obshist_get(args,"Ntimesteps",10)); X0<-as.matrix(.ina_obshist_get(args,"InitialState",required=TRUE)); n<-nrow(X0); L<-ncol(X0); SDDprob<-.ina_obshist_get(args,"SDDprob",required=TRUE); LDDprob<-.ina_obshist_get(args,"LDDprob",0); LDDrate<-.ina_obshist_get(args,"LDDrate",0); DetectionProb<-.ina_obshist_get(args,"DetectionProb",0); InitialInfo<-.ina_obshist_get(args,"InitialInfo",0); ApplyInitialDetection<-isTRUE(.ina_obshist_get(args,"ApplyInitialDetection",TRUE)); InfoPersistenceSteps<-.ina_obshist_get(args,"InfoPersistenceSteps",NA); if(any(!is.na(as.numeric(InfoPersistenceSteps))))stop("ObservationHistory is not yet implemented with programmed InfoPersistenceSteps")
++  mode<-.ina_info_mode(.ina_obshist_get(args,"InformationMode","auto"),.ina_obshist_get(args,"ManageProb",0),InitialInfo,DetectionProb,.ina_obshist_get(args,"SEAM",NULL),.ina_obshist_get(args,"InfoRetentionProb",1),InfoPersistenceSteps); steps<-vector("list",T)
++  K<-.ina_obshist_get(args,"K",required=TRUE); PP<-.ina_obshist_get(args,"PropaguleProduction",required=TRUE)
++  for(tt in seq_len(T)) steps[[tt]]<-.ina_mlu_branch_step(.ina_slice_connection(SDDprob,tt,n,T,"SDDprob"),.ina_slice_connection(LDDprob,tt,n,T,"LDDprob"),LDDrate,.ina_slice_node(.ina_obshist_get(args,"EnvEstabProb",1),tt,n,T,"EnvEstabProb"),.ina_slice_node(.ina_obshist_get(args,"Survival",1),tt,n,T,"Survival"),.ina_slice_K_mlu(K,tt,n,L,T),.ina_slice_node(PP,tt,n,T,"PropaguleProduction"),.ina_slice_node(.ina_obshist_get(args,"PropaguleEstablishment",1),tt,n,T,"PropaguleEstablishment"),.ina_slice_mlu(DetectionProb,tt,n,L,T,"DetectionProb"),.ina_slice_mlu(.ina_obshist_get(args,"ManageProb",0),tt,n,L,T,"ManageProb"),.ina_slice_mlu(.ina_obshist_get(args,"MortalityProb",0),tt,n,L,T,"MortalityProb"),.ina_slice_mlu(.ina_obshist_get(args,"SpreadReduction",0),tt,n,L,T,"SpreadReduction"),.ina_obshist_get(args,"SEAM",NULL),.ina_slice_node(.ina_obshist_get(args,"InfoRetentionProb",1),tt,n,T,"InfoRetentionProb"),.ina_slice_mlu(.ina_obshist_get(args,"FecundityReduction",0),tt,n,L,T,"FecundityReduction"))
++  qC<-.ina_branch_observation_horizon(steps,mode,mask,"any");qJ<-.ina_branch_observation_horizon(steps,mode,mask,"extinct")
++  c(P=.ina_mlu_initial_extinction(qC,mode,X0,InitialInfo,ApplyInitialDetection,DetectionProb,n,L,T),Joint=.ina_mlu_initial_extinction(qJ,mode,X0,InitialInfo,ApplyInitialDetection,DetectionProb,n,L,T))
++}
++
++.ina_vertebrate_step_eval_observation <- function(step,qnext,D,require_no_detection=FALSE){q<-as.numeric(qnext);if(require_no_detection)q<-(1-D)*q;K<-length(q);out<-numeric(K);for(j in seq_len(K)){tp<-step$TransitionProb[[j]];pin<-sum(tp);pex<-step$TransitionExportProb[j];pother<-pmax(0,1-pin);existing<-pother+sum(tp*q);bm<-step$BirthMean[[j]];birth<-exp(sum(bm*(q-1)));out[j]<-.ina_branch_clip(existing*birth)};out}
++.ina_vertebrate_observation_horizon <- function(steps,Dsteps,mask,terminal=c("any","extinct")){terminal<-match.arg(terminal);K<-nrow(steps[[1]]$MeanOperator);q<-rep(if(terminal=="any")1 else 0,K);for(tt in rev(seq_along(steps)))q<-.ina_vertebrate_step_eval_observation(steps[[tt]],q,Dsteps[[tt]],mask[tt]);q}
++.ina_obshist_vertebrate <- function(args,Model,mask){
++  if(!is.null(.ina_obshist_get(args,"Vertebrate",NULL)) && any(vapply(c("Birth","HomeRange","Control","Interaction"),function(nm)!is.null(.ina_obshist_get(args,"Vertebrate",NULL)[[nm]]),logical(1)))) stop("ObservationHistory for specialist nonlinear vertebrate modules is not closed under independent-lineage branching; use stochastic conditioning or a group PGF")
++  T<-as.integer(.ina_obshist_get(args,"Ntimesteps",10)); Transition<-.ina_obshist_get(args,"Transition",required=TRUE); DetectionProb<-.ina_obshist_get(args,"DetectionProb",0)
++  if(Model=="INApestVertebrateNode"){X0<-as.matrix(.ina_obshist_get(args,"InitialState",required=TRUE));SDD<-.ina_obshist_get(args,"SDDprob",required=TRUE);LDD<-.ina_obshist_get(args,"LDDprob",NULL);LDDrate<-.ina_obshist_get(args,"LDDrate",0);TM<-.ina_obshist_get(args,"TransitionSDDprob",NULL);TML<-.ina_obshist_get(args,"TransitionLDDprob",NULL);TMLr<-.ina_obshist_get(args,"TransitionLDDrate",0)} else {ISC<-.ina_obshist_get(args,"InitialStageCounts",.ina_obshist_get(args,"InitialState",required=TRUE));SDD<-.ina_obshist_get(args,"ReproductiveMovement",.ina_obshist_get(args,"SDDprob",required=TRUE));nc<-nrow(as.matrix(SDD));S0<-.ina_obshist_get(args,"Nstages",if(is.matrix(ISC))ncol(ISC)else length(ISC));X0<-if(is.matrix(ISC))as.matrix(ISC) else {m<-matrix(0,nc,S0);m[1,]<-ISC;m};LDD<-NULL;LDDrate<-0;TM<-.ina_obshist_get(args,"TransitionMovement",NULL);TML<-NULL;TMLr<-0}
++  n<-nrow(X0);S<-ncol(X0);steps<-lapply(seq_len(T),function(tt).ivanal_animal_node_step(tt,T,S,Transition,n,SDD,LDD,LDDrate,TM,TML,TMLr,.ina_obshist_get(args,"PropaguleEstablishment",1),.ina_obshist_get(args,"EnvEstabProb",1),.ina_obshist_get(args,"MortalityProb",0),.ina_obshist_get(args,"ManagementExposure",.ina_obshist_get(args,"ManageProb",0)),.ina_obshist_get(args,"FecundityReduction",0),.ina_obshist_get(args,"OutsideEstablishmentProb",1)))
++  Dsteps<-lapply(seq_len(T),function(tt){z<-.ina_slice_stage(DetectionProb,tt,n,S,T,"DetectionProb");if(length(z)==1)rep(z,n*S)else if(length(z)==S)rep(z,n) else as.vector(t(as.matrix(z)))})
++  qC<-.ina_vertebrate_observation_horizon(steps,Dsteps,mask,"any");qJ<-.ina_vertebrate_observation_horizon(steps,Dsteps,mask,"extinct");x0<-as.vector(t(X0));c(P=.ina_overall_extinction(qC,x0),Joint=.ina_overall_extinction(qJ,x0))
++}
++
++INApestAnalytical_pre_obshist8 <- INApestAnalytical
++INApestAnalytical <- function(...) {
++  args<-list(...); oh<-args$ObservationHistory
++  if(is.null(oh)) return(do.call(INApestAnalytical_pre_obshist8,args))
++  Model<-if(!is.null(args$Model))as.character(args$Model)[1L]else"INApest";T<-as.integer(.ina_obshist_get(args,"Ntimesteps",10));mask<-.ina_observation_history_mask(oh,T)
++  if(Model %in% c("INApestMetaPoint","INApestPointTransitionMatrix")) return(do.call(INApestAnalytical_pre_obshist8,args))
++  args0<-args;args0$ObservationHistory<-NULL;res<-do.call(INApestAnalytical_pre_obshist8,args0)
++  pj<-if(Model %in% c("INApest","INApestMeta","INApestMetaTransitionMatrix")) .ina_obshist_standard(args,Model,mask) else if(Model=="INApestMetaMultipleLandUse") .ina_obshist_mlu(args,mask) else if(Model %in% c("INApestVertebrateNode","INApestVertebratePoint")) .ina_obshist_vertebrate(args,Model,mask) else stop("ObservationHistory unsupported for Model=",Model)
++  pC<-unname(pj["P"]);pJ<-unname(pj["Joint"]);res$ObservationHistory<-list(NoDetectionByTimestep=mask,Probability=pC,ExtinctionJointProbability=pJ,ExtinctionConditionalProbability=if(pC>0)pJ/pC else NA_real_,Method="finite-horizon no-detection conditioning on the architecture-specific branching PGF",Diagnostics=if(Model %in% c("INApestVertebrateNode","INApestVertebratePoint"))"Vertebrate detection is observation-only in this analytical layer; response ManagementExposure remains externally specified, matching the host vertebrate analytical approximation." else NULL)
++  res
++}
++
++# MLU exact one-parent observation evaluator: preserve integer count PGF while
++# deleting all branches containing a detection at constrained timesteps.
++.ina_branch_step_eval_observation_pre_mlu_obshist <- .ina_branch_step_eval_observation
++.ina_branch_step_eval_observation <- function(step,qnext,mode=c('none','all_informed','dynamic'),require_no_detection=FALSE){
++  mode<-match.arg(mode)
++  if(identical(step$EvaluatorType,'MLUExact') && isTRUE(require_no_detection)){
++    B<-step$B;D<-as.numeric(step$Detection);if(length(D)==1L)D<-rep(D,B)
++    z<-step;z$Detection[]<-0;z$DetectionMatrix[,]<-0
++    q<-as.numeric(qnext)
++    if(mode=='dynamic') q<-c((1-D)*q[seq_len(B)],(1-D)*q[B+seq_len(B)]) else q<-(1-D)*q
++    return(.ina_mlu_branch_step_eval(z,q,mode))
++  }
++  .ina_branch_step_eval_observation_pre_mlu_obshist(step,qnext,mode,require_no_detection)
++}
++
++# Final NULL-parity wrapper correction: do not forward an explicit NULL
++# ObservationHistory through legacy ... dispatchers that reject unknown args.
++INApestAnalytical_pre_obshist8_nullfix <- INApestAnalytical
++INApestAnalytical <- function(...) {
++  args <- list(...)
++  if ('ObservationHistory' %in% names(args) && is.null(args$ObservationHistory)) {
++    args$ObservationHistory <- NULL
++    # invoke the pre-observation dispatcher, not the observation wrapper
++    return(do.call(INApestAnalytical_pre_obshist8, args))
++  }
++  do.call(INApestAnalytical_pre_obshist8_nullfix, args)
++}
