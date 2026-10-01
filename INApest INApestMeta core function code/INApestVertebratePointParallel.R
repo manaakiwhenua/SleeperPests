@@ -54,7 +54,7 @@
   for (nm in c(
     "PointHistory", "EventLog", "FinalPoints", "InfoSites", "ContactHistory",
     "InteractionEvents", "ControlObservationHistory", "Summary",
-    "BiocontrolHistory", "BiocontrolPointEvents"
+    "BiocontrolHistory", "BiocontrolPointEvents", "ContinuousPathogenEvents"
   )) {
     if (is.data.frame(x[[nm]]) && "perm" %in% names(x[[nm]]))
       x[[nm]]$perm <- rep(perm, nrow(x[[nm]]))
@@ -160,7 +160,7 @@ INApestVertebratePointParallel <- function(
     env <- environment(serial_fun)
     nms <- ls(env, all.names = TRUE)
     engine_symbols <- nms[grepl(
-      "^(\\.ipp_|\\.ipptm_|\\.iv_|\\.ibp_|\\.INApestPointTransitionMatrix_engine$|INApestPoint|INApestSpatial|INApestHabitat|INApestVertebratePoint$|INApestPointBiocontrol|INApestBiocontrolPoint)",
+      "^(\\.ipp_|\\.ipptm_|\\.iv_|\\.ibp_|\\.ivpcrk_|\\.inapest_|\\.inabc_|\\.iptm_|\\.INApestPointTransitionMatrix_engine$|INApestPoint|INApestSpatial|INApestHabitat|INApestVertebratePoint|INApestPointBiocontrol|INApestBiocontrol|INApestContinuous|INApestRK4|INApestStochastic|INApestCompartment)",
       nms
     )]
     if (length(engine_symbols))
@@ -168,6 +168,32 @@ INApestVertebratePointParallel <- function(
     if (length(Export))
       parallel::clusterExport(cl, Export, envir = parent.frame())
     parallel::clusterExport(cl, ".ivpp_relabel", envir = environment())
+
+    # Native-PSOCK dependency preflight. These symbols are the non-closure
+    # engine dependencies exercised by continuous point pathogen/biocontrol.
+    # Fail here with an explicit symbol list rather than later inside parLapply.
+    psock_required <- c(
+      "INApestStochasticCompartmentStep",
+      "INApestCompartmentMeanDerivative",
+      "INApestRK4Step",
+      ".inapest_tm_cbr_agent_rate_function",
+      ".inapest_tm_cbr_attacker_exposure",
+      "INApestBiocontrolPointNode",
+      "INApestPointBiocontrolStateHistory",
+      "INApestVertebratePointContinuousBiologyStep"
+    )
+    psock_missing <- parallel::clusterCall(
+      cl,
+      function(required) setdiff(required, ls(.GlobalEnv, all.names = TRUE)),
+      psock_required
+    )
+    bad_workers <- which(vapply(psock_missing, length, integer(1)) > 0L)
+    if (length(bad_workers)) {
+      detail <- paste(vapply(bad_workers, function(i)
+        paste0("worker ", i, ": ", paste(psock_missing[[i]], collapse = ", ")),
+        character(1)), collapse = "; ")
+      stop("PSOCK workers are missing required continuous point engine symbol(s): ", detail)
+    }
 
     xs <- parallel::parLapply(
       cl, seq_len(Nperm), worker, model_fun = serial_fun,
@@ -194,6 +220,7 @@ INApestVertebratePointParallel <- function(
     Summary = .ivpp_rbind(xs, "Summary"),
     BiocontrolHistory = .ivpp_rbind(xs, "BiocontrolHistory"),
     BiocontrolPointEvents = .ivpp_rbind(xs, "BiocontrolPointEvents"),
+    ContinuousPathogenEvents = .ivpp_rbind(xs, "ContinuousPathogenEvents"),
     ParallelMeta = list(
       Nperm = Nperm, Cores = Cores, Backend = backend_used,
       Seed = Seed, elapsed_seconds = elapsed

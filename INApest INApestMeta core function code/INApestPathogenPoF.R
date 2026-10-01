@@ -351,3 +351,169 @@ INApestPathogenPoFExactBinary <- function(StateProbability, PathogenPresent,
   free <- rowSums(P)==0
   INApestPathogenPoFCore(free,L,StateProbability)
 }
+
+
+###############################################################################
+### Integrated MLUTM pathogen proof-of-freedom extension (2026-10-01)
+###
+### Adds crossed pathogen state
+###   node x land-use x host-stage x pathogen-state x timestep x particle
+### to the canonical pathogen PoF source while preserving all existing models.
+###############################################################################
+
+.ipof_mlutm_array <- function(ModelOutput) {
+  ModelOutput <- .ipof_model_output(ModelOutput)
+  candidates <- c("PathogenMLUTMResults", "PathogenStageLandUseResults",
+                  "PathogenStageResults", "PathogenStateResults")
+  for (nm in candidates) {
+    x <- ModelOutput[[nm]]
+    if (!is.null(x) && length(dim(x)) == 6L)
+      return(list(Name = nm, Array = x, ModelOutput = ModelOutput))
+  }
+  NULL
+}
+
+.ipof_mlutm_state_names <- function(x) {
+  d <- dim(x)
+  if (length(d) != 6L)
+    stop("MLUTM pathogen history must be a 6-D array: node x land-use x host-stage x pathogen-state x timestep x particle.", call. = FALSE)
+  st <- dimnames(x)[[4L]]
+  if (is.null(st) || any(!nzchar(st)))
+    stop("MLUTM pathogen history requires pathogen-state dimnames on dimension 4.", call. = FALSE)
+  st
+}
+
+.ipof_mlutm_detection_cube <- function(Pathogen, timestep, n_nodes, n_landuses,
+                                       n_stages, Ntimesteps) {
+  Pathogen <- .ipof_pathogen_spec(Pathogen)
+  x <- Pathogen$DetectionProb
+  if (is.function(x)) {
+    a <- list(timestep = timestep, n_nodes = n_nodes,
+              n_landuses = n_landuses, n_stages = n_stages,
+              Ntimesteps = Ntimesteps)
+    fm <- names(formals(x))
+    if (!is.null(fm) && !("..." %in% fm)) a <- a[intersect(names(a), fm)]
+    x <- do.call(x, a)
+  }
+
+  d <- dim(x)
+  out <- NULL
+  if (!is.null(d)) {
+    di <- as.integer(d)
+    if (length(di) == 2L && identical(di, c(n_nodes, n_landuses))) {
+      out <- array(0, c(n_nodes, n_landuses, n_stages))
+      for (s in seq_len(n_stages)) out[,,s] <- x
+    } else if (length(di) == 2L && identical(di, c(n_nodes, Ntimesteps))) {
+      out <- array(0, c(n_nodes, n_landuses, n_stages))
+      for (i in seq_len(n_nodes)) out[i,,] <- x[i,timestep]
+    } else if (length(di) == 3L && identical(di, c(n_nodes, n_landuses, n_stages))) {
+      out <- array(x, di)
+    } else if (length(di) == 4L && identical(di, c(n_nodes, n_landuses, n_stages, Ntimesteps))) {
+      out <- array(x[,,,timestep, drop = TRUE], c(n_nodes, n_landuses, n_stages))
+    } else {
+      stop("MLUTM Pathogen DetectionProb array must be nodes x land-uses, nodes x timesteps, nodes x land-uses x host-stages, or nodes x land-uses x host-stages x timesteps; use a resolver function for other schedules.", call. = FALSE)
+    }
+  } else {
+    x <- as.numeric(x)
+    if (!length(x) || any(!is.finite(x)))
+      stop("MLUTM Pathogen DetectionProb must resolve to finite numeric values.", call. = FALSE)
+    if (length(x) == 1L) {
+      out <- array(x, c(n_nodes, n_landuses, n_stages))
+    } else if (length(x) == n_nodes && length(x) == Ntimesteps) {
+      stop("Ambiguous MLUTM DetectionProb vector: n_nodes equals Ntimesteps. Use nodes x timesteps matrix or a resolver function.", call. = FALSE)
+    } else if (length(x) == n_nodes) {
+      out <- array(0, c(n_nodes, n_landuses, n_stages))
+      for (i in seq_len(n_nodes)) out[i,,] <- x[i]
+    } else if (length(x) == Ntimesteps) {
+      out <- array(x[timestep], c(n_nodes, n_landuses, n_stages))
+    } else {
+      stop("MLUTM Pathogen DetectionProb vector must be scalar, length nodes, or length Ntimesteps; use a shaped array/matrix or resolver function for land-use/stage-specific schedules.", call. = FALSE)
+    }
+  }
+  if (any(!is.finite(out)) || any(out < 0 | out > 1))
+    stop("MLUTM Pathogen DetectionProb must resolve to [0,1].", call. = FALSE)
+  array(.ipof_clip01(as.numeric(out)), dim = dim(out), dimnames = dimnames(out))
+}
+
+# Preserve the original implementations for every pre-existing architecture.
+INApestPathogenFreedomState_pre_mlutm <- INApestPathogenFreedomState
+INApestPathogenObservationLikelihood_pre_mlutm <- INApestPathogenObservationLikelihood
+
+INApestPathogenFreedomState <- function(ModelOutput, Pathogen) {
+  z <- .ipof_mlutm_array(ModelOutput)
+  if (is.null(z))
+    return(INApestPathogenFreedomState_pre_mlutm(ModelOutput, Pathogen))
+
+  Pathogen <- .ipof_pathogen_spec(Pathogen)
+  x <- z$Array; d <- dim(x); st <- .ipof_mlutm_state_names(x)
+  active_states <- .ipof_active_states(Pathogen)
+  active_idx <- match(active_states, st)
+  if (anyNA(active_idx))
+    stop("Required active pathogen state missing from MLUTM pathogen history: ",
+         paste(active_states[is.na(active_idx)], collapse = ", "), call. = FALSE)
+
+  active <- apply(x[,,,active_idx,,,drop = FALSE], c(1,5,6), sum)
+  if (length(dim(active)) == 2L)
+    active <- array(active, dim = c(d[1], d[5], d[6]))
+  freedom <- apply(active, c(2,3), sum) == 0
+  list(Type = "mlutm", ActiveCount = active, Freedom = freedom,
+       Nnodes = d[1], Nlanduses = d[2], Nstages = d[3],
+       Ntimesteps = d[5], Nparticles = d[6], SourceField = z$Name)
+}
+
+INApestPathogenObservationLikelihood <- function(ModelOutput, Pathogen, timestep,
+                                                  Observation = 0) {
+  z <- .ipof_mlutm_array(ModelOutput)
+  if (is.null(z))
+    return(INApestPathogenObservationLikelihood_pre_mlutm(
+      ModelOutput, Pathogen, timestep, Observation))
+
+  PathogenSpec <- .ipof_pathogen_spec(Pathogen)
+  fs <- INApestPathogenFreedomState(ModelOutput, Pathogen)
+  if (timestep < 1L || timestep > fs$Ntimesteps)
+    stop("timestep outside model output.", call. = FALSE)
+  x <- z$Array; st <- .ipof_mlutm_state_names(x)
+  detectable <- if (PathogenSpec$Model == "Binary") "Present" else "I"
+  jj <- match(detectable, st)
+  if (is.na(jj))
+    stop("Detectable pathogen state '", detectable,
+         "' is absent from MLUTM pathogen history.", call. = FALSE)
+
+  p <- .ipof_mlutm_detection_cube(Pathogen, timestep, fs$Nnodes,
+                                  fs$Nlanduses, fs$Nstages, fs$Ntimesteps)
+  no_node <- matrix(1, nrow = fs$Nnodes, ncol = fs$Nparticles)
+  for (pp in seq_len(fs$Nparticles)) {
+    I <- array(x[,,,jj,timestep,pp,drop = TRUE],
+               c(fs$Nnodes, fs$Nlanduses, fs$Nstages))
+    for (i in seq_len(fs$Nnodes))
+      no_node[i, pp] <- prod((1 - p[i,,])^I[i,,])
+  }
+
+  if (length(Observation) == 1L) {
+    if (is.na(Observation) || !(Observation %in% c(0,1)))
+      stop("Scalar Observation must be 0 (no detection) or 1 (one or more detections).", call. = FALSE)
+    l0 <- apply(no_node, 2, prod)
+    return(if (Observation == 0) l0 else 1 - l0)
+  }
+  if (length(Observation) != fs$Nnodes)
+    stop("Node Observation must have one value per node.", call. = FALSE)
+  if (any(!is.na(Observation) & !(Observation %in% c(0,1))))
+    stop("Node Observation values must be 0, 1 or NA.", call. = FALSE)
+  out <- rep(1, fs$Nparticles)
+  for (i in seq_len(fs$Nnodes)) if (!is.na(Observation[i]))
+    out <- out * if (Observation[i] == 0) no_node[i,] else (1 - no_node[i,])
+  out
+}
+
+INApestMLUTMPathogenPoF <- function(ModelOutput, Pathogen,
+                                    ObservationHistory = NULL,
+                                    PriorWeights = NULL,
+                                    ReplayRequired = NULL) {
+  z <- .ipof_mlutm_array(ModelOutput)
+  if (is.null(z))
+    stop("ModelOutput does not contain a 6-D MLUTM pathogen history.", call. = FALSE)
+  INApestPathogenPoF(ModelOutput, Pathogen,
+                     ObservationHistory = ObservationHistory,
+                     PriorWeights = PriorWeights,
+                     ReplayRequired = ReplayRequired)
+}

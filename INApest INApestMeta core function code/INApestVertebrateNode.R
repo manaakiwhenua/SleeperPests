@@ -1466,6 +1466,10 @@ BlockedTransitionMortality = 0,                 # Mortality when stage progressi
 OngoingExternalInvasion = F,                    # Allow new host incursions after initialisation
 OngoingExternalInfo = F,                        # Allow new external information after initialisation
 Vertebrate = NULL,                              # Optional Birth/HomeRange/Control/Interaction modules
+Pathogen = NULL,                                # Optional pathogen process specification
+InitialPathogenState = NULL,                    # Starting node x stage x pathogen-state counts
+StageMixing = NULL,                             # Demographic-stage mixing used for pathogen transmission
+ExternalPathogenStateProb = NULL,               # Pathogen-state distribution for external host arrivals
 OutputDir = NA,                                 # Directory for saved outputs
 DoPlots = TRUE,                                 # Legacy plotting option; plotting is post-processing
 InfoTriggeredDetectionProb = 0,                 # Detection probability where information already exists
@@ -1482,6 +1486,9 @@ Biocontrol = NULL    # Optional non-pathogen biocontrol companion
 if (!exists(".iv_validate_vertebrate", mode = "function"))
   stop("INApestVertebrateHelpers.R must be sourced before INApestVertebrateNode().")
 .iv_validate_vertebrate(Vertebrate)
+if(!is.null(Pathogen) && !inherits(Pathogen, "INApestPathogen")) stop("Pathogen must be NULL or created by INApestPathogen().")
+if(is.null(Pathogen) && !is.null(InitialPathogenState)) stop("InitialPathogenState requires Pathogen.")
+if(!is.null(Pathogen) && !exists(".iv_node_pathogen_transport",mode="function")) stop("Source INApestVertebrateNodePathogenSupport.R before pathogen-enabled runs.")
 BirthModule <- .iv_module(Vertebrate, "Birth")
 HomeRangeModule <- .iv_module(Vertebrate, "HomeRange")
 ControlModule <- .iv_module(Vertebrate, "Control")
@@ -1491,6 +1498,14 @@ if(!is.function(LocalDynamics))
 # Force the argument before any parallel worker closure is created. This keeps
 # the selected default or user-supplied function as an explicit model input.
 force(LocalDynamics)
+CouplesPathogen <- isTRUE(attr(LocalDynamics,"INApestCouplesPathogen"))
+CouplesBiocontrol <- isTRUE(attr(LocalDynamics,"INApestCouplesBiocontrol"))
+RunLocalWhenEmpty <- isTRUE(attr(LocalDynamics,"INApestRunWhenEmpty"))
+if(CouplesPathogen && is.null(Pathogen)) stop("Continuous coupled-pathogen LocalDynamics requires Pathogen.")
+if(!is.null(Pathogen) && !CouplesPathogen) {
+  if(!identical(LocalDynamics,.iv_local_dynamics_transition_matrix)) stop("Discrete pathogen-enabled Vertebrate Node requires the validated default LocalDynamics; use an INApest continuous VN adaptor for custom coupled H+P/H+P+B dynamics.")
+  LocalDynamics <- .iv_node_pathogen_transport
+}
 # Validate the host-engine contract before starting stochastic simulation.
 n_nodes <- nrow(SDDprob)
 if(!is.numeric(Nperm) || length(Nperm)!=1L || !is.finite(Nperm) || Nperm<1 || Nperm!=floor(Nperm)) stop("Nperm must be a positive integer")
@@ -1512,6 +1527,7 @@ if(UseBiocontrol) {
   BiocontrolContext <- INApestBiocontrolContext(Architecture="vertebrate_node", n_nodes=n_nodes, Ntimesteps=Ntimesteps, host_stages=seq_len(Nstages))
   BiocontrolEngine$Validate(BiocontrolContext)
 }
+if(CouplesBiocontrol && !UseBiocontrol) stop("Continuous coupled-biocontrol LocalDynamics requires Biocontrol.")
 # Validate fixed or time-varying node connectivity.
 .ValidateConnectivityTM <- function(x,name,allow_disabled_scalar=FALSE) {
   if(allow_disabled_scalar && length(x)==1L && (is.na(x) || identical(as.numeric(x),0))) return(invisible(TRUE))
@@ -1760,6 +1776,16 @@ PopulationStageResults = array(dim = c(nrow(SDDprob),Nstages,Ntimesteps,Nperm))
 # Allocate companion histories only for active runs. Legacy host/pathogen
 # history allocation is unchanged when Biocontrol = NULL.
 BiocontrolHistory <- if(UseBiocontrol) INApestBiocontrolHistory(Biocontrol, BiocontrolContext, Nperm=Nperm) else NULL
+PathogenStageResults <- PathogenDeathResults <- NewInfectionResults <- PathogenIntroducedResults <- PathogenExternalResults <- PathogenDetectedResults <- NULL
+if(!is.null(Pathogen)) {
+  .vp_states <- Pathogen$States; .vp_P <- length(.vp_states); .vp_nodes <- nrow(SDDprob)
+  PathogenStageResults <- array(0L,dim=c(.vp_nodes,Nstages,.vp_P,Ntimesteps,Nperm),dimnames=list(NULL,NULL,.vp_states,NULL,NULL))
+  PathogenDeathResults <- array(0L,dim=c(.vp_nodes,Nstages,Ntimesteps,Nperm))
+  NewInfectionResults <- array(0L,dim=c(.vp_nodes,Nstages,Ntimesteps,Nperm))
+  PathogenIntroducedResults <- array(0L,dim=c(.vp_nodes,Nstages,Ntimesteps,Nperm))
+  PathogenExternalResults <- array(0L,dim=c(.vp_nodes,Nstages,.vp_P,Ntimesteps,Nperm),dimnames=list(NULL,NULL,.vp_states,NULL,NULL))
+  PathogenDetectedResults <- array(0L,dim=c(.vp_nodes,Ntimesteps,Nperm))
+}
 
 # Allocate host/pest presence histories.
 InvasionResults = array(dim = c(nrow(SDDprob),Ntimesteps,Nperm))
@@ -1983,6 +2009,7 @@ N <- InitBio
 # Initialise the independent node-based agent populations from the companion
 # specification after the parent host state has been initialised.
 BiocontrolState <- if(UseBiocontrol) BiocontrolEngine$Initial(N, BiocontrolContext) else NULL
+if(!is.null(Pathogen)) PathogenStageState <- INApestPathogenStageState(N,Pathogen,InitialPathogenState,Ntimesteps)
 if(sum(N) == 0 && OngoingExternalInvasion == F)
   warning("No initial populations and no future external invasions")
 
@@ -2324,7 +2351,13 @@ if(UseInfoPersistence == T)
     N <- N0
   }
   
-  if(sum(N0)>0 ) 
+  # Reset per-timestep continuous-coupling diagnostics before the optional
+  # local-biology step. This matters when the host is empty and a coupled
+  # pathogen LocalDynamics intentionally does not run until a later timestep.
+  .vp_deaths_local <- .vp_newinf_local <- NULL
+  .vn_bc_impact_local <- NULL
+
+  if(sum(N0)>0 || RunLocalWhenEmpty) 
   {
   NodeBirthSpec <- NULL
   if(!is.null(BirthModule))
@@ -2346,6 +2379,7 @@ if(UseInfoPersistence == T)
     )
     }
       
+  if(!is.null(Pathogen)) PathogenStageState <- .iptm_reconcile(PathogenStageState,N0)
   LocalDynamicsArgs <- list(nodetransition = NodeTransition, weights = Weights, sddprob = NodeSDDprob,
                             nodeenvestabprob = NodeEnvEstabProb, n0 = N0, lddprob = NodeLDDprob,
                             lddrate = LDDrate, nodeK = NodeK, node.seedbankK = NodeSeedbankK,
@@ -2391,7 +2425,37 @@ if(UseInfoPersistence == T)
   } else if(TransitionMovementConfigured) {
     stop("Custom LocalDynamics must accept 'transition_sddprob', 'transition_lddprob' and 'transition_lddrate' arguments (or ...) when transition movement is active")
   }
-  N <- do.call(LocalDynamics, LocalDynamicsArgs)
+  if("timestep" %in% LocalDynamicsFormals || "..." %in% LocalDynamicsFormals) LocalDynamicsArgs$timestep <- timestep
+  if("Ntimesteps" %in% LocalDynamicsFormals || "..." %in% LocalDynamicsFormals) LocalDynamicsArgs$Ntimesteps <- Ntimesteps
+  if(!is.null(Pathogen)) {
+    LocalDynamicsArgs$pathogen_state <- PathogenStageState
+    LocalDynamicsArgs$Pathogen <- Pathogen
+    LocalDynamicsArgs$StageMixing <- StageMixing
+  }
+  if(CouplesBiocontrol) {
+    LocalDynamicsArgs$biocontrol_state <- BiocontrolState
+    LocalDynamicsArgs$biocontrol <- Biocontrol
+    LocalDynamicsArgs$biocontrol_engine <- BiocontrolEngine
+    LocalDynamicsArgs$biocontrol_context <- BiocontrolContext
+  }
+  LocalDynamicsResult <- do.call(LocalDynamics, LocalDynamicsArgs)
+  if(!is.null(Pathogen) || CouplesBiocontrol) {
+    if(!is.list(LocalDynamicsResult) || is.null(LocalDynamicsResult$N)) stop("Coupled/pathogen Vertebrate LocalDynamics must return a list containing N.")
+    N <- LocalDynamicsResult$N
+    if(!is.null(Pathogen)) {
+      if(is.null(LocalDynamicsResult$PathogenState)) stop("Pathogen-aware LocalDynamics must return PathogenState.")
+      PathogenStageState <- LocalDynamicsResult$PathogenState
+      if(CouplesPathogen) {
+        .vp_deaths_local <- LocalDynamicsResult$PathogenDeaths
+        .vp_newinf_local <- LocalDynamicsResult$NewInfections
+      }
+    }
+    if(CouplesBiocontrol) {
+      if(is.null(LocalDynamicsResult$BiocontrolState) || is.null(LocalDynamicsResult$BiocontrolImpact)) stop("Coupled biocontrol LocalDynamics must return BiocontrolState and BiocontrolImpact.")
+      BiocontrolState <- LocalDynamicsResult$BiocontrolState
+      .vn_bc_impact_local <- LocalDynamicsResult$BiocontrolImpact
+    }
+  } else N <- LocalDynamicsResult
   } 
  # Apply programmed stopping after last known local presence
 NodeInfoPersistenceSteps = InfoPersistenceSteps
@@ -2428,6 +2492,7 @@ if(length(InfoDecayNodes) > 0)
   }
  
  
+ if(!is.null(Pathogen)) N_before_external_pathogen <- N
  # Add invasion resulting from colonisation from external sources
  if(OngoingExternalInvasion == T)
   {
@@ -2441,6 +2506,12 @@ if(length(InfoDecayNodes) > 0)
   if(is.na(IncursionStartPop) == F) 
 	  N[,1] = N[,1]+ExternalInvasion*IncursionStartPop
  
+  }
+
+  if(!is.null(Pathogen)) {
+    .vp_ext <- .iv_node_external_pathogen(PathogenStageState,N_before_external_pathogen,N,ExternalPathogenStateProb,Pathogen,timestep,Ntimesteps)
+    PathogenStageState <- .vp_ext$State
+    if(!is.null(.vp_ext$External)) PathogenExternalResults[,,,timestep,perm] <- .vp_ext$External
   }
 
   # Optional aggregate social/contact/disease-state interaction. The hook can
@@ -2460,15 +2531,38 @@ if(length(InfoDecayNodes) > 0)
     )
     }
   
+  if(!is.null(Pathogen)) PathogenStageState <- .iptm_reconcile(PathogenStageState,N)
   # Ensure all stage populations are integers
   N <- floor(N)
-  if(UseBiocontrol) {
-    # Apply one companion step at the established biological-state boundary.
-    # The companion returns host losses, updated agent state and explicit impacts.
+  if(!is.null(Pathogen)) {
+    PathogenStageState <- .iptm_reconcile(PathogenStageState,N)
+    if(CouplesPathogen) {
+      N <- apply(PathogenStageState,c(1,2),sum)
+      .vp_deaths <- if(is.null(.vp_deaths_local)) matrix(0L,nrow(N),ncol(N)) else matrix(as.integer(.vp_deaths_local),nrow(N),ncol(N))
+      .vp_newinf <- if(is.null(.vp_newinf_local)) matrix(NA_integer_,nrow(N),ncol(N)) else matrix(.vp_newinf_local,nrow(N),ncol(N))
+      .vp_intro <- matrix(0L,nrow(N),ncol(N))
+    } else {
+      .vp_step <- .iptm_pathogen_step(PathogenStageState,Pathogen,timestep,Ntimesteps,StageMixing)
+      PathogenStageState <- .vp_step$State
+      N <- apply(PathogenStageState,c(1,2),sum)
+      .vp_deaths <- .vp_step$Deaths; .vp_newinf <- .vp_step$NewInfections; .vp_intro <- .vp_step$Introduced
+    }
+  } else .vp_deaths <- .vp_newinf <- .vp_intro <- NULL
+  if(UseBiocontrol && CouplesBiocontrol) {
+    for(.vn_nm in names(Biocontrol$Agents)) {
+      .vn_a <- Biocontrol$Agents[[.vn_nm]]
+      .vn_M <- .inabc_resolve_movement(.vn_a$Movement,timestep,BiocontrolContext,.vn_a)
+      BiocontrolState[[.vn_nm]] <- .inabc_move_agent(BiocontrolState[[.vn_nm]],.vn_M,.vn_a$MovementStages)
+      storage.mode(BiocontrolState[[.vn_nm]]) <- "integer"
+    }
+    BiocontrolHistory <- INApestBiocontrolRecord(BiocontrolHistory,BiocontrolState,.vn_bc_impact_local,timestep,perm)
+  }
+  if(UseBiocontrol && !CouplesBiocontrol) {
     bc <- BiocontrolEngine$Step(N, BiocontrolState, timestep, BiocontrolContext)
     N <- bc$Target
     BiocontrolState <- bc$State
     BiocontrolHistory <- INApestBiocontrolRecord(BiocontrolHistory, BiocontrolState, bc$Impact, timestep, perm)
+    if(!is.null(Pathogen)) PathogenStageState <- .iptm_reconcile(PathogenStageState,N)
   }
  
 # Add nodes with information resulting from external sources
@@ -2501,6 +2595,12 @@ PopulationResults[, timestep, perm] <- weighted_population
  
  # Record stage populations
  PopulationStageResults[,,timestep,perm] = N
+ if(!is.null(Pathogen)) {
+   PathogenStageResults[,,,timestep,perm] <- PathogenStageState
+   PathogenDeathResults[,,timestep,perm] <- .vp_deaths
+   NewInfectionResults[,,timestep,perm] <- .vp_newinf
+   PathogenIntroducedResults[,,timestep,perm] <- .vp_intro
+ }
 
  # Freeze information available before this round's surveillance.
  # Routine control detections occurred earlier but are deliberately not registered
@@ -2545,6 +2645,15 @@ PopulationResults[, timestep, perm] <- weighted_population
  HaveInfoResults[,timestep,perm] <- HaveInfo
 
  # Legacy DetectedResults remains the persistent known-present state.
+ if(!is.null(Pathogen)) {
+   PathogenDetectedNow <- .iv_node_pathogen_detect(PathogenStageState,Pathogen,timestep,Ntimesteps)
+   PathogenDetectedResults[,timestep,perm] <- PathogenDetectedNow
+   if(isTRUE(Pathogen$DetectionTriggersInfo) && any(PathogenDetectedNow==1L)) {
+     .vp_known <- which(PathogenDetectedNow==1L)
+     HaveInfo[.vp_known] <- 1
+     if(UseInfoPersistence == T) LastKnownPresence[.vp_known] <- timestep
+   }
+ }
  DetectedResults[,timestep,perm] = HaveInfo*Invaded 
  }
 }
@@ -2581,6 +2690,14 @@ if(SaveResults) {
   saveRDS(ControlDeathResults, paste0(FileNameStem,"VertebrateControlDeaths.rds"))
   # Save the additional companion history only when biocontrol is active.
   if(UseBiocontrol) saveRDS(BiocontrolHistory, paste0(FileNameStem,"BiocontrolHistory.rds"))
+  if(!is.null(Pathogen)) {
+    saveRDS(PathogenStageResults,paste0(FileNameStem,"PathogenStageLargeOut.rds"))
+    saveRDS(PathogenDeathResults,paste0(FileNameStem,"PathogenDeathLargeOut.rds"))
+    saveRDS(NewInfectionResults,paste0(FileNameStem,"NewInfectionLargeOut.rds"))
+    saveRDS(PathogenIntroducedResults,paste0(FileNameStem,"PathogenIntroducedLargeOut.rds"))
+    saveRDS(PathogenExternalResults,paste0(FileNameStem,"PathogenExternalLargeOut.rds"))
+    saveRDS(PathogenDetectedResults,paste0(FileNameStem,"PathogenDetectedLargeOut.rds"))
+  }
   saveRDS(ControlDetectionResults, paste0(FileNameStem,"VertebrateControlDetections.rds"))
   saveRDS(ControlCostResults, paste0(FileNameStem,"VertebrateControlCost.rds"))
 }
@@ -2866,7 +2983,15 @@ out <- list(
   # result fields.
   BiocontrolHistory = BiocontrolHistory
 )
-class(out) <- c("INApestVertebrateNode", "list")
+if(!is.null(Pathogen)) {
+  out$PathogenStage <- PathogenStageResults
+  out$PathogenDeaths <- PathogenDeathResults
+  out$NewInfections <- NewInfectionResults
+  out$PathogenIntroduced <- PathogenIntroducedResults
+  out$PathogenExternal <- PathogenExternalResults
+  out$PathogenDetected <- PathogenDetectedResults
+  class(out) <- c("INApestVertebrateNodePathogen","INApestVertebrateNode","list")
+} else class(out) <- c("INApestVertebrateNode","list")
 invisible(out)
 }
 

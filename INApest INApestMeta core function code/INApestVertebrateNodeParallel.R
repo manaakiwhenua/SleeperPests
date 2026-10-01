@@ -150,7 +150,7 @@ INApestVertebrateNodeParallel <- function(
     env <- environment(serial_fun)
     nms <- ls(env, all.names = TRUE)
     engine_symbols <- nms[grepl(
-      "^(\\.iv_|INApestVertebrateNode$|\\.inabc_|INApestBiocontrol)", nms
+      "^(\\.iv_|\\.iptm_|\\.inabc_|\\.inapest_rk4_|\\.inapest_sfb_|\\.inapest_scb_|\\.inapest_tm_|INApestVertebrateNode$|INApestBiocontrol|INApestPathogen|INApestRK4|INApestStochastic|INApestCompartment|INApestContinuous|INApestTMRK4|INApestVNRK4)", nms
     )]
     if (length(engine_symbols))
       parallel::clusterExport(cl, engine_symbols, envir = env)
@@ -177,7 +177,9 @@ INApestVertebrateNodeParallel <- function(
     "InformationStateBeforeSurveillanceResults", "HaveInfoResults",
     "BackgroundDetectionProbabilityResults", "InfoTriggeredDetectionProbabilityResults",
     "RoutineControlObservationAbundanceResults", "RoutineControlDetectionProbabilityResults",
-    "ControlDetectionResults", "ControlDeathResults", "ControlCostResults"
+    "ControlDetectionResults", "ControlDeathResults", "ControlCostResults",
+    "PathogenStage", "PathogenDeaths", "NewInfections", "PathogenIntroduced",
+    "PathogenExternal", "PathogenDetected"
   )
   combined <- setNames(lapply(fields, function(nm) .ivnp_bind_permutations(xs, nm)), fields)
 
@@ -204,7 +206,9 @@ INApestVertebrateNodeParallel <- function(
       Seed = Seed, elapsed_seconds = elapsed
     )
   ))
-  class(out) <- c("INApestVertebrateNodeParallel", "INApestVertebrateNode", "list")
+  if(!is.null(combined$PathogenStage))
+    class(out) <- c("INApestVertebrateNodePathogenParallel","INApestVertebrateNodeParallel","INApestVertebrateNodePathogen","INApestVertebrateNode","list")
+  else class(out) <- c("INApestVertebrateNodeParallel", "INApestVertebrateNode", "list")
 
   if (SaveResults) {
     if (is.na(OutputDir)) OutputDir <- ""

@@ -1430,6 +1430,14 @@ if (anyDuplicated(names(LocalDynamicsArgs)))
 force(LocalDynamics)
 force(LocalDynamicsArgs)
 UserLocalDynamicsArgs <- LocalDynamicsArgs
+LocalDynamicsFormalsStatic <- names(formals(LocalDynamics))
+LocalDynamicsHasTimestep <- "timestep" %in% LocalDynamicsFormalsStatic
+LocalDynamicsHasNtimesteps <- "Ntimesteps" %in% LocalDynamicsFormalsStatic
+LocalDynamicsRunWhenEmpty <- isTRUE(attr(LocalDynamics, "INApestRunWhenEmpty"))
+LocalDynamicsCouplesPathogen <- isTRUE(attr(LocalDynamics, "INApestCouplesPathogen"))
+LocalDynamicsCouplesBiocontrol <- isTRUE(attr(LocalDynamics, "INApestCouplesBiocontrol"))
+if(LocalDynamicsCouplesPathogen && is.null(Pathogen)) stop("Coupled RK LocalDynamics requires Pathogen to be supplied")
+if(LocalDynamicsCouplesPathogen && identical(Pathogen$Model,"Binary")) stop("Coupled RK LocalDynamics does not support Pathogen Model = 'Binary'")
 # Validate the host-engine contract before starting stochastic simulation.
 n_nodes <- nrow(SDDprob)
 if(!is.numeric(Nperm) || length(Nperm)!=1L || !is.finite(Nperm) || Nperm<1 || Nperm!=floor(Nperm)) stop("Nperm must be a positive integer")
@@ -1450,7 +1458,11 @@ if(UseBiocontrol) {
   # the companion; validation occurs once before stochastic simulation begins.
   BiocontrolContext <- INApestBiocontrolContext(Architecture="transition", n_nodes=n_nodes, Ntimesteps=Ntimesteps, host_stages=seq_len(Nstages))
   BiocontrolEngine$Validate(BiocontrolContext)
+  force(BiocontrolEngine); force(BiocontrolContext)
 }
+if(LocalDynamicsCouplesBiocontrol && !UseBiocontrol) stop("Coupled RK LocalDynamics requires Biocontrol to be supplied")
+if(!is.null(Pathogen) && LocalDynamicsCouplesBiocontrol && !LocalDynamicsCouplesPathogen)
+  stop("When Pathogen and coupled Biocontrol are both active, LocalDynamics must couple both in the same biological step")
 # Validate fixed or time-varying node connectivity.
 .ValidateConnectivityTM <- function(x,name,allow_disabled_scalar=FALSE) {
   if(allow_disabled_scalar && length(x)==1L && (is.na(x) || identical(as.numeric(x),0))) return(invisible(TRUE))
@@ -1945,7 +1957,7 @@ if(!is.null(Pathogen)) {
     stop("Source INApestPathogenTransitionMatrix.R before using Pathogen")
   PathogenStageState <- INApestPathogenStageState(N, Pathogen, InitialPathogenState, Ntimesteps)
 }
-if(sum(N) == 0 && OngoingExternalInvasion == F)
+if(sum(N) == 0 && OngoingExternalInvasion == F && !LocalDynamicsRunWhenEmpty)
   warning("No initial populations and no future external invasions")
 
 # Initialise response information independently of true host abundance.
@@ -2272,7 +2284,7 @@ if(UseInfoPersistence == T)
     N <- N0
   }
   
-  if(sum(N0)>0 ) 
+  if(sum(N0)>0 || LocalDynamicsRunWhenEmpty) 
   {
       
   LocalDynamicsArgs <- list(nodetransition = NodeTransition, weights = Weights, sddprob = NodeSDDprob,
@@ -2283,6 +2295,14 @@ if(UseInfoPersistence == T)
                             MaxInteger = MaxInteger, BlockedTransitionMortality = BlockedTransitionMortality,
                             DispersalDensityFactor = DispersalDensityFactor)
   LocalDynamicsFormals <- names(formals(LocalDynamics))
+  if(LocalDynamicsHasTimestep) LocalDynamicsArgs$timestep <- timestep
+  if(LocalDynamicsHasNtimesteps) LocalDynamicsArgs$Ntimesteps <- Ntimesteps
+  if(LocalDynamicsCouplesBiocontrol) {
+    LocalDynamicsArgs$biocontrol_state <- BiocontrolState
+    LocalDynamicsArgs$biocontrol <- Biocontrol
+    LocalDynamicsArgs$biocontrol_engine <- BiocontrolEngine
+    LocalDynamicsArgs$biocontrol_context <- BiocontrolContext
+  }
   LocalDynamicsAcceptsFecundityReduction <- "nodefecundityreduction" %in% LocalDynamicsFormals || "..." %in% LocalDynamicsFormals
   if(LocalDynamicsAcceptsFecundityReduction)
     LocalDynamicsArgs$nodefecundityreduction <- NodeFecundityReduction
@@ -2324,7 +2344,28 @@ if(UseInfoPersistence == T)
     LocalDynamicsArgs <- c(LocalDynamicsArgs, ResolvedLocalDynamicsArgs)
   }
   LocalDynamicsResult <- do.call(LocalDynamics, LocalDynamicsArgs)
-  if(!is.null(Pathogen)) {
+  if(LocalDynamicsCouplesPathogen || LocalDynamicsCouplesBiocontrol) {
+    if(!is.list(LocalDynamicsResult) || is.null(LocalDynamicsResult$N)) stop("Coupled RK LocalDynamics must return a list containing N")
+    N <- LocalDynamicsResult$N
+    if(!is.matrix(N) || !identical(dim(N),c(n_nodes,Nstages)) || any(!is.finite(N)) || any(N<0) || any(N!=floor(N)))
+      stop("Coupled RK LocalDynamics returned invalid whole-count node x stage host abundance")
+    storage.mode(N) <- "integer"
+    if(LocalDynamicsCouplesPathogen) {
+      if(is.null(LocalDynamicsResult$PathogenState)) stop("Coupled pathogen LocalDynamics must return PathogenState")
+      PathogenStageState <- LocalDynamicsResult$PathogenState
+      if(length(dim(PathogenStageState))!=3L || !identical(dim(PathogenStageState)[1:2],c(n_nodes,Nstages)) ||
+         any(apply(PathogenStageState,c(1,2),sum)!=N)) stop("Coupled RK LocalDynamics returned incoherent TM pathogen state")
+      PathogenDeathResults[,,timestep,perm] <- if(is.null(LocalDynamicsResult$PathogenDeaths)) 0 else LocalDynamicsResult$PathogenDeaths
+      NewInfectionResults[,,timestep,perm] <- if(is.null(LocalDynamicsResult$NewInfections)) 0 else LocalDynamicsResult$NewInfections
+    } else if(!is.null(Pathogen)) {
+      PathogenStageState <- .iptm_reconcile(PathogenStageState,N)
+    }
+    if(LocalDynamicsCouplesBiocontrol) {
+      if(is.null(LocalDynamicsResult$BiocontrolState)||is.null(LocalDynamicsResult$BiocontrolImpact)) stop("Coupled biocontrol LocalDynamics must return BiocontrolState and BiocontrolImpact")
+      BiocontrolState <- LocalDynamicsResult$BiocontrolState
+      BiocontrolHistory <- INApestBiocontrolRecord(BiocontrolHistory,BiocontrolState,LocalDynamicsResult$BiocontrolImpact,timestep,perm)
+    }
+  } else if(!is.null(Pathogen)) {
     if(!is.list(LocalDynamicsResult) || is.null(LocalDynamicsResult$N) || is.null(LocalDynamicsResult$PathogenState))
       stop("Pathogen-aware LocalDynamics must return list(N=..., PathogenState=...)")
     N <- LocalDynamicsResult$N
@@ -2404,7 +2445,7 @@ if(length(InfoDecayNodes) > 0)
   
   # Ensure all stage populations are integers
   N <- floor(N)
-  if(UseBiocontrol) {
+  if(UseBiocontrol && !LocalDynamicsCouplesBiocontrol) {
     # Apply one companion step at the established biological-state boundary.
     # The companion returns host losses, updated agent state and explicit impacts.
     bc <- BiocontrolEngine$Step(N, BiocontrolState, timestep, BiocontrolContext)

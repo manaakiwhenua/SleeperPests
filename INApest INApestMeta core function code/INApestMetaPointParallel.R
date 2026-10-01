@@ -32,7 +32,7 @@
 
 # Relabel permutation identifiers in one MetaPoint worker result.
 .ipp_parallel_relabel <- function(x, perm) {
-  for (nm in c("PointHistory", "EventLog", "FinalPoints", "InfoSites", "Summary", "PathogenEvents")) {
+  for (nm in c("PointHistory", "EventLog", "FinalPoints", "InfoSites", "Summary", "PathogenEvents", "ContinuousPathogenEvents", "BiocontrolHistory", "BiocontrolPointEvents")) {
     if (is.data.frame(x[[nm]]) && "perm" %in% names(x[[nm]]))
       x[[nm]]$perm <- rep(perm, nrow(x[[nm]]))
   }
@@ -61,6 +61,9 @@
     InfoSites = .ipp_parallel_rbind(xs, "InfoSites"),
     Summary = .ipp_parallel_rbind(xs, "Summary"),
     PathogenEvents = .ipp_parallel_rbind(xs, "PathogenEvents"),
+    ContinuousPathogenEvents = .ipp_parallel_rbind(xs, "ContinuousPathogenEvents"),
+    BiocontrolHistory = .ipp_parallel_rbind(xs, "BiocontrolHistory"),
+    BiocontrolPointEvents = .ipp_parallel_rbind(xs, "BiocontrolPointEvents"),
     ParallelMeta = meta
   )
   if (nrow(out$PointHistory)) out$PointHistory <- out$PointHistory[order(out$PointHistory$perm, out$PointHistory$timestep, out$PointHistory$id), , drop = FALSE]
@@ -68,6 +71,9 @@
   if (nrow(out$FinalPoints)) out$FinalPoints <- out$FinalPoints[order(out$FinalPoints$perm, out$FinalPoints$id), , drop = FALSE]
   if (nrow(out$Summary)) out$Summary <- out$Summary[order(out$Summary$perm, out$Summary$timestep), , drop = FALSE]
   if (nrow(out$PathogenEvents)) out$PathogenEvents <- out$PathogenEvents[order(out$PathogenEvents$perm, out$PathogenEvents$timestep), , drop = FALSE]
+  if (nrow(out$ContinuousPathogenEvents)) out$ContinuousPathogenEvents <- out$ContinuousPathogenEvents[order(out$ContinuousPathogenEvents$perm, out$ContinuousPathogenEvents$timestep), , drop = FALSE]
+  if (nrow(out$BiocontrolHistory)) out$BiocontrolHistory <- out$BiocontrolHistory[order(out$BiocontrolHistory$perm, out$BiocontrolHistory$timestep, out$BiocontrolHistory$agent, out$BiocontrolHistory$node, out$BiocontrolHistory$stage), , drop = FALSE]
+  if (nrow(out$BiocontrolPointEvents)) out$BiocontrolPointEvents <- out$BiocontrolPointEvents[order(out$BiocontrolPointEvents$perm, out$BiocontrolPointEvents$timestep), , drop = FALSE]
   class(out) <- c(class_name, "list")
   out
 }
@@ -79,7 +85,7 @@
   pat <- if (transition)
     "^(\\.ipp_|\\.ipptm_|INApestPointKernel|INApestPointTransitionMatrix$)"
   else
-    "^(\\.ipp_|INApestPointKernel|INApestMetaPoint$)"
+    "^(\\.ipp_|\\.ibp_|\\.ivpcrk_|\\.inapest_|\\.inabc_|\\.iptm_|INApestPointKernel|INApestMetaPoint$|INApestMetaPointContinuous|INApestPointBiocontrol|INApestBiocontrol|INApestContinuous|INApestRK4|INApestStochastic|INApestCompartment)"
   nms[grepl(pat, nms)]
 }
 

@@ -2430,6 +2430,9 @@ INApestVertebratePoint <- function(
   # Birth, HomeRange, Control and Interaction. NULL preserves the parent
   # INApestPointTransitionMatrix biological behaviour.
   Vertebrate = NULL,                            # Optional Birth/HomeRange/Control/Interaction modules
+  Biocontrol = NULL,                            # Optional node-based biocontrol companion
+  BiocontrolPointSupport = NULL,                # Point-to-biocontrol-node spatial support
+  ContinuousBiology = NULL,                     # Optional continuous H+P / H+B / H+P+B point biology
 
   ###########################################################################
   ### Output
@@ -2457,6 +2460,16 @@ INApestVertebratePoint <- function(
   HomeRangeModule <- .iv_module(Vertebrate, "HomeRange")
   ControlModule <- .iv_module(Vertebrate, "Control")
   InteractionModule <- .iv_module(Vertebrate, "Interaction")
+  if (!is.null(Biocontrol)) {
+    if (!inherits(Biocontrol, "INApestBiocontrol")) stop("Biocontrol must be NULL or created by INApestBiocontrol().")
+    if (!inherits(BiocontrolPointSupport, "INApestBiocontrolPointSupport")) stop("BiocontrolPointSupport is required when Biocontrol is active.")
+  }
+  if (!is.null(ContinuousBiology)) {
+    if (!inherits(ContinuousBiology, "INApestVertebratePointContinuousBiology")) stop("ContinuousBiology must be NULL or created by INApestVertebratePointContinuousBiology().")
+    if (!is.null(ContinuousBiology$BiocontrolRates) && is.null(Biocontrol)) stop("Continuous biocontrol rates require Biocontrol.")
+    if (!is.null(ContinuousBiology$Pathogen) && inherits(InteractionModule, "INApestPointPathogenInteraction"))
+      stop("Do not combine a discrete INApestPointPathogenInteraction with ContinuousBiology$Pathogen in the same run.")
+  }
   if (!is.null(Seed)) set.seed(Seed)
 
   if (!is.numeric(Nstages) || length(Nstages) != 1L || Nstages < 2L || Nstages != floor(Nstages))
@@ -2545,7 +2558,8 @@ INApestVertebratePoint <- function(
 
   snapshots <- list(); events <- list(); final_points <- list(); info_results <- list(); summaries <- list()
   contacts <- list(); interaction_events <- list(); control_observations <- list()
-  si <- 0L; ei <- 0L; sumi <- 0L; ci <- 0L; iei <- 0L; coi <- 0L
+  biocontrol_histories <- list(); biocontrol_point_events <- list(); continuous_pathogen_events <- list()
+  si <- 0L; ei <- 0L; sumi <- 0L; ci <- 0L; iei <- 0L; coi <- 0L; bchi <- 0L; bcpei <- 0L; cpei <- 0L
 
 
   # ---------------------------------------------------------------------------
@@ -2608,6 +2622,18 @@ info_sites <- .ipp_empty_info_sites()
     }
 
 
+    if (!is.null(ContinuousBiology))
+      points <- INApestVertebratePointContinuousInitialize(points, ContinuousBiology, perm)
+    PointBiocontrolState <- NULL
+    if (!is.null(Biocontrol)) {
+      bc_host_stages <- if (!is.null(colnames(.ipptm_get_transition(Transition, 1L, perm, Nstages))))
+        colnames(.ipptm_get_transition(Transition, 1L, perm, Nstages)) else seq_len(Nstages)
+      PointBiocontrolState <- INApestPointBiocontrolInitial(
+        Biocontrol, BiocontrolPointSupport, Ntimesteps, perm,
+        Architecture = "PointTransitionMatrix", HostStages = bc_host_stages
+      )
+    }
+
     # ---------------------------------------------------------------------------
     # Advance stage transitions, movement, information and response through time.
     # ---------------------------------------------------------------------------
@@ -2634,6 +2660,8 @@ info_sites <- .ipp_empty_info_sites()
       n_managing <- 0L
       n_control_deaths <- 0L
       n_control_detections <- 0L
+      n_biocontrol_deaths <- 0L
+      n_pathogen_deaths <- 0L
       control_cost <- 0
       control_fecundity_reduction <- setNames(numeric(nrow(points)), as.character(points$id))
       pending_control_detection <- data.frame(
@@ -3026,6 +3054,50 @@ info_sites <- .ipp_empty_info_sites()
       }
 
       #########################################################################
+      ### 5a. Point biocontrol / continuous coupled biology
+      #########################################################################
+      if (!is.null(ContinuousBiology)) {
+        bc_host_stages <- if (!is.null(colnames(A))) colnames(A) else seq_len(Nstages)
+        cb_step <- INApestVertebratePointContinuousBiologyStep(
+          points, PointBiocontrolState, Biocontrol, BiocontrolPointSupport,
+          ContinuousBiology, timestep, perm, HostStages = bc_host_stages
+        )
+        points <- cb_step$points
+        PointBiocontrolState <- cb_step$state
+        n_biocontrol_deaths <- cb_step$n_biocontrol_deaths
+        n_pathogen_deaths <- cb_step$n_pathogen_deaths
+        if (nrow(cb_step$attacks)) {
+          bcpei <- bcpei + 1L; biocontrol_point_events[[bcpei]] <- cb_step$attacks
+          ei <- ei + 1L
+          events[[ei]] <- .ipptm_event(
+            perm, timestep, "death", cb_step$attacks$point_id, cb_step$attacks$parent_id,
+            cb_step$attacks$x, cb_step$attacks$y, as.integer(cb_step$attacks$stage),
+            NA_integer_, "continuous_biocontrol_mortality"
+          )
+        }
+        if (nrow(cb_step$history)) { bchi <- bchi + 1L; biocontrol_histories[[bchi]] <- cb_step$history }
+        if (nrow(cb_step$pathogen_events)) { cpei <- cpei + 1L; continuous_pathogen_events[[cpei]] <- cb_step$pathogen_events }
+      } else if (!is.null(Biocontrol)) {
+        bc_host_stages <- if (!is.null(colnames(A))) colnames(A) else seq_len(Nstages)
+        bc_step <- INApestPointBiocontrolStep(
+          points, PointBiocontrolState, Biocontrol, BiocontrolPointSupport,
+          timestep, perm, Architecture = "PointTransitionMatrix", HostStages = bc_host_stages
+        )
+        points <- bc_step$points; PointBiocontrolState <- bc_step$state
+        n_biocontrol_deaths <- bc_step$n_attacked
+        if (nrow(bc_step$attacks)) {
+          bcpei <- bcpei + 1L; biocontrol_point_events[[bcpei]] <- bc_step$attacks
+          ei <- ei + 1L
+          events[[ei]] <- .ipptm_event(
+            perm, timestep, "death", bc_step$attacks$point_id, bc_step$attacks$parent_id,
+            bc_step$attacks$x, bc_step$attacks$y, as.integer(bc_step$attacks$stage),
+            NA_integer_, "biocontrol_mortality"
+          )
+        }
+        if (nrow(bc_step$history)) { bchi <- bchi + 1L; biocontrol_histories[[bchi]] <- bc_step$history }
+      }
+
+      #########################################################################
       ### 5b. Social/contact interaction hook
       #########################################################################
       if (nrow(points) && !is.null(InteractionModule)) {
@@ -3046,7 +3118,7 @@ info_sites <- .ipp_empty_info_sites()
         # parent engine owns actual point removal immediately afterwards.
         if (exists("INApestPointPathogenApplyDeaths", mode = "function") &&
             ".pathogen_death" %in% names(points)) {
-          n_pathogen_deaths <- sum(points$.pathogen_death %in% TRUE, na.rm = TRUE)
+          n_pathogen_deaths <- n_pathogen_deaths + sum(points$.pathogen_death %in% TRUE, na.rm = TRUE)
           points <- INApestPointPathogenApplyDeaths(points)
           if (n_pathogen_deaths > 0L) {
             iei <- iei + 1L
@@ -3260,6 +3332,9 @@ info_sites <- .ipp_empty_info_sites()
     ContactHistory = if (length(contacts)) .iv_rbind_fill(contacts) else data.frame(),
     InteractionEvents = if (length(interaction_events)) .iv_rbind_fill(interaction_events) else data.frame(),
     ControlObservationHistory = if (length(control_observations)) .iv_rbind_fill(control_observations) else data.frame(),
+    BiocontrolHistory = if (length(biocontrol_histories)) .iv_rbind_fill(biocontrol_histories) else data.frame(),
+    BiocontrolPointEvents = if (length(biocontrol_point_events)) .iv_rbind_fill(biocontrol_point_events) else data.frame(),
+    ContinuousPathogenEvents = if (length(continuous_pathogen_events)) .iv_rbind_fill(continuous_pathogen_events) else data.frame(),
     Summary = if (length(summaries)) do.call(rbind, summaries) else data.frame()
   )
   class(out) <- c("INApestVertebratePoint", "INApestPointTransitionMatrix", "list")

@@ -639,7 +639,24 @@ if (anyDuplicated(names(LocalDynamicsArgs)))
 force(LocalDynamics)
 force(LocalDynamicsArgs)
 UserLocalDynamicsArgs <- LocalDynamicsArgs
-LocalDynamicsHasPreMortalityN <- "pre_mortality_n" %in% names(formals(LocalDynamics))
+LocalDynamicsFormalsStatic <- names(formals(LocalDynamics))
+LocalDynamicsHasPreMortalityN <- "pre_mortality_n" %in% LocalDynamicsFormalsStatic
+# Optional read-only time context for custom LocalDynamics functions. These are
+# passed only when explicitly named in the function formals; a generic ... does
+# not opt in, preserving legacy/default calls and random-number use.
+LocalDynamicsHasTimestep <- "timestep" %in% LocalDynamicsFormalsStatic
+LocalDynamicsHasNtimesteps <- "Ntimesteps" %in% LocalDynamicsFormalsStatic
+# Some continuous-time flux models (for example immigration) can create hosts
+# from a globally empty state. Opt in explicitly through a function attribute.
+LocalDynamicsRunWhenEmpty <- isTRUE(attr(LocalDynamics, "INApestRunWhenEmpty"))
+# Coupled RK host-pathogen adaptors explicitly own the within-step pathogen
+# transition. The parent engine passes state/context and skips its legacy
+# discrete pathogen Step exactly for this opt-in path.
+LocalDynamicsCouplesPathogen <- isTRUE(attr(LocalDynamics, "INApestCouplesPathogen"))
+# Coupled RK biocontrol adaptors own within-step agent demography, attack and
+# attack-derived recruitment. The parent passes the companion state/config and
+# skips the definitive discrete Biocontrol Step only on this explicit path.
+LocalDynamicsCouplesBiocontrol <- isTRUE(attr(LocalDynamics, "INApestCouplesBiocontrol"))
 PathogenOriginal <- Pathogen
 if(!is.null(PathogenOriginal) && !inherits(PathogenOriginal, "INApestPathogen")) stop("Pathogen must be NULL or an object returned by INApestPathogen()")
 UsePathogen <- !is.null(PathogenOriginal)
@@ -649,6 +666,10 @@ if(UsePathogen) {
   PathogenEngine$Validate(PathogenContext)
   force(PathogenEngine); force(PathogenContext)
 }
+if(LocalDynamicsCouplesPathogen && !UsePathogen)
+  stop("Coupled RK LocalDynamics requires Pathogen to be supplied")
+if(LocalDynamicsCouplesPathogen && identical(PathogenOriginal$Model, "Binary"))
+  stop("Coupled RK LocalDynamics does not support Pathogen Model = 'Binary'")
 
 BiocontrolOriginal <- Biocontrol
 # Activate the companion only when explicitly supplied. The NULL path makes
@@ -672,6 +693,10 @@ if(UseBiocontrol) {
   BiocontrolEngine$Validate(BiocontrolContext)
   force(BiocontrolEngine); force(BiocontrolContext)
 }
+if(LocalDynamicsCouplesBiocontrol && !UseBiocontrol)
+  stop("Coupled RK LocalDynamics requires Biocontrol to be supplied")
+if(UsePathogen && LocalDynamicsCouplesBiocontrol && !LocalDynamicsCouplesPathogen)
+  stop("When Pathogen and coupled Biocontrol are both active, the LocalDynamics must couple both in the same biological step")
 
 # Choose which direct local biological evidence can create/refresh HaveInfo.
 # NULL is the backwards-compatible pathway: host detection always informs, and
@@ -911,7 +936,7 @@ BiocontrolState <- if(UseBiocontrol)
   BiocontrolEngine$Initial(N, BiocontrolContext) else NULL
 if(UsePathogen)
   PathogenState <- PathogenEngine$Initial(N, PathogenContext)
-if(sum(N) == 0 && OngoingExternalInvasion == F)
+if(sum(N) == 0 && OngoingExternalInvasion == F && !LocalDynamicsRunWhenEmpty)
   warning("No initial populations and no future external invasions")
 
 # Initialise response information independently of true host abundance.
@@ -1204,7 +1229,7 @@ for(timestep in 1:Ntimesteps)
   Pin <-0
   Qin <- 0  
     # natural dispersal
-  if(sum(N0)>0 || (LocalDynamicsHasPreMortalityN && sum(NBeforeMortality)>0)) 
+  if(sum(N0)>0 || (LocalDynamicsHasPreMortalityN && sum(NBeforeMortality)>0) || LocalDynamicsRunWhenEmpty) 
   {
     
   CoreLocalDynamicsArgs <- list(
@@ -1227,6 +1252,22 @@ for(timestep in 1:Ntimesteps)
   # so existing custom/default LocalDynamics calls remain unchanged.
   if(LocalDynamicsHasPreMortalityN)
     CoreLocalDynamicsArgs$pre_mortality_n <- NBeforeMortality
+  if(LocalDynamicsHasTimestep)
+    CoreLocalDynamicsArgs$timestep <- timestep
+  if(LocalDynamicsHasNtimesteps)
+    CoreLocalDynamicsArgs$Ntimesteps <- Ntimesteps
+  if(LocalDynamicsCouplesPathogen) {
+    CoreLocalDynamicsArgs$pathogen_state <- PathogenState
+    CoreLocalDynamicsArgs$pathogen <- PathogenOriginal
+    CoreLocalDynamicsArgs$pathogen_engine <- PathogenEngine
+    CoreLocalDynamicsArgs$pathogen_context <- PathogenContext
+  }
+  if(LocalDynamicsCouplesBiocontrol) {
+    CoreLocalDynamicsArgs$biocontrol_state <- BiocontrolState
+    CoreLocalDynamicsArgs$biocontrol <- BiocontrolOriginal
+    CoreLocalDynamicsArgs$biocontrol_engine <- BiocontrolEngine
+    CoreLocalDynamicsArgs$biocontrol_context <- BiocontrolContext
+  }
   LocalDynamicsAcceptsFecundityReduction <-
     "nodefecundityreduction" %in% LocalDynamicsFormals || "..." %in% LocalDynamicsFormals
   if (LocalDynamicsAcceptsFecundityReduction)
@@ -1248,12 +1289,39 @@ for(timestep in 1:Ntimesteps)
              paste(unknown_args, collapse = ", "))
       CoreLocalDynamicsArgs <- c(CoreLocalDynamicsArgs, ResolvedLocalDynamicsArgs)
     }
-    N <- do.call(LocalDynamics, CoreLocalDynamicsArgs)
-    # Default and legacy LocalDynamics return total host abundance. Reconcile
-    # at this boundary: positive net recruitment enters S; negative net change
-    # is thinned from the current pathogen-state composition.
-    if(UsePathogen)
-      PathogenState <- PathogenEngine$Reconcile(PathogenState, N, PathogenContext)
+    LocalDynamicsResult <- do.call(LocalDynamics, CoreLocalDynamicsArgs)
+    if(LocalDynamicsCouplesPathogen || LocalDynamicsCouplesBiocontrol) {
+      if(!is.list(LocalDynamicsResult) || is.null(LocalDynamicsResult$N))
+        stop("Coupled RK LocalDynamics must return a list containing N")
+      N <- LocalDynamicsResult$N
+      if(any(!is.finite(N)) || any(N < 0) || any(N != floor(N)))
+        stop("Coupled RK LocalDynamics returned invalid whole-count host abundance")
+      if(LocalDynamicsCouplesPathogen) {
+        if(is.null(LocalDynamicsResult$PathogenState))
+          stop("Coupled pathogen LocalDynamics must return PathogenState")
+        PathogenState <- LocalDynamicsResult$PathogenState
+        if(!is.matrix(PathogenState) || !identical(colnames(PathogenState), PathogenEngine$States) ||
+           any(rowSums(PathogenState) != as.integer(N)))
+          stop("Coupled RK LocalDynamics returned incoherent pathogen state")
+      } else if(UsePathogen) {
+        PathogenState <- PathogenEngine$Reconcile(PathogenState, N, PathogenContext)
+      }
+      if(LocalDynamicsCouplesBiocontrol) {
+        if(is.null(LocalDynamicsResult$BiocontrolState) || is.null(LocalDynamicsResult$BiocontrolImpact))
+          stop("Coupled biocontrol LocalDynamics must return BiocontrolState and BiocontrolImpact")
+        BiocontrolState <- LocalDynamicsResult$BiocontrolState
+        BiocontrolHistoryLoop <- INApestBiocontrolRecord(
+          BiocontrolHistoryLoop, BiocontrolState, LocalDynamicsResult$BiocontrolImpact, timestep, 1L
+        )
+      }
+    } else {
+      N <- LocalDynamicsResult
+      # Default and legacy LocalDynamics return total host abundance. Reconcile
+      # at this boundary: positive net recruitment enters S; negative net change
+      # is thinned from the current pathogen-state composition.
+      if(UsePathogen)
+        PathogenState <- PathogenEngine$Reconcile(PathogenState, N, PathogenContext)
+    }
 
   } 
  # Apply programmed stopping after last known local presence
@@ -1330,15 +1398,23 @@ if(length(InfoDecayNodes) > 0)
         stop("External host pathogen-state assignment violated S/E/I/R = N")
     }
 
-    # Pathogen transmission/progression/recovery occurs once after host events.
-    PathogenStep <- PathogenEngine$Step(PathogenState, N, timestep, PathogenContext)
-    PathogenState <- PathogenStep$State
-    N <- PathogenStep$N
+    # Legacy pathogen dynamics occur once after host events. In the explicit
+    # coupled-RK path they have already occurred jointly with host biology, so
+    # do not apply a second discrete pathogen step. External host additions made
+    # above join the reconciled compartment state and first participate in RK
+    # transmission in the following parent timestep.
+    if(!LocalDynamicsCouplesPathogen) {
+      PathogenStep <- PathogenEngine$Step(PathogenState, N, timestep, PathogenContext)
+      PathogenState <- PathogenStep$State
+      N <- PathogenStep$N
+    } else if(any(rowSums(PathogenState) != as.integer(N))) {
+      stop("Coupled RK pathogen state lost coherence before downstream processes")
+    }
 
     # Biocontrol is a sibling population process. Apply it after host/pathogen
     # biological updates and before surveillance, then reconcile pathogen state
     # to any host losses caused by biocontrol.
-    if(UseBiocontrol) {
+    if(UseBiocontrol && !LocalDynamicsCouplesBiocontrol) {
       # Apply one companion step at the established biological-state boundary.
       # The companion returns host losses, updated agent state and explicit impacts.
       bc <- BiocontrolEngine$Step(N, BiocontrolState, timestep, BiocontrolContext)
@@ -1362,7 +1438,7 @@ if(length(InfoDecayNodes) > 0)
       HaveInfo[HaveInfo == 0] <- PathogenDetectedNow[HaveInfo == 0]
       }
     }
-  else if(UseBiocontrol)
+  else if(UseBiocontrol && !LocalDynamicsCouplesBiocontrol)
     {
     bc <- BiocontrolEngine$Step(N, BiocontrolState, timestep, BiocontrolContext)
     N <- bc$Target

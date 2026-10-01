@@ -1679,3 +1679,171 @@ print.INApestPoA <- function(x, ...)
       "at timestep", Last$Timestep, "\n")
   invisible(x)
 }
+
+
+###############################################################################
+### Integrated MLUTM proof-of-absence adapter (2026-10-01)
+###
+### Extends the common PoA engine to crossed host state
+###   node x land-use x demographic-stage x timestep x particle.
+### Node-level information and realised node-level detection probabilities are
+### preserved; no separate MLUTM PoA engine is introduced.
+###############################################################################
+
+.INApestPoAMLUTMStateArray <- function(ModelResults)
+{
+  candidates <- c(
+    "PopulationStageLandUseResults",
+    "PopulationStageResults",
+    "HostStageLandUseResults",
+    "HostStateResults"
+  )
+  for(nm in candidates)
+  {
+    x <- ModelResults[[nm]]
+    if(!is.null(x) && length(dim(x)) == 5L)
+      return(list(Name=nm, Array=x))
+  }
+  .INApestPoAStop(
+    ".INApestPoAAdapterMLUTM: ModelResults must contain a 5-D host state array ",
+    "(node x land-use x stage x timestep x permutation) in one of: ",
+    paste(candidates, collapse=", ")
+  )
+}
+
+.INApestPoAMLUTMNodeNoDetection <- function(Probability, Information=NULL,
+                                             Nnode, Ntimesteps, Nperm,
+                                             Name, GateInformation=FALSE)
+{
+  if(is.null(Probability)) return(NULL)
+  d <- dim(Probability)
+  if(length(d) != 3L || !identical(as.integer(d), c(Nnode,Ntimesteps,Nperm)))
+    .INApestPoAStop(Name, " must be node x timestep x permutation for MLUTM PoA")
+  P <- array(as.numeric(Probability), dim=d)
+  if(any(is.na(P) | !is.finite(P) | P < 0 | P > 1))
+    .INApestPoAStop(Name, " must contain finite probabilities in [0,1]")
+
+  H <- NULL
+  if(isTRUE(GateInformation))
+  {
+    if(is.null(Information)) return(NULL)
+    di <- dim(Information)
+    if(length(di) != 3L || !identical(as.integer(di), c(Nnode,Ntimesteps,Nperm)))
+      .INApestPoAStop(
+        "InformationStateBeforeSurveillanceResults must be node x timestep x permutation ",
+        "when InfoTriggered detection probabilities are supplied"
+      )
+    H <- array(as.numeric(Information) > 0, dim=di)
+  }
+
+  q <- matrix(1, nrow=Nperm, ncol=Ntimesteps)
+  for(pp in seq_len(Nperm)) for(tt in seq_len(Ntimesteps))
+  {
+    p <- P[,tt,pp]
+    if(isTRUE(GateInformation)) p <- p * H[,tt,pp]
+    q[pp,tt] <- prod(1-p)
+  }
+  q
+}
+
+.INApestPoAAdapterMLUTM <- function(ModelResults)
+{
+  AdapterName <- ".INApestPoAAdapterMLUTM"
+  if(!is.list(ModelResults))
+    .INApestPoAStop(AdapterName, ": ModelResults must be a list returned by an INApest model")
+
+  z <- .INApestPoAMLUTMStateArray(ModelResults)
+  x <- z$Array
+  d <- dim(x)
+  Nnode <- d[1L]
+  Nlanduse <- d[2L]
+  Nstage <- d[3L]
+  Ntimesteps <- d[4L]
+  Nperm <- d[5L]
+
+  if(any(!is.finite(x)) || any(x < 0))
+    .INApestPoAStop(AdapterName, ": host state contains invalid values")
+
+  Residual <- .INApestPoAAggregateArray(x, 4L, 5L, z$Name)
+
+  BackgroundEvent <- .INApestPoAGetDetectionArray(
+    ModelResults, "Background", 4L, 5L, Nperm, Ntimesteps)
+  InfoTriggeredEvent <- .INApestPoAGetDetectionArray(
+    ModelResults, "InfoTriggered", 4L, 5L, Nperm, Ntimesteps)
+  Legacy <- if(!is.null(ModelResults$DetectedResults))
+    .INApestPoAAggregateDetectionEvent(
+      ModelResults$DetectedResults, 4L, 5L, Nperm, Ntimesteps, "DetectedResults") else NULL
+
+  CellState <- apply(x, c(1L,2L,4L,5L), sum, na.rm=TRUE)
+  CellState <- array(CellState, dim=c(Nnode,Nlanduse,Ntimesteps,Nperm))
+  CellLabels <- expand.grid(
+    Node=seq_len(Nnode), LandUse=seq_len(Nlanduse),
+    KEEP.OUT.ATTRS=FALSE, stringsAsFactors=FALSE)
+  CellLabels$Unit <- seq_len(nrow(CellLabels))
+  CellLabels <- CellLabels[,c("Unit","Node","LandUse")]
+
+  StageTotals <- apply(x, c(3L,4L,5L), sum, na.rm=TRUE)
+  StageTotals <- array(StageTotals, dim=c(Nstage,Ntimesteps,Nperm))
+  StageResidual <- aperm(StageTotals, c(3L,2L,1L))
+
+  ObservationLabels <- expand.grid(
+    Node=seq_len(Nnode), LandUse=seq_len(Nlanduse), Stage=seq_len(Nstage),
+    KEEP.OUT.ATTRS=FALSE, stringsAsFactors=FALSE)
+  ObservationLabels$Unit <- seq_len(nrow(ObservationLabels))
+  ObservationLabels <- ObservationLabels[,c("Unit","Node","LandUse","Stage")]
+  ObservationAbundance <- .INApestPoAUnitArray(x, 4L, 5L, z$Name)
+  InformationState <- .INApestPoAInformationStateForObservation(
+    ModelResults, ObservationLabels, Ntimesteps, Nperm)
+
+  BackgroundQ <- .INApestPoAFirstNonNull(
+    ModelResults$BackgroundNoDetectionProbability,
+    ModelResults$SurveillanceNoDetectionProbability,
+    .INApestPoAMLUTMNodeNoDetection(
+      ModelResults$BackgroundDetectionProbabilityResults,
+      Nnode=Nnode, Ntimesteps=Ntimesteps, Nperm=Nperm,
+      Name="BackgroundDetectionProbabilityResults")
+  )
+  InfoTriggeredQ <- .INApestPoAFirstNonNull(
+    ModelResults$InfoTriggeredNoDetectionProbability,
+    ModelResults$InformationNoDetectionProbability,
+    .INApestPoAMLUTMNodeNoDetection(
+      ModelResults$InfoTriggeredDetectionProbabilityResults,
+      Information=ModelResults$InformationStateBeforeSurveillanceResults,
+      Nnode=Nnode, Ntimesteps=Ntimesteps, Nperm=Nperm,
+      Name="InfoTriggeredDetectionProbabilityResults", GateInformation=TRUE)
+  )
+
+  .INApestPoAAdapterFinish(
+    AdapterName, ModelResults, Residual, Residual <= 0,
+    BackgroundEvent$Values, InfoTriggeredEvent$Values, Legacy,
+    .INApestPoAInitialAggregate(ModelResults$InitialSurveillanceDetected, Nperm),
+    .INApestPoAInitialAggregate(ModelResults$InitialInformationDetected, Nperm),
+    UnitPresence=.INApestPoAUnitArray(CellState > 0, 3L, 4L),
+    UnitLabels=CellLabels,
+    StageResidualPopulation=StageResidual,
+    ObservationAbundance=ObservationAbundance,
+    ObservationUnitLabels=ObservationLabels,
+    InformationStateBeforeSurveillance=InformationState,
+    # MLUTM engine probabilities are already node-level probabilities of at
+    # least one detection, not per-individual probabilities. They are therefore
+    # converted above to system no-detection probabilities rather than passed
+    # to INApestPoARecordedDetectionModel as individual hazards.
+    BackgroundDetectionProbability=NULL,
+    InfoTriggeredDetectionProbability=NULL,
+    SurveillanceNoDetectionProbability=BackgroundQ,
+    InformationNoDetectionProbability=InfoTriggeredQ,
+    BackgroundEventContract=BackgroundEvent$Contract,
+    InfoTriggeredEventContract=InfoTriggeredEvent$Contract,
+    BackgroundEventField=BackgroundEvent$Field,
+    InfoTriggeredEventField=InfoTriggeredEvent$Field
+  )
+}
+
+INApestMetaTransitionMatrixMultipleLandUsePoA <- function(
+  ModelArgs=list(), ModelResults=NULL, ...)
+  .INApestPoARun(
+    "INApestMetaTransitionMatrixMultipleLandUse", .INApestPoAAdapterMLUTM,
+    ModelArgs, ModelResults, ...,
+    ResultClass="INApestMetaTransitionMatrixMultipleLandUsePoA")
+
+INApestMLUTMPoA <- INApestMetaTransitionMatrixMultipleLandUsePoA

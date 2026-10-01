@@ -42,7 +42,7 @@
 
 # Relabel permutation identifiers in one worker result.
 .ipptmp_relabel <- function(x, perm) {
-  for (nm in c("PointHistory", "EventLog", "FinalPoints", "InfoSites", "ContactHistory", "InteractionEvents", "PathogenEvents", "Summary")) {
+  for (nm in c("PointHistory", "EventLog", "FinalPoints", "InfoSites", "ContactHistory", "InteractionEvents", "PathogenEvents", "Summary", "BiocontrolHistory", "BiocontrolPointEvents", "ContinuousPathogenEvents")) {
     if (is.data.frame(x[[nm]]) && "perm" %in% names(x[[nm]])) x[[nm]]$perm <- rep(perm, nrow(x[[nm]]))
   }
   x
@@ -121,10 +121,33 @@ INApestPointTransitionMatrixParallel <- function(
     on.exit(parallel::stopCluster(cl), add = TRUE)
     env <- environment(serial_fun)
     nms <- ls(env, all.names = TRUE)
-    engine_symbols <- nms[grepl("^(\\.ipp_|\\.ipptm_|\\.iv_|\\.INApestPointTransitionMatrix_engine$|INApestPoint|INApestSpatial|INApestHabitat|INApestVertebratePoint$)", nms)]
+    engine_symbols <- nms[grepl("^(\\.ipp_|\\.ipptm_|\\.iv_|\\.ibp_|\\.ivpcrk_|\\.inapest_|\\.inabc_|\\.iptm_|\\.INApestPointTransitionMatrix_engine$|INApestPoint|INApestSpatial|INApestHabitat|INApestVertebratePoint|INApestPointBiocontrol|INApestBiocontrol|INApestContinuous|INApestRK4|INApestStochastic|INApestCompartment)", nms)]
     if (length(engine_symbols)) parallel::clusterExport(cl, engine_symbols, envir = env)
     if (length(Export)) parallel::clusterExport(cl, Export, envir = parent.frame())
     parallel::clusterExport(cl, c(".ipptmp_relabel"), envir = environment())
+
+    psock_required <- c(
+      "INApestStochasticCompartmentStep",
+      "INApestCompartmentMeanDerivative",
+      "INApestRK4Step",
+      ".inapest_tm_cbr_agent_rate_function",
+      ".inapest_tm_cbr_attacker_exposure",
+      "INApestBiocontrolPointNode",
+      "INApestPointBiocontrolStateHistory",
+      "INApestVertebratePointContinuousBiologyStep"
+    )
+    psock_missing <- parallel::clusterCall(
+      cl,
+      function(required) setdiff(required, ls(.GlobalEnv, all.names = TRUE)),
+      psock_required
+    )
+    bad_workers <- which(vapply(psock_missing, length, integer(1)) > 0L)
+    if (length(bad_workers)) {
+      detail <- paste(vapply(bad_workers, function(i)
+        paste0("worker ", i, ": ", paste(psock_missing[[i]], collapse = ", ")),
+        character(1)), collapse = "; ")
+      stop("PSOCK workers are missing required continuous point engine symbol(s): ", detail)
+    }
     xs <- parallel::parLapply(cl, seq_len(Nperm), worker, model_fun = serial_fun, base_args = args,
                               rng_stream = streams, model_name = ModelName)
     parallel::stopCluster(cl); on.exit(NULL, add = FALSE)
@@ -142,12 +165,17 @@ INApestPointTransitionMatrixParallel <- function(
     InteractionEvents = .ipptmp_rbind(xs, "InteractionEvents"),
     PathogenEvents = .ipptmp_rbind(xs, "PathogenEvents"),
     Summary = .ipptmp_rbind(xs, "Summary"),
+    BiocontrolHistory = .ipptmp_rbind(xs, "BiocontrolHistory"),
+    BiocontrolPointEvents = .ipptmp_rbind(xs, "BiocontrolPointEvents"),
+    ContinuousPathogenEvents = .ipptmp_rbind(xs, "ContinuousPathogenEvents"),
     ParallelMeta = list(Nperm = Nperm, Cores = Cores, Backend = backend_used, Seed = Seed, elapsed_seconds = elapsed)
   )
   if (nrow(out$PointHistory)) out$PointHistory <- out$PointHistory[order(out$PointHistory$perm, out$PointHistory$timestep, out$PointHistory$id), , drop = FALSE]
   if (nrow(out$FinalPoints)) out$FinalPoints <- out$FinalPoints[order(out$FinalPoints$perm, out$FinalPoints$id), , drop = FALSE]
   if (nrow(out$Summary)) out$Summary <- out$Summary[order(out$Summary$perm, out$Summary$timestep), , drop = FALSE]
-  class(out) <- c("INApestPointTransitionMatrixParallel", "list")
+  if (nrow(out$BiocontrolHistory)) out$BiocontrolHistory <- out$BiocontrolHistory[order(out$BiocontrolHistory$perm, out$BiocontrolHistory$timestep, out$BiocontrolHistory$agent, out$BiocontrolHistory$node, out$BiocontrolHistory$stage), , drop = FALSE]
+  if (nrow(out$BiocontrolPointEvents) && all(c("perm","timestep") %in% names(out$BiocontrolPointEvents))) out$BiocontrolPointEvents <- out$BiocontrolPointEvents[order(out$BiocontrolPointEvents$perm, out$BiocontrolPointEvents$timestep), , drop = FALSE]
+  class(out) <- c("INApestPointTransitionMatrixParallel", "INApestPointTransitionMatrix", "list")
 
   if (SaveResults) {
     if (is.na(OutputDir)) OutputDir <- ""

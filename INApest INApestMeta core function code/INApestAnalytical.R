@@ -16740,3 +16740,609 @@ INApestAnalytical <- function(...) {
   }
   do.call(INApestAnalytical_pre_obshist8_nullfix, args)
 }
+
+
+###############################################################################
+### Integrated MLUTM analytical / ObservationHistory extension (2026-10-01)
+###
+### Crossed host state: H[node, land-use, demographic-stage].
+### Node information remains shared across land uses, while management adoption
+### remains land-use specific. Reproductive and transition-associated movement
+### preserve the frozen MLUTM architecture contract.
+###
+### Explicit analytical limits: active arbitrary ContinuousBiology/RK and finite
+### programmed information-persistence clocks are not silently approximated.
+###############################################################################
+
+.inatmlu_a_require <- function() {
+  need <- c(
+    "INApestAnalytical", "INApestMLUTMHostStep",
+    ".inatmlu_validate_array_state", ".inatmlu_surface",
+    ".inatmlu_probability_surface", ".inatmlu_response_surface",
+    ".inatmlu_response_cube", ".inatmlu_flatten_state",
+    ".inatmlu_flatten_surface", ".inatmlu_transition",
+    ".inatmlu_recruitment_weights", ".inatmlu_expand_reproductive_dispersal",
+    ".inatmlu_landuse_mixing", ".inatmlu_expand_transition_movement",
+    ".inatmlu_blocked_mortality", ".inatmlu_fecundity_reduction",
+    ".inatmlu_weights", ".ina_transition_branch_step",
+    ".ina_node_transfer_types", ".ina_branch_clip",
+    ".ina_observation_history_mask"
+  )
+  miss <- need[!vapply(need, exists, logical(1), mode = "function")]
+  if (length(miss))
+    stop("Required frozen analytical/MLUTM helper(s) missing: ",
+         paste(miss, collapse = ", "), call. = FALSE)
+  invisible(TRUE)
+}
+
+.inatmlu_a_powerprod <- function(q, x) {
+  q <- pmin(1, pmax(0, as.numeric(q)))
+  x <- as.numeric(x)
+  if (length(q) != length(x)) stop("Internal q/state length mismatch", call. = FALSE)
+  if (any(q == 0 & x > 0)) return(0)
+  exp(sum(x * log(pmax(q, .Machine$double.xmin))))
+}
+
+.inatmlu_a_info_mode <- function(InformationMode, manage_prob,
+                                 info_triggered_detection_prob) {
+  mode <- match.arg(InformationMode, c("auto", "dynamic", "all_informed", "none"))
+  if (mode != "auto") return(mode)
+  active_response <- any(as.numeric(manage_prob) != 0, na.rm = TRUE) ||
+    any(as.numeric(info_triggered_detection_prob) != 0, na.rm = TRUE)
+  if (active_response) "dynamic" else "none"
+}
+
+.inatmlu_a_validate_seam <- function(seam, n_nodes) {
+  if (is.null(seam) || (length(seam) == 1L && identical(as.numeric(seam), 0)))
+    return(matrix(0, n_nodes, n_nodes))
+  z <- as.matrix(seam)
+  if (!identical(dim(z), c(n_nodes, n_nodes)) ||
+      any(!is.finite(z)) || any(z < 0 | z > 1))
+    stop("seam must be 0/NULL or a nodes x nodes probability matrix", call. = FALSE)
+  diag(z) <- 0
+  z
+}
+
+.inatmlu_a_apply_transition_movement <- function(
+    step, Aflat, n_cells, n_stages,
+    transition_sddprob, transition_lddprob, transition_lddrate,
+    establishment, Kflat, weights_flat,
+    ApplyFootprintToTransitions, BlockedTransitionMortality) {
+
+  if (n_stages <= 1L) return(step)
+  Ps <- transition_sddprob
+  Pl <- transition_lddprob
+  if (is.null(Ps) && is.null(Pl) && !isTRUE(ApplyFootprintToTransitions) &&
+      all(as.numeric(BlockedTransitionMortality) == 0)) return(step)
+
+  get_stage <- function(x, k) {
+    if (is.null(x)) return(NULL)
+    if (is.list(x)) return(x[[k]])
+    x
+  }
+  rr <- rep_len(as.numeric(transition_lddrate), n_stages - 1L)
+  if (any(!is.finite(rr)) || any(rr < 0 | rr > 1))
+    stop("transition_lddrate must be in [0,1]", call. = FALSE)
+
+  btm <- BlockedTransitionMortality
+  if (length(btm) == 1L) btm <- matrix(btm, n_cells, n_stages - 1L)
+  else if (is.null(dim(btm)) && length(btm) == n_stages - 1L)
+    btm <- matrix(rep(as.numeric(btm), each = n_cells), n_cells, n_stages - 1L)
+  else btm <- as.matrix(btm)
+  if (!identical(dim(btm), c(n_cells, n_stages - 1L)))
+    stop("BlockedTransitionMortality could not be resolved to cells x (stages-1)", call. = FALSE)
+  if (any(!is.finite(btm)) || any(btm < 0 | btm > 1))
+    stop("BlockedTransitionMortality must be in [0,1]", call. = FALSE)
+
+  footprint <- if (isTRUE(ApplyFootprintToTransitions)) as.numeric(establishment) else rep(1, n_cells)
+  if (length(footprint) != n_cells) stop("Internal transition footprint mismatch", call. = FALSE)
+  # Rare-state acceptance: a positive target capacity can accept a single
+  # lineage; finite-density competition between independent lineages is outside
+  # the branching approximation.
+  accept <- pmin(1, pmax(0, footprint)) * as.numeric(as.numeric(Kflat) > 0)
+
+  idx <- function(cell, stage) (cell - 1L) * n_stages + stage
+  P0 <- matrix(0, nrow(step$Parent0), ncol(step$Parent0))
+  for (c in seq_len(n_cells)) {
+    A <- if (is.list(Aflat)) Aflat[[c]] else Aflat
+    for (k in seq_len(n_stages)) {
+      src <- idx(c, k)
+      if (k == n_stages) {
+        P0[idx(c, k), src] <- A[k, k]
+        next
+      }
+      stay <- pmax(0, A[k, k])
+      prog <- pmax(0, A[k + 1L, k])
+      Psd <- get_stage(Ps, k); Pld <- get_stage(Pl, k)
+      movement_active <- !is.null(Psd) || !is.null(Pld)
+      if (!movement_active) {
+        pa <- accept[c]
+        P0[idx(c, k + 1L), src] <- P0[idx(c, k + 1L), src] + prog * pa
+        P0[idx(c, k), src] <- P0[idx(c, k), src] + stay +
+          prog * (1 - pa) * (1 - btm[c, k])
+      } else {
+        if (!is.null(Psd) && !is.null(Pld)) {
+          Pm <- (1 - rr[k]) * as.matrix(Psd) + rr[k] * as.matrix(Pld)
+        } else if (!is.null(Psd)) Pm <- as.matrix(Psd)
+        else Pm <- as.matrix(Pld)
+        if (!identical(dim(Pm), c(n_cells, n_cells)))
+          stop("Expanded transition movement has wrong dimensions", call. = FALSE)
+        prow <- pmax(0, as.numeric(Pm[c, ]))
+        if (sum(prow) > 1 + 1e-9)
+          stop("Expanded transition movement row sum exceeds one", call. = FALSE)
+        for (d in seq_len(n_cells)) if (prow[d] > 0)
+          P0[idx(d, k + 1L), src] <- P0[idx(d, k + 1L), src] + prog * prow[d] * accept[d]
+        blocked <- prog * sum(prow * (1 - accept))
+        P0[idx(c, k), src] <- P0[idx(c, k), src] + stay + blocked * (1 - btm[c, k])
+        # Missing row mass is successful export and contributes no represented
+        # parent. Blocked mortality is likewise represented by missing mass.
+      }
+    }
+  }
+  step$Parent0 <- P0
+  q1 <- as.numeric(step$q1)
+  step$Parent1 <- sweep(P0, 2L, q1, `*`)
+  step$approximation <- paste(step$approximation,
+    "; transition-associated movement is represented in the parent lineage;",
+    "finite-density target-stage competition is replaced by the rare-state single-lineage acceptance rule")
+  step
+}
+
+.inatmlu_a_node_branch <- function(step, source_type, managed,
+                                   qU, qH, require_no_detection = FALSE,
+                                   informed_source = FALSE) {
+  B <- length(step$q0)
+  type_node <- as.integer(step$SharedInfoNode)
+  nodes <- sort(unique(type_node))
+  qs <- if (!managed) step$q0[source_type] else step$q1[source_type]
+  qs <- .ina_branch_clip(qs)
+  if (qs <= 0) return(1)
+  Pm <- if (!managed) step$Parent0[, source_type] else step$Parent1[, source_type]
+  Rm <- if (!managed) step$Recruit0[, source_type] else step$Recruit1[, source_type]
+  ppar <- pmax(0, as.numeric(Pm) / qs)
+  mu <- pmax(0, as.numeric(Rm) / qs)
+  psum <- sum(ppar)
+  if (psum > 1 + 1e-8) stop("Parent transition probabilities exceed management-survival gate", call. = FALSE)
+  pabs <- pmax(0, 1 - psum)
+
+  D0 <- .ina_branch_clip(rep_len(as.numeric(step$Detection), B))
+  D1 <- if (is.null(step$DetectionInformed)) D0 else
+    .ina_branch_clip(rep_len(as.numeric(step$DetectionInformed), B))
+  IR <- .ina_branch_clip(rep_len(as.numeric(step$Retention), B))
+  C <- as.matrix(step$Transfer)
+  srcnode <- type_node[source_type]
+
+  node_value <- function(nd, parent_type = 0L) {
+    ids <- which(type_node == nd)
+    parent_here <- parent_type > 0L && type_node[parent_type] == nd
+    with_parent <- function(z) {
+      v <- exp(sum(mu[ids] * (z[ids] - 1)))
+      if (parent_here) v <- v * z[parent_type]
+      v
+    }
+    GH <- with_parent(qH)
+    noU <- with_parent((1 - D0) * qU)
+    noH0 <- with_parent((1 - D0) * qH)
+    noH1 <- with_parent((1 - D1) * qH)
+    pinfo <- 0
+    if (informed_source) {
+      if (nd == srcnode) pinfo <- IR[source_type]
+      else pinfo <- C[source_type, ids[1L]]
+    }
+    if (require_no_detection)
+      return(pinfo * noH1 + (1 - pinfo) * noU)
+    # A pre-informed node stays H regardless of surveillance. If it is not
+    # pre-informed, only background surveillance can create information in the
+    # current step; information-triggered surveillance cannot self-trigger.
+    Ubranch <- noU + GH - noH0
+    pinfo * GH + (1 - pinfo) * Ubranch
+  }
+
+  eval_parent <- function(parent_type) {
+    ans <- 1
+    for (nd in nodes) ans <- ans * node_value(nd, parent_type)
+    ans
+  }
+  v <- pabs * eval_parent(0L)
+  nz <- which(ppar > 0)
+  if (length(nz)) for (p in nz) v <- v + ppar[p] * eval_parent(p)
+  .ina_branch_clip((1 - qs) + qs * v)
+}
+
+.inatmlu_a_step_eval <- function(step, qnext,
+                                 mode = c("none", "all_informed", "dynamic"),
+                                 require_no_detection = FALSE) {
+  mode <- match.arg(mode); B <- length(step$q0)
+  qnext <- .ina_branch_clip(qnext)
+  if (mode != "dynamic") {
+    if (length(qnext) != B) stop("qnext length mismatch", call. = FALSE)
+    if (!isTRUE(require_no_detection)) {
+      # Detection does not alter biological state in none/all-informed modes.
+      return(.ina_branch_step_eval(step, qnext, mode))
+    }
+    out <- numeric(B)
+    D <- if (mode == "all_informed") step$DetectionInformed else step$Detection
+    z <- step; z$Detection <- D
+    return(.ina_branch_step_eval_no_detection_individual(z, qnext, mode))
+  }
+  if (length(qnext) != 2L * B) stop("dynamic qnext length mismatch", call. = FALSE)
+  qU <- qnext[seq_len(B)]; qH <- qnext[B + seq_len(B)]
+  a <- .ina_branch_clip(rep_len(as.numeric(step$adoption), B))
+  outU <- outH <- numeric(B)
+  for (i in seq_len(B)) {
+    outU[i] <- .inatmlu_a_node_branch(step, i, FALSE, qU, qH,
+      require_no_detection, informed_source = FALSE)
+    f0 <- .inatmlu_a_node_branch(step, i, FALSE, qU, qH,
+      require_no_detection, informed_source = TRUE)
+    f1 <- .inatmlu_a_node_branch(step, i, TRUE, qU, qH,
+      require_no_detection, informed_source = TRUE)
+    outH[i] <- (1 - a[i]) * f0 + a[i] * f1
+  }
+  .ina_branch_clip(c(outU, outH))
+}
+
+.inatmlu_a_horizon <- function(steps, mode, no_detection_mask = NULL,
+                               terminal = c("extinct", "any")) {
+  terminal <- match.arg(terminal)
+  B <- length(steps[[1L]]$q0)
+  q <- rep(if (terminal == "any") 1 else 0,
+           if (mode == "dynamic") 2L * B else B)
+  if (is.null(no_detection_mask)) no_detection_mask <- rep(FALSE, length(steps))
+  if (length(no_detection_mask) != length(steps)) stop("Observation mask length mismatch", call. = FALSE)
+  for (tt in rev(seq_along(steps)))
+    q <- .inatmlu_a_step_eval(steps[[tt]], q, mode,
+                              require_no_detection = isTRUE(no_detection_mask[tt]))
+  q
+}
+
+.inatmlu_a_eventual <- function(step, mode, generations = 100L, tolerance = 1e-12) {
+  B <- length(step$q0)
+  q <- rep(0, if (mode == "dynamic") 2L * B else B)
+  for (g in seq_len(as.integer(generations))) {
+    old <- q; q <- .inatmlu_a_step_eval(step, q, mode, FALSE)
+    if (max(abs(q - old)) < tolerance) break
+  }
+  q
+}
+
+.inatmlu_a_initial_combine <- function(q, mode, InitialState, InitialInfo,
+                                       ApplyInitialDetection, DetectionCube,
+                                       n_nodes, n_landuses, n_stages) {
+  x <- .inatmlu_flatten_state(InitialState)
+  xv <- as.vector(t(x)); B <- length(xv)
+  if (mode != "dynamic") return(.inatmlu_a_powerprod(q, xv))
+  if (length(q) != 2L * B) stop("Initial dynamic q length mismatch", call. = FALSE)
+  qU <- q[seq_len(B)]; qH <- q[B + seq_len(B)]
+  p0 <- as.numeric(InitialInfo)
+  if (length(p0) == 1L) p0 <- rep(p0, n_nodes)
+  if (length(p0) != n_nodes || any(!is.finite(p0)) || any(p0 < 0 | p0 > 1))
+    stop("InitialInfo must be a probability scalar or vector of length nodes", call. = FALSE)
+  pdet <- rep(0, n_nodes)
+  if (isTRUE(ApplyInitialDetection)) {
+    D <- DetectionCube
+    for (i in seq_len(n_nodes))
+      pdet[i] <- 1 - prod((1 - D[i, , ]) ^ InitialState[i, , ])
+  }
+  pH <- p0 + (1 - p0) * pdet
+  out <- 1
+  for (i in seq_len(n_nodes)) {
+    cells <- (i - 1L) * n_landuses + seq_len(n_landuses)
+    ids <- as.vector(t(outer(cells - 1L, seq_len(n_stages), function(c, s) c * n_stages + s)))
+    # outer/t flatten above is more complex than needed; keep sorted unique ids.
+    ids <- sort(unique(as.integer(ids)))
+    xi <- xv[ids]
+    out <- out * ((1 - pH[i]) * .inatmlu_a_powerprod(qU[ids], xi) +
+                    pH[i] * .inatmlu_a_powerprod(qH[ids], xi))
+  }
+  out
+}
+
+.inatmlu_a_mean_operator <- function(step, mode) {
+  G0 <- step$Parent0 + step$Recruit0
+  a <- .ina_branch_clip(rep_len(as.numeric(step$adoption), ncol(G0)))
+  G1 <- sweep(step$Parent1 + step$Recruit1, 2L, a, `*`) +
+    sweep(G0, 2L, 1 - a, `*`)
+  if (mode == "none") return(G0)
+  if (mode == "all_informed") return(G1)
+  # Dynamic information is correlated within nodes. The biological count
+  # operator cannot by itself close the informed/uninformed composition, so
+  # report the two biological envelopes rather than a false linear closure.
+  NULL
+}
+
+.inatmlu_a_rho <- function(M) {
+  if (is.null(M) || !length(M)) return(NA_real_)
+  max(Mod(eigen(M, only.values = TRUE)$values))
+}
+
+.inatmlu_a_normalize_parent <- function(ans, boundary) {
+  if (is.null(ans$FiniteHorizonExtinctionProbability) && !is.null(ans$Extinction$ProbabilityByHorizon))
+    ans$FiniteHorizonExtinctionProbability <- as.numeric(ans$Extinction$ProbabilityByHorizon)[1L]
+  if (is.null(ans$FiniteHorizonPresenceProbability) && !is.null(ans$FiniteHorizonExtinctionProbability))
+    ans$FiniteHorizonPresenceProbability <- 1 - ans$FiniteHorizonExtinctionProbability
+  if (is.null(ans$EventualExtinctionProbability) && !is.null(ans$Extinction$BranchingFadeoutProbability))
+    ans$EventualExtinctionProbability <- as.numeric(ans$Extinction$BranchingFadeoutProbability)[1L]
+  ans$Model <- "INApestMetaTransitionMatrixMultipleLandUse"
+  ans$AnalyticalVersion <- "v0.6.1"
+  ans$BoundaryReduction <- boundary
+  class(ans) <- unique(c("INApestMLUTMAnalytical", class(ans)))
+  ans
+}
+
+INApestMLUTMAnalytical <- function(
+    Ntimesteps = 10L,
+    InitialState,
+    nodetransition,
+    sddprob,
+    nodeenvestabprob = 1,
+    lddprob = NA,
+    lddrate = 0,
+    nodeK,
+    node.seedbankK = nodeK,
+    nodepropaguleestablishment = 1,
+    nodespreadreduction = 0,
+    nodefecundityreduction = 0,
+    transition_sddprob = NULL,
+    transition_lddprob = NULL,
+    transition_lddrate = 0,
+    ApplyFootprintToTransitions = FALSE,
+    BlockedTransitionMortality = 0,
+    DispersalDensityFactor = 0,
+    weights = NULL,
+    LandUseRecruitmentWeights = NULL,
+    TransitionLandUseMixing = NULL,
+    MLUPropaguleProduction = NULL,
+    InitialInfo = 0,
+    InformationMode = c("auto", "dynamic", "all_informed", "none"),
+    ApplyInitialDetection = TRUE,
+    manage_prob = 0,
+    mortality_prob = 0,
+    detection_prob = 0,
+    info_triggered_detection_prob = 0,
+    info_retention_prob = 1,
+    info_persistence_steps = NA,
+    seam = 0,
+    ObservationHistory = NULL,
+    ExtinctionGenerations = 100L,
+    ReturnOperators = FALSE,
+    ContinuousBiology = NULL) {
+
+  .inatmlu_a_require()
+  if (!is.null(ContinuousBiology))
+    stop("MLUTM analytical v0.6.1 requires ContinuousBiology=NULL. Active RK continuous biology is retained in the frozen stochastic architecture but is not silently approximated by the branching PGF.", call. = FALSE)
+  T <- as.integer(Ntimesteps)
+  if (length(T) != 1L || !is.finite(T) || T < 1L) stop("Ntimesteps must be a positive integer", call. = FALSE)
+  dims <- .inatmlu_validate_array_state(InitialState)
+  nn <- dims[1L]; L <- dims[2L]; S <- dims[3L]; nc <- nn * L; B <- nc * S
+  if (any(!is.na(as.numeric(info_persistence_steps))))
+    stop("MLUTM analytical v0.6.1 does not yet support finite programmed info_persistence_steps; use NA/memoryless retention or stochastic replay.", call. = FALSE)
+  seam_node <- .inatmlu_a_validate_seam(seam, nn)
+
+  # Exact one-stage reduction remains the canonical MLU analytical engine when
+  # the extra MLUTM-only surveillance stream is inactive.
+  if (S == 1L) {
+    if (is.null(MLUPropaguleProduction)) stop("MLUPropaguleProduction is required when InitialState has one stage", call. = FALSE)
+    if (any(as.numeric(info_triggered_detection_prob) != 0))
+      stop("The one-stage MLU boundary with info-triggered surveillance requires the combined MLUTM PGF and is not delegated in v0.6.1.", call. = FALSE)
+    Kmlu <- .inatmlu_surface(nodeK, nn, L, "nodeK")
+    Xmlu <- matrix(InitialState[, , 1L], nn, L)
+    ans <- INApestAnalytical(
+      Model = "INApestMetaMultipleLandUse", Ntimesteps = T,
+      InitialState = Xmlu, InitialInfo = InitialInfo,
+      InformationMode = match.arg(InformationMode), ApplyInitialDetection = ApplyInitialDetection,
+      SDDprob = sddprob, LDDprob = if (length(lddprob)==1L && is.na(lddprob)) 0 else lddprob,
+      LDDrate = lddrate, EnvEstabProb = nodeenvestabprob, Survival = 1,
+      K = Kmlu, PropaguleProduction = MLUPropaguleProduction,
+      PropaguleEstablishment = nodepropaguleestablishment,
+      DetectionProb = .inatmlu_response_surface(detection_prob,nn,L,"detection_prob"),
+      ManageProb = .inatmlu_response_surface(manage_prob,nn,L,"manage_prob"),
+      MortalityProb = .inatmlu_response_surface(mortality_prob,nn,L,"mortality_prob"),
+      SpreadReduction = .inatmlu_response_surface(nodespreadreduction,nn,L,"nodespreadreduction"),
+      FecundityReduction = .inatmlu_response_surface(nodefecundityreduction,nn,L,"nodefecundityreduction"),
+      SEAM = seam_node, InfoRetentionProb = info_retention_prob,
+      InfoPersistenceSteps = info_persistence_steps,
+      ObservationHistory = ObservationHistory,
+      ExtinctionGenerations = ExtinctionGenerations, ReturnOperators = ReturnOperators)
+    return(.inatmlu_a_normalize_parent(ans,
+      "exact one-stage delegation to INApestMetaMultipleLandUse analytical parent"))
+  }
+
+  # Exact one-land-use reduction to the canonical Transition-Matrix analytical
+  # parent whenever the MLUTM-only informed-surveillance stream and transition
+  # footprint switch are inactive. This preserves the frozen architecture
+  # boundary rather than forcing the crossed-state approximation onto L = 1.
+  if (L == 1L && !isTRUE(ApplyFootprintToTransitions) &&
+      is.null(transition_sddprob) && is.null(transition_lddprob) &&
+      all(as.numeric(BlockedTransitionMortality) == 0) &&
+      !any(as.numeric(info_triggered_detection_prob) != 0)) {
+    Xtm <- matrix(InitialState[, 1L, ], nn, S)
+    Ktm <- as.numeric(.inatmlu_surface(nodeK, nn, 1L, "nodeK")[,1L])
+    SBtm <- as.numeric(.inatmlu_surface(node.seedbankK, nn, 1L, "node.seedbankK")[,1L])
+    envtm <- as.numeric(.inatmlu_probability_surface(nodeenvestabprob, nn, 1L, "nodeenvestabprob")[,1L])
+    estabtm <- as.numeric(.inatmlu_probability_surface(nodepropaguleestablishment, nn, 1L, "nodepropaguleestablishment")[,1L])
+    spreadtm <- as.numeric(.inatmlu_probability_surface(nodespreadreduction, nn, 1L, "nodespreadreduction")[,1L])
+    managetm <- as.numeric(.inatmlu_response_surface(manage_prob, nn, 1L, "manage_prob")[,1L])
+    morttm <- matrix(.inatmlu_response_cube(mortality_prob, nn, 1L, S, "mortality_prob")[,1L,], nn, S)
+    dettm <- matrix(.inatmlu_response_cube(detection_prob, nn, 1L, S, "detection_prob")[,1L,], nn, S)
+    fectm0 <- .inatmlu_fecundity_reduction(nodefecundityreduction, nn, 1L, S)
+    fectm <- if (length(fectm0) == 1L) fectm0 else matrix(fectm0, nn, S)
+    Atm <- .inatmlu_transition(nodetransition, nn, 1L, S)
+    ans <- INApestAnalytical(
+      Model = "INApestMetaTransitionMatrix", Ntimesteps = T,
+      InitialState = Xtm, InitialInfo = InitialInfo,
+      InformationMode = match.arg(InformationMode), ApplyInitialDetection = ApplyInitialDetection,
+      Transition = Atm, SDDprob = sddprob,
+      LDDprob = if (length(lddprob)==1L && is.na(lddprob)) 0 else lddprob,
+      LDDrate = lddrate, EnvEstabProb = envtm, K = Ktm, SeedbankK = SBtm,
+      PropaguleEstablishment = estabtm, DetectionProb = dettm,
+      ManageProb = managetm, MortalityProb = morttm, SpreadReduction = spreadtm,
+      FecundityReduction = fectm, SEAM = seam_node,
+      InfoRetentionProb = info_retention_prob, InfoPersistenceSteps = info_persistence_steps,
+      DispersalDensityFactor = DispersalDensityFactor,
+      ObservationHistory = ObservationHistory, ExtinctionGenerations = ExtinctionGenerations,
+      ReturnOperators = ReturnOperators)
+    return(.inatmlu_a_normalize_parent(ans,
+      "exact one-land-use delegation to INApestMetaTransitionMatrix analytical parent"))
+  }
+
+  K <- .inatmlu_surface(nodeK, nn, L, "nodeK")
+  SB <- .inatmlu_surface(node.seedbankK, nn, L, "node.seedbankK")
+  env <- .inatmlu_probability_surface(nodeenvestabprob, nn, L, "nodeenvestabprob")
+  estab <- .inatmlu_probability_surface(nodepropaguleestablishment, nn, L, "nodepropaguleestablishment")
+  spread <- .inatmlu_probability_surface(nodespreadreduction, nn, L, "nodespreadreduction")
+  manage <- .inatmlu_response_surface(manage_prob, nn, L, "manage_prob")
+  mort <- .inatmlu_response_cube(mortality_prob, nn, L, S, "mortality_prob")
+  Dbg <- .inatmlu_response_cube(detection_prob, nn, L, S, "detection_prob")
+  Dinfo <- .inatmlu_response_cube(info_triggered_detection_prob, nn, L, S, "info_triggered_detection_prob")
+  retention <- as.numeric(info_retention_prob)
+  if (length(retention) == 1L) retention <- rep(retention, nn)
+  if (length(retention) != nn || any(!is.finite(retention)) || any(retention < 0 | retention > 1))
+    stop("info_retention_prob must be a probability scalar or vector of length nodes", call. = FALSE)
+
+  Aflat <- .inatmlu_transition(nodetransition, nn, L, S)
+  fec <- .inatmlu_fecundity_reduction(nodefecundityreduction, nn, L, S)
+  wflat <- .inatmlu_weights(weights, nn, L, S)
+  target_w <- .inatmlu_recruitment_weights(LandUseRecruitmentWeights, SB, nn, L)
+  SDDflat <- .inatmlu_expand_reproductive_dispersal(sddprob, target_w)
+  LDDflat <- if (length(lddprob) == 1L && (is.na(lddprob) || identical(as.numeric(lddprob), 0)))
+    matrix(0, nc, nc) else .inatmlu_expand_reproductive_dispersal(lddprob, target_w)
+  LU <- .inatmlu_landuse_mixing(TransitionLandUseMixing, L)
+  TSDD <- .inatmlu_expand_transition_movement(transition_sddprob, LU, nn, S, "transition_sddprob")
+  TLDD <- .inatmlu_expand_transition_movement(transition_lddprob, LU, nn, S, "transition_lddprob")
+  BTM <- .inatmlu_blocked_mortality(BlockedTransitionMortality, nn, L, S)
+
+  cell_node <- rep(seq_len(nn), each = L)
+  type_node <- rep(cell_node, each = S)
+  manage_v <- .inatmlu_flatten_surface(manage)
+  env_v <- .inatmlu_flatten_surface(env)
+  estab_v <- .inatmlu_flatten_surface(estab)
+  spread_v <- .inatmlu_flatten_surface(spread)
+  K_v <- .inatmlu_flatten_surface(K)
+  SB_v <- .inatmlu_flatten_surface(SB)
+  mort_m <- .inatmlu_flatten_state(mort)
+  Dbg_m <- .inatmlu_flatten_state(Dbg)
+  Dinfo_m <- .inatmlu_flatten_state(Dinfo)
+  retention_cell <- retention[cell_node]
+  mode <- .inatmlu_a_info_mode(InformationMode, manage, Dinfo)
+
+  steps <- vector("list", T)
+  for (tt in seq_len(T)) {
+    st <- .ina_transition_branch_step(
+      Aflat, S, SDDflat, LDDflat, lddrate,
+      env_v, estab_v, Dbg_m, manage_v, mort_m, spread_v,
+      0, retention_cell, DispersalDensityFactor, K_v, SB_v, fec)
+    st <- .inatmlu_a_apply_transition_movement(
+      st, Aflat, nc, S, TSDD, TLDD, transition_lddrate,
+      estab_v, K_v, wflat, ApplyFootprintToTransitions, BTM)
+    st$SharedInfoNode <- type_node
+    st$Transfer <- .ina_node_transfer_types(seam_node, type_node)
+    st$Retention <- retention[type_node]
+    st$Detection <- as.vector(t(Dbg_m))
+    st$DetectionInformed <- 1 - (1 - as.vector(t(Dbg_m))) * (1 - as.vector(t(Dinfo_m)))
+    steps[[tt]] <- st
+  }
+
+  qh <- .inatmlu_a_horizon(steps, mode, terminal = "extinct")
+  finite_ext <- .inatmlu_a_initial_combine(qh, mode, InitialState, InitialInfo,
+    ApplyInitialDetection, Dbg, nn, L, S)
+  qe <- .inatmlu_a_eventual(steps[[1L]], mode, ExtinctionGenerations)
+  eventual_ext <- .inatmlu_a_initial_combine(qe, mode, InitialState, InitialInfo,
+    ApplyInitialDetection, Dbg, nn, L, S)
+
+  Gnone <- steps[[1L]]$Parent0 + steps[[1L]]$Recruit0
+  a <- .ina_branch_clip(rep_len(as.numeric(steps[[1L]]$adoption), B))
+  Gall <- sweep(Gnone, 2L, 1 - a, `*`) +
+    sweep(steps[[1L]]$Parent1 + steps[[1L]]$Recruit1, 2L, a, `*`)
+
+  out <- list(
+    Model = "INApestMetaTransitionMatrixMultipleLandUse",
+    AnalyticalVersion = "v0.6.1",
+    StateDimensions = c(nodes = nn, landuses = L, stages = S),
+    InformationMode = mode,
+    FiniteHorizonExtinctionProbability = finite_ext,
+    FiniteHorizonPresenceProbability = 1 - finite_ext,
+    EventualExtinctionProbability = eventual_ext,
+    Growth = list(
+      UninformedLambda = .inatmlu_a_rho(Gnone),
+      AllInformedLambda = .inatmlu_a_rho(Gall),
+      DynamicLinearClosure = if (mode == "dynamic") NA_real_ else
+        if (mode == "none") .inatmlu_a_rho(Gnone) else .inatmlu_a_rho(Gall)),
+    Diagnostics = c(
+      "Rare-state multi-type branching PGF over node x land-use x demographic-stage host types.",
+      "Node-level information is shared across all land uses/stages at a node; management adoption remains land-use specific.",
+      "Information-triggered surveillance is active only at nodes informed before surveillance; it cannot self-trigger from a same-step background detection.",
+      "Transition-associated movement is retained in the parent lineage and missing movement-row mass is represented as export/loss.",
+      "Finite-density capacity competition between independent lineages is outside the branching approximation; positive target capacity is treated as available to a single rare lineage.",
+      "Active ContinuousBiology/RK is intentionally not approximated in v0.6.1; use the frozen stochastic bridge or add a separately validated continuous-time branching operator."))
+
+  if (!is.null(ObservationHistory)) {
+    mask <- .ina_observation_history_mask(ObservationHistory, T)
+    qC <- .inatmlu_a_horizon(steps, mode, mask, terminal = "any")
+    qJ <- .inatmlu_a_horizon(steps, mode, mask, terminal = "extinct")
+    pC <- .inatmlu_a_initial_combine(qC, mode, InitialState, InitialInfo,
+      ApplyInitialDetection, Dbg, nn, L, S)
+    pJ <- .inatmlu_a_initial_combine(qJ, mode, InitialState, InitialInfo,
+      ApplyInitialDetection, Dbg, nn, L, S)
+    out$ObservationHistory <- list(
+      NoDetectionByTimestep = mask,
+      Probability = pC,
+      ExtinctionJointProbability = pJ,
+      ExtinctionConditionalProbability = if (pC > 0) pJ / pC else NA_real_,
+      Method = "finite-horizon no-detection conditioning on the MLUTM node-shared branching PGF")
+  }
+  if (isTRUE(ReturnOperators)) {
+    out$Steps <- steps
+    out$UninformedMeanOperator <- Gnone
+    out$AllInformedMeanOperator <- Gall
+  }
+  class(out) <- c("INApestMLUTMAnalytical", "list")
+  out
+}
+
+INApestMLUTMProofOfAbsence <- function(AnalyticalResult = NULL, ...) {
+  if (is.null(AnalyticalResult)) AnalyticalResult <- INApestMLUTMAnalytical(...)
+  if (!inherits(AnalyticalResult, "INApestMLUTMAnalytical"))
+    stop("AnalyticalResult must come from INApestMLUTMAnalytical()", call. = FALSE)
+  prior <- AnalyticalResult$FiniteHorizonExtinctionProbability
+  oh <- AnalyticalResult$ObservationHistory
+  posterior <- if (is.null(oh)) prior else oh$ExtinctionConditionalProbability
+  structure(list(
+    Model = AnalyticalResult$Model,
+    PriorPoA = prior,
+    ObservationHistoryProbability = if (is.null(oh)) 1 else oh$Probability,
+    JointAbsenceAndObservationProbability = if (is.null(oh)) prior else oh$ExtinctionJointProbability,
+    PosteriorPoA = posterior,
+    HorizonTimesteps = if (!is.null(oh)) length(oh$NoDetectionByTimestep) else NA_integer_,
+    Interpretation = "Probability the pest is absent at the analytical horizon, optionally conditioned on the supplied no-detection history."),
+    class = c("INApestMLUTMProofOfAbsence", "list"))
+}
+
+# Unified dispatcher extension. The pre-MLUTM INApestAnalytical implementation remains
+# callable for every pre-existing model.
+INApestAnalytical_pre_mlutm_v061 <- INApestAnalytical
+INApestAnalytical <- function(...) {
+  args <- list(...)
+  model <- if (!is.null(args$Model)) as.character(args$Model)[1L] else "INApest"
+  if (!model %in% c("INApestMetaTransitionMatrixMultipleLandUse", "INApestMLUTM"))
+    return(do.call(INApestAnalytical_pre_mlutm_v061, args))
+  args$Model <- NULL
+  aliases <- c(
+    InitialState = "InitialState", Transition = "nodetransition",
+    SDDprob = "sddprob", LDDprob = "lddprob", LDDrate = "lddrate",
+    EnvEstabProb = "nodeenvestabprob", K = "nodeK", SeedbankK = "node.seedbankK",
+    PropaguleEstablishment = "nodepropaguleestablishment",
+    SpreadReduction = "nodespreadreduction", FecundityReduction = "nodefecundityreduction",
+    TransitionSDDprob = "transition_sddprob", TransitionLDDprob = "transition_lddprob",
+    TransitionLDDrate = "transition_lddrate", ManageProb = "manage_prob",
+    MortalityProb = "mortality_prob", DetectionProb = "detection_prob",
+    InfoTriggeredDetectionProb = "info_triggered_detection_prob",
+    InfoRetentionProb = "info_retention_prob", InfoPersistenceSteps = "info_persistence_steps",
+    SEAM = "seam")
+  for (nm in names(aliases)) if (nm %in% names(args) && !(aliases[[nm]] %in% names(args))) {
+    names(args)[match(nm, names(args))] <- aliases[[nm]]
+  }
+  allowed <- names(formals(INApestMLUTMAnalytical))
+  unknown <- setdiff(names(args), allowed)
+  if (length(unknown)) stop("Unsupported MLUTM analytical argument(s): ", paste(unknown, collapse = ", "), call. = FALSE)
+  do.call(INApestMLUTMAnalytical, args)
+}

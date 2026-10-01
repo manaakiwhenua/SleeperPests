@@ -1071,8 +1071,17 @@ if (anyDuplicated(names(LocalDynamicsArgs)))
 force(LocalDynamics)
 force(LocalDynamicsArgs)
 UserLocalDynamicsArgs <- LocalDynamicsArgs
+LocalDynamicsFormalsStatic <- names(formals(LocalDynamics))
+LocalDynamicsHasTimestep <- "timestep" %in% LocalDynamicsFormalsStatic
+LocalDynamicsHasNtimesteps <- "Ntimesteps" %in% LocalDynamicsFormalsStatic
+LocalDynamicsRunWhenEmpty <- isTRUE(attr(LocalDynamics, "INApestRunWhenEmpty"))
+LocalDynamicsCouplesPathogen <- isTRUE(attr(LocalDynamics, "INApestCouplesPathogen"))
+LocalDynamicsCouplesBiocontrol <- isTRUE(attr(LocalDynamics, "INApestCouplesBiocontrol"))
+if(LocalDynamicsCouplesPathogen && is.null(Pathogen)) stop("Coupled RK LocalDynamics requires Pathogen to be supplied")
+if(LocalDynamicsCouplesPathogen && identical(Pathogen$Model,"Binary")) stop("Coupled RK LocalDynamics does not support Pathogen Model = 'Binary'")
 # collect lexical bindings needed by custom LocalDynamics on PSOCK workers.
 .CollectLocalDynamicsPSOCKBindings <- function(fun) {
+  if (!requireNamespace("codetools", quietly=TRUE)) return(list())
   collected <- list(); seen <- character(0)
   find_user_binding <- function(nm,env) {
     ee <- env
@@ -1129,6 +1138,8 @@ if(UseBiocontrol) {
   BiocontrolEngine$Validate(BiocontrolContext)
   force(BiocontrolEngine); force(BiocontrolContext)
 }
+if(LocalDynamicsCouplesBiocontrol && !UseBiocontrol) stop("Coupled RK LocalDynamics requires Biocontrol to be supplied")
+if(!is.null(Pathogen) && LocalDynamicsCouplesBiocontrol && !LocalDynamicsCouplesPathogen) stop("When Pathogen and coupled Biocontrol are both active, LocalDynamics must couple both in the same biological step")
 # Validate fixed or time-varying node connectivity.
 .ValidateConnectivityTM <- function(x,name,allow_disabled_scalar=FALSE) {
   if(allow_disabled_scalar && length(x)==1L && (is.na(x) || identical(as.numeric(x),0))) return(invisible(TRUE))
@@ -1862,7 +1873,7 @@ if(UseInfoTriggeredSurveillance) {
     }
     if(!is.null(Pathogen)) PathogenStageState <- .iptm_reconcile(PathogenStageState, N0)
     N <- N0
-    if (sum(N0) > 0) {
+    if (sum(N0) > 0 || LocalDynamicsRunWhenEmpty) {
       LocalDynamicsArgs <- list(nodetransition = NodeTransition, weights = Weights, sddprob = NodeSDDprob,
                                 nodeenvestabprob = NodeEnvEstabProb, n0 = N0, lddprob = NodeLDDprob,
                                 lddrate = LDDrate, nodeK = NodeK, node.seedbankK = NodeSeedbankK,
@@ -1871,6 +1882,14 @@ if(UseInfoTriggeredSurveillance) {
                                 MaxInteger = MaxInteger, BlockedTransitionMortality = BlockedTransitionMortality,
                                 DispersalDensityFactor = DispersalDensityFactor)
       LocalDynamicsFormals <- names(formals(LocalDynamics))
+      if(LocalDynamicsHasTimestep) LocalDynamicsArgs$timestep <- timestep
+      if(LocalDynamicsHasNtimesteps) LocalDynamicsArgs$Ntimesteps <- Ntimesteps
+      if(LocalDynamicsCouplesBiocontrol) {
+        LocalDynamicsArgs$biocontrol_state <- BiocontrolState
+        LocalDynamicsArgs$biocontrol <- Biocontrol
+        LocalDynamicsArgs$biocontrol_engine <- BiocontrolEngine
+        LocalDynamicsArgs$biocontrol_context <- BiocontrolContext
+      }
       LocalDynamicsAcceptsFecundityReduction <- "nodefecundityreduction" %in% LocalDynamicsFormals || "..." %in% LocalDynamicsFormals
       if(LocalDynamicsAcceptsFecundityReduction)
         LocalDynamicsArgs$nodefecundityreduction <- NodeFecundityReduction
@@ -1911,7 +1930,24 @@ if(UseInfoTriggeredSurveillance) {
         LocalDynamicsArgs <- c(LocalDynamicsArgs, ResolvedLocalDynamicsArgs)
       }
       LocalDynamicsResult <- do.call(LocalDynamics, LocalDynamicsArgs)
-      if(!is.null(Pathogen)) {
+      if(LocalDynamicsCouplesPathogen || LocalDynamicsCouplesBiocontrol) {
+        if(!is.list(LocalDynamicsResult) || is.null(LocalDynamicsResult$N)) stop("Coupled RK LocalDynamics must return a list containing N")
+        N <- LocalDynamicsResult$N
+        if(!is.matrix(N)||!identical(dim(N),c(n_nodes,Nstages))||any(!is.finite(N))||any(N<0)||any(N!=floor(N))) stop("Coupled RK LocalDynamics returned invalid whole-count node x stage host abundance")
+        storage.mode(N)<-"integer"
+        if(LocalDynamicsCouplesPathogen) {
+          if(is.null(LocalDynamicsResult$PathogenState)) stop("Coupled pathogen LocalDynamics must return PathogenState")
+          PathogenStageState <- LocalDynamicsResult$PathogenState
+          if(length(dim(PathogenStageState))!=3L||!identical(dim(PathogenStageState)[1:2],c(n_nodes,Nstages))||any(apply(PathogenStageState,c(1,2),sum)!=N)) stop("Coupled RK LocalDynamics returned incoherent TM pathogen state")
+          PathogenDeathResults_local[,,timestep] <- if(is.null(LocalDynamicsResult$PathogenDeaths)) 0 else LocalDynamicsResult$PathogenDeaths
+          NewInfectionResults_local[,,timestep] <- if(is.null(LocalDynamicsResult$NewInfections)) 0 else LocalDynamicsResult$NewInfections
+        } else if(!is.null(Pathogen)) PathogenStageState <- .iptm_reconcile(PathogenStageState,N)
+        if(LocalDynamicsCouplesBiocontrol) {
+          if(is.null(LocalDynamicsResult$BiocontrolState)||is.null(LocalDynamicsResult$BiocontrolImpact)) stop("Coupled biocontrol LocalDynamics must return BiocontrolState and BiocontrolImpact")
+          BiocontrolState <- LocalDynamicsResult$BiocontrolState
+          BiocontrolHistory_local <- INApestBiocontrolRecord(BiocontrolHistory_local,BiocontrolState,LocalDynamicsResult$BiocontrolImpact,timestep,1L)
+        }
+      } else if(!is.null(Pathogen)) {
         if(!is.list(LocalDynamicsResult) || is.null(LocalDynamicsResult$N) || is.null(LocalDynamicsResult$PathogenState)) stop("Pathogen-aware LocalDynamics must return list(N=..., PathogenState=...)")
         N <- LocalDynamicsResult$N; PathogenStageState <- LocalDynamicsResult$PathogenState
         PathogenDeathResults_local[,,timestep] <- if(is.null(LocalDynamicsResult$PathogenDeaths)) 0 else LocalDynamicsResult$PathogenDeaths
@@ -1979,7 +2015,7 @@ if(UseInfoTriggeredSurveillance) {
       
     }
     N <- floor(N)
-    if(UseBiocontrol) {
+    if(UseBiocontrol && !LocalDynamicsCouplesBiocontrol) {
       # Apply one companion step at the established biological-state boundary.
       # The companion returns host losses, updated agent state and explicit impacts.
       bc <- BiocontrolEngine$Step(N, BiocontrolState, timestep, BiocontrolContext)
@@ -2096,6 +2132,13 @@ if (n_cores == 1L) {
     if(length(missing_helpers)) stop("Missing pathogen transition helper(s): ", paste(missing_helpers, collapse=", "), ". Source INApestPathogenTransitionMatrix.R first.")
     for(nm in helper_names) assign(nm, get(nm, envir=helper_env, mode="function", inherits=TRUE), envir=environment())
     parallel::clusterExport(cl, helper_names, envir=environment())
+  }
+  if(inherits(LocalDynamics,"INApestTMRK4LocalDynamics") || inherits(LocalDynamics,"INApestTMRK4HostPathogenLocalDynamics") || inherits(LocalDynamics,"INApestTMRK4CoupledBiologyLocalDynamics")) {
+    if(!exists("INApestRK4Step",mode="function")) stop("Source TM RK4 dependencies before PSOCK use")
+    rk_env <- environment(INApestTMRK4HelpersMarker)
+    rk_symbols <- ls(rk_env,all.names=TRUE)
+    rk_symbols <- rk_symbols[grepl("^([.]inapest_rk4_|[.]inapest_sfb_|[.]inapest_scb_|[.]inapest_tm_|INApestRK4|INApestStochastic|INApestCompartment|INApestContinuousPathogenRates|INApestContinuousBiocontrol|INApestTMRK4|INApestTMRK4HelpersMarker)",rk_symbols)]
+    if(length(rk_symbols)) parallel::clusterExport(cl,rk_symbols,envir=rk_env)
   }
   # materialise custom LocalDynamics lexical bindings on PSOCK workers.
   if(length(LocalDynamicsPSOCKBindings)) parallel::clusterCall(cl,function(bindings){list2env(bindings,envir=.GlobalEnv);NULL},LocalDynamicsPSOCKBindings)
